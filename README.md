@@ -1,5 +1,5 @@
--- ryu hub - jujutsu shenanigans full edition
--- dev build / human style
+-- ryu hub - jujutsu shenanigans (tjs) v1
+-- fully customized for tjs knit architecture
 
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
@@ -15,127 +15,81 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local LocalPlayer = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
--- gui setup
-local guiParent = LocalPlayer:WaitForChild("PlayerGui", 10) or LocalPlayer:FindFirstChild("PlayerGui")
+-- gui cleanup
+local guiParent = LocalPlayer:WaitForChild("PlayerGui")
 pcall(function() 
-    if gethui then 
-        guiParent = gethui() 
-    elseif syn and syn.protect_gui then 
-        guiParent = CoreGui 
-    end 
+    if gethui then guiParent = gethui() elseif syn and syn.protect_gui then guiParent = CoreGui end 
 end)
 
 for _, v in pairs(guiParent:GetChildren()) do 
-    if v.Name == "RyuHubTJS" or v.Name == "RyuNotificationsTJS" then 
-        v:Destroy() 
-    end 
+    if v.Name == "RyuHubTJS" then v:Destroy() end 
 end
 
--- knit remotes
-local KnitServices = ReplicatedStorage:WaitForChild("Knit", 10):WaitForChild("Knit", 10):WaitForChild("Services", 10)
-local BlockService = KnitServices:WaitForChild("BlockService", 10):WaitForChild("RE", 10)
-local BlockDeactivated = BlockService:WaitForChild("Deactivated", 10)
-local BlockActivated = BlockService:WaitForChild("Activated", 10)
+-- tjs knit remotes cache
+local knitServices = ReplicatedStorage:WaitForChild("Knit", 5) and ReplicatedStorage.Knit:WaitForChild("Services")
+local remotes = {
+    BlockOn = knitServices and knitServices:FindFirstChild("BlockService") and knitServices.BlockService.RE:FindFirstChild("Activated"),
+    BlockOff = knitServices and knitServices:FindFirstChild("BlockService") and knitServices.BlockService.RE:FindFirstChild("Deactivated"),
+    Chase = knitServices and knitServices:FindFirstChild("ItadoriService") and knitServices.ItadoriService.RE:FindFirstChild("Chase"),
+    Divergent = knitServices and knitServices:FindFirstChild("DivergentFistService") and knitServices.DivergentFistService.RE:FindFirstChild("Activated")
+}
 
-local ItadoriService = KnitServices:FindFirstChild("ItadoriService") and KnitServices.ItadoriService:FindFirstChild("RE")
-local ItadoriChase = ItadoriService and ItadoriService:FindFirstChild("Chase")
-
-local DivergentService = KnitServices:FindFirstChild("DivergentFistService") and KnitServices.DivergentFistService:FindFirstChild("RE")
-local DivergentActivated = DivergentService and DivergentService:FindFirstChild("Activated")
-
--- config
+-- global config
+local CONFIG_FILE = "RyuHub_TJS_Settings.json"
 local RyuConfig = {
-    -- Player
-    Speed = 16,
-    SpeedToggle = false,
-    Fly = false,
-    FlySpeed = 50,
-    JumpPower = 50,
-    JumpSpam = false,
-    Noclip = false,
-    Invisible = false,
+    -- player
+    Speed = false, SpeedKey = Enum.KeyCode.Z, SpeedVal = 50,
+    Fly = false, FlyKey = Enum.KeyCode.X,
+    JumpHigh = false, JumpSpam = false,
+    Noclip = false, Invisible = false,
     
-    -- Auto Combat
-    AutoBlock = false,
-    BlockTimer = 0.5,
-    BlockRange = 15,
+    -- auto
+    AutoBlock = false, BlockRange = 15,
     AutoBlackFlash = false,
-    AutoDodge = false,
-    DodgeDistance = 25,
+    AutoDodge = false, DodgeRange = 20,
     
-    -- Ability
-    LockOn = false,
-    LockOnMode = "Nearest",
-    Knockback = false,
-    KnockbackPower = 100,
-    InfiniteAwakening = false,
-    InstantReversal = false,
+    -- ability
+    LockOn = false, LockOnKey = Enum.KeyCode.C,
+    Knockback = false, KnockbackVal = 50,
+    DomainBypass = false, DashSpam = false,
     
-    -- AI Farm
-    AiFarm = false,
-    AttackRange = 10,
-    AutoUlt = false,
-    UseSkill1 = true, Skill1Range = 15,
-    UseSkill2 = true, Skill2Range = 15,
-    UseSkill3 = true, Skill3Range = 15,
-    UseSkill4 = true, Skill4Range = 15,
-    HumanMode = false,
+    -- ai farm
+    AIFarm = false, AIRange = 50, AutoUlt = false, HumanMode = false,
+    S1 = false, S1R = 10, S2 = false, S2R = 10, S3 = false, S3R = 10, S4 = false, S4R = 10,
     
-    -- Target
-    SelectedTarget = "",
-    StickToTarget = false,
-    StickDistance = 4,
+    -- target farm
+    TargetPlayer = "", StayBehind = false, BehindDist = 3,
     
-    -- Money Farm
-    MoneyFarm = false,
-    Role = "Farmer",
-    VictimTarget = "",
-    VictimMode = "Walk",
+    -- money farm
+    MoneyFarm = false, MFRole = "Farmer", MFVictim = "",
     
-    -- Config
-    AutoRejoin = false,
-    RejoinThreshold = 4,
-    LobbyType = "High",
-    MainAccountName = "",
-    
-    GuiColor = Color3.fromRGB(255, 255, 255)
+    -- config
+    AutoRejoin = false, MinPlayers = 3, HighPop = true,
+    TargetJoinUser = ""
 }
 
-local SETTINGS_FILE = "RyuHub_TJS_Settings.json"
-
-local function SaveSettings()
-    if writefile then
-        local enc = HttpService:JSONEncode(RyuConfig)
-        writefile(SETTINGS_FILE, enc)
-    end
+-- save/load engine
+local function SaveConfig()
+    pcall(function()
+        if writefile then writefile(CONFIG_FILE, HttpService:JSONEncode(RyuConfig)) end
+    end)
 end
 
-local function LoadSettings()
-    if isfile and isfile(SETTINGS_FILE) and readfile then
-        local raw = readfile(SETTINGS_FILE)
-        local dec = HttpService:JSONDecode(raw)
-        for k, v in pairs(dec) do
-            RyuConfig[k] = v
-        end
+pcall(function()
+    if readfile and isfile and isfile(CONFIG_FILE) then
+        local data = HttpService:JSONDecode(readfile(CONFIG_FILE))
+        for k,v in pairs(data) do RyuConfig[k] = v end
     end
-end
-pcall(LoadSettings)
+end)
 
+-- theme & setup
 local Theme = {
-    Background = Color3.fromRGB(12, 12, 14),
-    Sidebar = Color3.fromRGB(18, 18, 20),
-    SectionBG = Color3.fromRGB(24, 24, 26),
-    Text = Color3.fromRGB(250, 250, 250),
-    SubText = Color3.fromRGB(130, 130, 135),
-    Accent = RyuConfig.GuiColor,
-    ToggleOff = Color3.fromRGB(35, 35, 38),
-    ToggleOn = RyuConfig.GuiColor,
-    Stroke = Color3.fromRGB(45, 45, 50),
-    Warning = Color3.fromRGB(255, 75, 75)
+    Background = Color3.fromRGB(12, 12, 14), Sidebar = Color3.fromRGB(18, 18, 20),
+    SectionBG = Color3.fromRGB(24, 24, 26), Text = Color3.fromRGB(250, 250, 250),
+    SubText = Color3.fromRGB(130, 130, 135), Accent = Color3.fromRGB(255, 65, 65),
+    ToggleOff = Color3.fromRGB(35, 35, 38), ToggleOn = Color3.fromRGB(255, 65, 65),
+    Stroke = Color3.fromRGB(45, 45, 50), Warning = Color3.fromRGB(255, 180, 50)
 }
-
-local MainSize = UDim2.new(0, math.min(760, camera.ViewportSize.X - 30), 0, math.min(490, camera.ViewportSize.Y - 30))
-local SidebarWidth = 155
 
 local RyuHub = Instance.new("ScreenGui")
 RyuHub.Name = "RyuHubTJS"
@@ -143,1026 +97,612 @@ RyuHub.ResetOnSpawn = false
 RyuHub.IgnoreGuiInset = true
 RyuHub.Parent = guiParent
 
--- notifications
-local NotificationContainer = Instance.new("Frame")
-NotificationContainer.Name = "RyuNotificationsTJS"
-NotificationContainer.Size = UDim2.new(0, 260, 1, -40)
-NotificationContainer.Position = UDim2.new(1, -280, 0, 20)
-NotificationContainer.BackgroundTransparency = 1
-NotificationContainer.Parent = guiParent
-
-local NotifLayout = Instance.new("UIListLayout", NotificationContainer)
-NotifLayout.SortOrder = Enum.SortOrder.LayoutOrder
-NotifLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
-NotifLayout.Padding = UDim.new(0, 8)
-
-local RyuNotify = {}
-function RyuNotify:Send(title, text, duration)
-    duration = duration or 3
-    local NotifFrame = Instance.new("Frame", NotificationContainer)
-    NotifFrame.Size = UDim2.new(1, 0, 0, 60)
-    NotifFrame.BackgroundColor3 = Theme.Sidebar
-    NotifFrame.BackgroundTransparency = 1
-    Instance.new("UICorner", NotifFrame).CornerRadius = UDim.new(0, 8)
-    
-    local Stroke = Instance.new("UIStroke", NotifFrame)
-    Stroke.Color = Theme.Accent
-    Stroke.Transparency = 1
-    Stroke.Thickness = 1.5
-    
-    local AccentLine = Instance.new("Frame", NotifFrame)
-    AccentLine.Size = UDim2.new(0, 3, 0.8, 0)
-    AccentLine.Position = UDim2.new(0, 4, 0.1, 0)
-    AccentLine.BackgroundColor3 = Theme.Accent
-    AccentLine.BackgroundTransparency = 1
-    Instance.new("UICorner", AccentLine).CornerRadius = UDim.new(1, 0)
-    
-    local TitleLabel = Instance.new("TextLabel", NotifFrame)
-    TitleLabel.Size = UDim2.new(1, -20, 0, 20)
-    TitleLabel.Position = UDim2.new(0, 15, 0, 8)
-    TitleLabel.BackgroundTransparency = 1
-    TitleLabel.Text = title
-    TitleLabel.TextColor3 = Theme.Text
-    TitleLabel.TextTransparency = 1
-    TitleLabel.Font = Enum.Font.GothamBold
-    TitleLabel.TextSize = 13
-    TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    
-    local DescLabel = Instance.new("TextLabel", NotifFrame)
-    DescLabel.Size = UDim2.new(1, -20, 0, 20)
-    DescLabel.Position = UDim2.new(0, 15, 0, 28)
-    DescLabel.BackgroundTransparency = 1
-    DescLabel.Text = text
-    DescLabel.TextColor3 = Theme.SubText
-    DescLabel.TextTransparency = 1
-    DescLabel.Font = Enum.Font.Gotham
-    DescLabel.TextSize = 11
-    DescLabel.TextXAlignment = Enum.TextXAlignment.Left
-
-    TweenService:Create(NotifFrame, TweenInfo.new(0.3), {BackgroundTransparency = 0.1}):Play()
-    TweenService:Create(Stroke, TweenInfo.new(0.3), {Transparency = 0.5}):Play()
-    TweenService:Create(AccentLine, TweenInfo.new(0.3), {BackgroundTransparency = 0}):Play()
-    TweenService:Create(TitleLabel, TweenInfo.new(0.3), {TextTransparency = 0}):Play()
-    TweenService:Create(DescLabel, TweenInfo.new(0.3), {TextTransparency = 0}):Play()
-
-    task.spawn(function()
-        task.wait(duration)
-        local fadeOut = TweenService:Create(NotifFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0)})
-        TweenService:Create(Stroke, TweenInfo.new(0.3), {Transparency = 1}):Play()
-        TweenService:Create(AccentLine, TweenInfo.new(0.3), {BackgroundTransparency = 1}):Play()
-        TweenService:Create(TitleLabel, TweenInfo.new(0.3), {TextTransparency = 1}):Play()
-        TweenService:Create(DescLabel, TweenInfo.new(0.3), {TextTransparency = 1}):Play()
-        fadeOut:Play()
-        fadeOut.Completed:Wait()
-        NotifFrame:Destroy()
-    end)
-end
-
--- toggle button
-local ToggleBtn = Instance.new("TextButton")
-ToggleBtn.Size = UDim2.new(0, 48, 0, 48)
-ToggleBtn.Position = UDim2.new(0, 20, 0, 20)
-ToggleBtn.BackgroundColor3 = Theme.Sidebar
-ToggleBtn.Text = "R"
-ToggleBtn.Font = Enum.Font.GothamBlack
-ToggleBtn.TextColor3 = Theme.Accent
-ToggleBtn.TextSize = 20
-ToggleBtn.Parent = RyuHub
-Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
-local tStroke = Instance.new("UIStroke", ToggleBtn)
-tStroke.Color = Theme.Accent
-tStroke.Thickness = 2
-
-local tDragStart, tStartPos, isDraggingBtn = nil, nil, false
-ToggleBtn.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        isDraggingBtn = false
-        tDragStart = input.Position
-        tStartPos = ToggleBtn.Position
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if tDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - tDragStart
-        if delta.Magnitude > 5 then
-            isDraggingBtn = true
-            ToggleBtn.Position = UDim2.new(tStartPos.X.Scale, tStartPos.X.Offset + delta.X, tStartPos.Y.Scale, tStartPos.Y.Offset + delta.Y)
-        end
-    end
-end)
-
--- main window
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 0, 0, 0)
-MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+MainFrame.Size = UDim2.new(0, 650, 0, 420)
+MainFrame.Position = UDim2.new(0.5, -325, 0.5, -210)
 MainFrame.BackgroundColor3 = Theme.Background
 MainFrame.Active = true
-MainFrame.Visible = false
-MainFrame.ClipsDescendants = true
+MainFrame.Draggable = true
 MainFrame.Parent = RyuHub
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
-
-local mStroke = Instance.new("UIStroke", MainFrame)
-mStroke.Color = Theme.Stroke
-mStroke.Thickness = 1.5
-
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        if tDragStart then
-            if not isDraggingBtn then
-                if MainFrame.Visible then
-                    TweenService:Create(MainFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
-                    task.wait(0.25)
-                    MainFrame.Visible = false
-                else
-                    MainFrame.Visible = true
-                    TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = MainSize, Position = UDim2.new(0.5, -MainSize.X.Offset / 2, 0.5, -MainSize.Y.Offset / 2)}):Play()
-                end
-            end
-            tDragStart = nil
-        end
-    end
-end)
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
+Instance.new("UIStroke", MainFrame).Color = Theme.Stroke
 
 local Topbar = Instance.new("Frame", MainFrame)
-Topbar.Size = UDim2.new(1, 0, 0, 55)
+Topbar.Size = UDim2.new(1, 0, 0, 40)
 Topbar.BackgroundTransparency = 1
-
 local Title = Instance.new("TextLabel", Topbar)
-Title.Size = UDim2.new(0, 250, 0, 24)
-Title.Position = UDim2.new(0, 18, 0, 10)
+Title.Size = UDim2.new(0, 200, 1, 0)
+Title.Position = UDim2.new(0, 15, 0, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "RYU HUB"
+Title.Text = "RYU HUB | TJS"
 Title.Font = Enum.Font.GothamBlack
-Title.TextSize = 20
+Title.TextSize = 18
 Title.TextColor3 = Theme.Text
 Title.TextXAlignment = Enum.TextXAlignment.Left
 
-local SubTitle = Instance.new("TextLabel", Topbar)
-SubTitle.Size = UDim2.new(0, 250, 0, 15)
-SubTitle.Position = UDim2.new(0, 18, 0, 32)
-SubTitle.BackgroundTransparency = 1
-SubTitle.Text = "Jujutsu Shenanigans"
-SubTitle.TextColor3 = Theme.SubText
-SubTitle.Font = Enum.Font.Gotham
-SubTitle.TextSize = 11
-SubTitle.TextXAlignment = Enum.TextXAlignment.Left
-
-local CloseBtn = Instance.new("TextButton", Topbar)
-CloseBtn.Size = UDim2.new(0, 26, 0, 26)
-CloseBtn.Position = UDim2.new(1, -36, 0, 14)
-CloseBtn.BackgroundColor3 = Theme.SectionBG
-CloseBtn.Text = "X"
-CloseBtn.TextColor3 = Theme.SubText
-CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.TextSize = 13
-Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
-
-CloseBtn.MouseButton1Click:Connect(function()
-    TweenService:Create(MainFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
-    task.wait(0.25)
-    MainFrame.Visible = false
-end)
-
-local mDragging, mDragStart, mStartPos
-Topbar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        mDragging = true
-        mDragStart = input.Position
-        mStartPos = MainFrame.Position
-    end
-end)
-Topbar.InputChanged:Connect(function(input)
-    if mDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - mDragStart
-        MainFrame.Position = UDim2.new(mStartPos.X.Scale, mStartPos.X.Offset + delta.X, mStartPos.Y.Scale, mStartPos.Y.Offset + delta.Y)
-    end
-end)
-Topbar.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        mDragging = false
-    end
-end)
+local Line = Instance.new("Frame", MainFrame)
+Line.Size = UDim2.new(1, 0, 0, 1)
+Line.Position = UDim2.new(0, 0, 0, 40)
+Line.BackgroundColor3 = Theme.Stroke
+Line.BorderSizePixel = 0
 
 local Sidebar = Instance.new("ScrollingFrame", MainFrame)
-Sidebar.Size = UDim2.new(0, SidebarWidth, 1, -75)
-Sidebar.Position = UDim2.new(0, 10, 0, 65)
+Sidebar.Size = UDim2.new(0, 140, 1, -41)
+Sidebar.Position = UDim2.new(0, 0, 0, 41)
 Sidebar.BackgroundTransparency = 1
 Sidebar.ScrollBarThickness = 0
-
 local SideLayout = Instance.new("UIListLayout", Sidebar)
-SideLayout.Padding = UDim.new(0, 6)
-SideLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
 SideLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
 local ContentContainer = Instance.new("Frame", MainFrame)
-ContentContainer.Size = UDim2.new(1, -(SidebarWidth + 25), 1, -75)
-ContentContainer.Position = UDim2.new(0, SidebarWidth + 15, 0, 65)
+ContentContainer.Size = UDim2.new(1, -141, 1, -41)
+ContentContainer.Position = UDim2.new(0, 141, 0, 41)
 ContentContainer.BackgroundTransparency = 1
 
--- ui generators
 local Tabs = {}
-local function UpdateSidebarCanvas()
-    local totalH = 10
-    for _, t in pairs(Tabs) do
-        totalH = totalH + 34 + 6
-        if t.IsOpen then
-            totalH = totalH + t.SubLayout.AbsoluteContentSize.Y + 6
-        end
-    end
-    Sidebar.CanvasSize = UDim2.new(0, 0, 0, totalH)
-end
-
-local function SecureTrigger(button, func)
-    button.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            func()
-        end
-    end)
-end
-
 local function CreateMainTab(name)
-    local tabObj = { Btn = nil, SubContainer = nil, SubLayout = nil, IsOpen = false, SubTabs = {}, ToggleFunc = nil }
-
-    local tabBtn = Instance.new("TextButton", Sidebar)
-    tabBtn.Size = UDim2.new(1, 0, 0, 34)
-    tabBtn.BackgroundColor3 = Theme.Sidebar
-    tabBtn.Text = "  " .. string.upper(name)
-    tabBtn.TextColor3 = Theme.SubText
-    tabBtn.Font = Enum.Font.GothamBlack
-    tabBtn.TextSize = 12
-    tabBtn.TextXAlignment = Enum.TextXAlignment.Left
-    Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 6)
-    tabObj.Btn = tabBtn
-
-    local subContainer = Instance.new("Frame", Sidebar)
-    subContainer.Size = UDim2.new(1, 0, 0, 0)
-    subContainer.BackgroundTransparency = 1
-    subContainer.ClipsDescendants = true
-    tabObj.SubContainer = subContainer
-
-    local subLayout = Instance.new("UIListLayout", subContainer)
-    subLayout.Padding = UDim.new(0, 2)
-    tabObj.SubLayout = subLayout
-
-    tabObj.ToggleFunc = function()
-        tabObj.IsOpen = not tabObj.IsOpen
-        local targetSize = tabObj.IsOpen and UDim2.new(1, 0, 0, subLayout.AbsoluteContentSize.Y) or UDim2.new(1, 0, 0, 0)
-        TweenService:Create(subContainer, TweenInfo.new(0.2), {Size = targetSize}):Play()
-        tabBtn.TextColor3 = tabObj.IsOpen and Theme.Text or Theme.SubText
-        task.delay(0.21, UpdateSidebarCanvas)
-    end
-
-    SecureTrigger(tabBtn, tabObj.ToggleFunc)
-    subLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        if tabObj.IsOpen then subContainer.Size = UDim2.new(1, 0, 0, subLayout.AbsoluteContentSize.Y) end
-        UpdateSidebarCanvas()
-    end)
-
-    table.insert(Tabs, tabObj)
-    return tabObj
-end
-
-local function CreateSubTab(tabObj, subName)
-    local subObj = { Btn = nil, Page = nil, SelectFunc = nil }
-
-    local subBtn = Instance.new("TextButton", tabObj.SubContainer)
-    subBtn.Size = UDim2.new(1, 0, 0, 26)
-    subBtn.BackgroundTransparency = 1
-    subBtn.Text = "     " .. subName
-    subBtn.TextColor3 = Theme.SubText
-    subBtn.Font = Enum.Font.GothamMedium
-    subBtn.TextSize = 11
-    subBtn.TextXAlignment = Enum.TextXAlignment.Left
-    subObj.Btn = subBtn
-
+    local btn = Instance.new("TextButton", Sidebar)
+    btn.Size = UDim2.new(1, 0, 0, 35)
+    btn.BackgroundColor3 = Theme.Sidebar
+    btn.Text = "  " .. name
+    btn.TextColor3 = Theme.SubText
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 13
+    btn.TextXAlignment = Enum.TextXAlignment.Left
+    
     local page = Instance.new("ScrollingFrame", ContentContainer)
     page.Size = UDim2.new(1, 0, 1, 0)
     page.BackgroundTransparency = 1
     page.ScrollBarThickness = 2
     page.Visible = false
-    subObj.Page = page
-
-    local pageLayout = Instance.new("UIListLayout", page)
-    pageLayout.Padding = UDim.new(0, 10)
-    pageLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    pageLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        page.CanvasSize = UDim2.new(0, 0, 0, pageLayout.AbsoluteContentSize.Y + 15)
-    end)
-
-    subObj.SelectFunc = function()
+    local pl = Instance.new("UIListLayout", page)
+    pl.Padding = UDim.new(0, 8)
+    pl.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    
+    btn.MouseButton1Click:Connect(function()
         for _, t in pairs(Tabs) do
-            for _, st in pairs(t.SubTabs) do
-                st.Page.Visible = false
-                st.Btn.TextColor3 = Theme.SubText
-            end
+            t.Page.Visible = false
+            t.Btn.TextColor3 = Theme.SubText
+            t.Btn.BackgroundColor3 = Theme.Sidebar
         end
         page.Visible = true
-        subBtn.TextColor3 = Theme.Text
-    end
-
-    SecureTrigger(subBtn, subObj.SelectFunc)
-    table.insert(tabObj.SubTabs, subObj)
+        btn.TextColor3 = Theme.Text
+        btn.BackgroundColor3 = Theme.SectionBG
+    end)
+    
+    table.insert(Tabs, {Btn = btn, Page = page, Layout = pl})
     return page
 end
 
 local function CreateSection(page, titleText)
-    local section = Instance.new("Frame", page)
-    section.Size = UDim2.new(0.98, 0, 0, 45)
-    section.BackgroundColor3 = Theme.SectionBG
-    Instance.new("UICorner", section).CornerRadius = UDim.new(0, 8)
+    local sec = Instance.new("Frame", page)
+    sec.Size = UDim2.new(0.96, 0, 0, 30)
+    sec.BackgroundColor3 = Theme.SectionBG
+    Instance.new("UICorner", sec).CornerRadius = UDim.new(0, 6)
+    Instance.new("UIStroke", sec).Color = Theme.Stroke
     
-    local secLayout = Instance.new("UIListLayout", section)
-    secLayout.Padding = UDim.new(0, 8)
-    secLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    local lbl = Instance.new("TextLabel", sec)
+    lbl.Size = UDim2.new(1, -20, 0, 25)
+    lbl.Position = UDim2.new(0, 10, 0, 5)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = titleText
+    lbl.TextColor3 = Theme.Accent
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 14
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
     
-    local secPadding = Instance.new("UIPadding", section)
-    secPadding.PaddingTop = UDim.new(0, 10)
-    secPadding.PaddingBottom = UDim.new(0, 10)
+    local sl = Instance.new("UIListLayout", sec)
+    sl.Padding = UDim.new(0, 5)
+    sl.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    sl.SortOrder = Enum.SortOrder.LayoutOrder
     
-    local title = Instance.new("TextLabel", section)
-    title.Size = UDim2.new(0.92, 0, 0, 20)
-    title.BackgroundTransparency = 1
-    title.Text = titleText
-    title.TextColor3 = Theme.Text
-    title.Font = Enum.Font.GothamBold
-    title.TextSize = 13
-    title.TextXAlignment = Enum.TextXAlignment.Left
+    local pad = Instance.new("UIPadding", sec)
+    pad.PaddingTop = UDim.new(0, 35)
+    pad.PaddingBottom = UDim.new(0, 10)
     
-    secLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        section.Size = UDim2.new(0.98, 0, 0, secLayout.AbsoluteContentSize.Y + 20)
+    sl:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        sec.Size = UDim2.new(0.96, 0, 0, sl.AbsoluteContentSize.Y + 45)
+        page.CanvasSize = UDim2.new(0,0,0, page:FindFirstChildOfClass("UIListLayout").AbsoluteContentSize.Y + 20)
     end)
-    return section
+    return sec
 end
 
-local function CreateToggle(section, text, descText, defaultState, callback)
-    if type(descText) == "boolean" then
-        callback = defaultState
-        defaultState = descText
-        descText = nil
-    end
-
-    local frame = Instance.new("Frame", section)
-    frame.Size = UDim2.new(0.92, 0, 0, descText and 44 or 30)
-    frame.BackgroundTransparency = 1
+local function CreateToggle(sec, txt, state, cb)
+    local fr = Instance.new("Frame", sec)
+    fr.Size = UDim2.new(0.94, 0, 0, 25)
+    fr.BackgroundTransparency = 1
+    local lbl = Instance.new("TextLabel", fr)
+    lbl.Size = UDim2.new(0.8, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = txt
+    lbl.TextColor3 = Theme.Text
+    lbl.Font = Enum.Font.GothamMedium
+    lbl.TextSize = 12
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
     
-    local label = Instance.new("TextLabel", frame)
-    label.Size = UDim2.new(0.75, 0, 0, 20)
-    label.BackgroundTransparency = 1
-    label.Text = text
-    label.TextColor3 = defaultState and Theme.Text or Theme.SubText
-    label.Font = Enum.Font.GothamMedium
-    label.TextSize = 12
-    label.TextXAlignment = Enum.TextXAlignment.Left
+    local btn = Instance.new("TextButton", fr)
+    btn.Size = UDim2.new(0, 30, 0, 16)
+    btn.Position = UDim2.new(1, -30, 0.5, -8)
+    btn.BackgroundColor3 = state and Theme.ToggleOn or Theme.ToggleOff
+    btn.Text = ""
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(1,0)
     
-    if descText then
-        local desc = Instance.new("TextLabel", frame)
-        desc.Size = UDim2.new(0.75, 0, 0, 15)
-        desc.Position = UDim2.new(0, 0, 0, 20)
-        desc.BackgroundTransparency = 1
-        desc.Text = descText
-        desc.TextColor3 = Theme.SubText
-        desc.Font = Enum.Font.Gotham
-        desc.TextSize = 10
-        desc.TextXAlignment = Enum.TextXAlignment.Left
-    end
-    
-    local tBtn = Instance.new("TextButton", frame)
-    tBtn.Size = UDim2.new(0, 38, 0, 20)
-    tBtn.Position = UDim2.new(1, -38, 0.5, -10)
-    tBtn.BackgroundColor3 = defaultState and Theme.ToggleOn or Theme.ToggleOff
-    tBtn.Text = ""
-    Instance.new("UICorner", tBtn).CornerRadius = UDim.new(1, 0)
-    
-    local circle = Instance.new("Frame", tBtn)
-    circle.Size = UDim2.new(0, 14, 0, 14)
-    circle.Position = defaultState and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7)
-    circle.BackgroundColor3 = defaultState and Theme.Background or Color3.fromRGB(150, 150, 150)
-    Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
-    
-    local isOn = defaultState or false
-    SecureTrigger(tBtn, function()
-        isOn = not isOn
-        TweenService:Create(tBtn, TweenInfo.new(0.2), {BackgroundColor3 = isOn and Theme.ToggleOn or Theme.ToggleOff}):Play()
-        TweenService:Create(circle, TweenInfo.new(0.2), {
-            Position = isOn and UDim2.new(1, -16, 0.5, -7) or UDim2.new(0, 2, 0.5, -7),
-            BackgroundColor3 = isOn and Theme.Background or Color3.fromRGB(150, 150, 150)
-        }):Play()
-        label.TextColor3 = isOn and Theme.Text or Theme.SubText
-        if callback then callback(isOn) end
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        btn.BackgroundColor3 = state and Theme.ToggleOn or Theme.ToggleOff
+        if cb then pcall(function() cb(state) end) end
     end)
 end
 
-local function CreateSlider(section, text, min, max, default, callback)
-    local frame = Instance.new("Frame", section)
-    frame.Size = UDim2.new(0.92, 0, 0, 45)
-    frame.BackgroundTransparency = 1
+local function CreateSlider(sec, txt, min, max, def, cb)
+    local fr = Instance.new("Frame", sec)
+    fr.Size = UDim2.new(0.94, 0, 0, 35)
+    fr.BackgroundTransparency = 1
+    local lbl = Instance.new("TextLabel", fr)
+    lbl.Size = UDim2.new(0.8, 0, 0, 15)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = txt .. " : " .. tostring(def)
+    lbl.TextColor3 = Theme.Text
+    lbl.Font = Enum.Font.GothamMedium
+    lbl.TextSize = 12
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
     
-    local label = Instance.new("TextLabel", frame)
-    label.Size = UDim2.new(1, -40, 0, 18)
-    label.BackgroundTransparency = 1
-    label.Text = text
-    label.TextColor3 = Theme.SubText
-    label.Font = Enum.Font.GothamMedium
-    label.TextSize = 12
-    label.TextXAlignment = Enum.TextXAlignment.Left
+    local bg = Instance.new("TextButton", fr)
+    bg.Size = UDim2.new(1, 0, 0, 4)
+    bg.Position = UDim2.new(0, 0, 1, -10)
+    bg.BackgroundColor3 = Theme.ToggleOff
+    bg.Text = ""
+    Instance.new("UICorner", bg).CornerRadius = UDim.new(1,0)
     
-    local valLabel = Instance.new("TextLabel", frame)
-    valLabel.Size = UDim2.new(0, 40, 0, 18)
-    valLabel.Position = UDim2.new(1, -40, 0, 0)
-    valLabel.BackgroundTransparency = 1
-    valLabel.Text = tostring(default)
-    valLabel.TextColor3 = Theme.Accent
-    valLabel.Font = Enum.Font.GothamBold
-    valLabel.TextSize = 12
-    valLabel.TextXAlignment = Enum.TextXAlignment.Right
+    local fill = Instance.new("Frame", bg)
+    fill.Size = UDim2.new(math.clamp((def-min)/(max-min),0,1), 0, 1, 0)
+    fill.BackgroundColor3 = Theme.Accent
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(1,0)
     
-    local sliderBg = Instance.new("Frame", frame)
-    sliderBg.Size = UDim2.new(1, 0, 0, 4)
-    sliderBg.Position = UDim2.new(0, 0, 0, 28)
-    sliderBg.BackgroundColor3 = Theme.ToggleOff
-    Instance.new("UICorner", sliderBg).CornerRadius = UDim.new(1, 0)
-    
-    local sliderFill = Instance.new("Frame", sliderBg)
-    local percentage = (default - min) / (max - min)
-    sliderFill.Size = UDim2.new(percentage, 0, 1, 0)
-    sliderFill.BackgroundColor3 = Theme.Accent
-    Instance.new("UICorner", sliderFill).CornerRadius = UDim.new(1, 0)
-    
-    local knob = Instance.new("TextButton", sliderFill)
-    knob.Size = UDim2.new(0, 12, 0, 12)
-    knob.Position = UDim2.new(1, -6, 0.5, -6)
-    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    knob.Text = ""
-    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
-    
-    local dragging = false
-    local function setSlider(value)
-        local rel = math.clamp((value - min) / (max - min), 0, 1)
-        local val = math.floor((min + (max - min) * rel) * 10) / 10
-        valLabel.Text = tostring(val)
-        TweenService:Create(sliderFill, TweenInfo.new(0.05), {Size = UDim2.new(rel, 0, 1, 0)}):Play()
-        if callback then callback(val) end
-    end
-    
-    knob.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local rel = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
-            setSlider(min + (max - min) * rel)
+    local drag = false
+    bg.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = true end end)
+    UserInputService.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = false end end)
+    UserInputService.InputChanged:Connect(function(i)
+        if drag and i.UserInputType == Enum.UserInputType.MouseMovement then
+            local pct = math.clamp((i.Position.X - bg.AbsolutePosition.X) / bg.AbsoluteSize.X, 0, 1)
+            fill.Size = UDim2.new(pct, 0, 1, 0)
+            local val = math.floor(min + ((max - min) * pct))
+            lbl.Text = txt .. " : " .. tostring(val)
+            if cb then pcall(function() cb(val) end) end
         end
     end)
 end
 
-local function CreateButton(section, text, callback)
-    local btn = Instance.new("TextButton", section)
-    btn.Size = UDim2.new(0.92, 0, 0, 30)
-    btn.BackgroundColor3 = Theme.SectionBG
-    btn.Text = text
+local function CreateButton(sec, txt, cb)
+    local btn = Instance.new("TextButton", sec)
+    btn.Size = UDim2.new(0.94, 0, 0, 25)
+    btn.BackgroundColor3 = Theme.ToggleOff
+    btn.Text = txt
     btn.TextColor3 = Theme.Text
     btn.Font = Enum.Font.GothamBold
     btn.TextSize = 12
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-    local s = Instance.new("UIStroke", btn)
-    s.Color = Theme.Stroke
-    s.Thickness = 1
-    SecureTrigger(btn, callback)
-    return btn
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,4)
+    Instance.new("UIStroke", btn).Color = Theme.Stroke
+    btn.MouseButton1Click:Connect(function() pcall(cb) end)
 end
 
-local function CreateTextBox(section, placeholder, callback)
-    local frame = Instance.new("Frame", section)
-    frame.Size = UDim2.new(0.92, 0, 0, 30)
-    frame.BackgroundTransparency = 1
-    
-    local box = Instance.new("TextBox", frame)
-    box.Size = UDim2.new(1, 0, 1, 0)
-    box.BackgroundColor3 = Theme.Background
+local function CreateLabel(sec, txt)
+    local lbl = Instance.new("TextLabel", sec)
+    lbl.Size = UDim2.new(0.94, 0, 0, 20)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = txt
+    lbl.TextColor3 = Theme.SubText
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 11
+    lbl.TextWrapped = true
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+end
+
+local function CreateInput(sec, placeholder, cb)
+    local box = Instance.new("TextBox", sec)
+    box.Size = UDim2.new(0.94, 0, 0, 25)
+    box.BackgroundColor3 = Theme.ToggleOff
     box.PlaceholderText = placeholder
     box.Text = ""
     box.TextColor3 = Theme.Text
     box.Font = Enum.Font.GothamMedium
     box.TextSize = 12
-    box.ClearTextOnFocus = false
-    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 6)
-    
-    local stroke = Instance.new("UIStroke", box)
-    stroke.Color = Theme.Stroke
-    stroke.Thickness = 1
-    
-    if callback then 
-        box.FocusLost:Connect(function() 
-            callback(box.Text) 
-        end) 
-    end
-    return box
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0,4)
+    box.FocusLost:Connect(function() if cb then pcall(function() cb(box.Text) end) end end)
 end
 
-local function CreateDropdown(section, headerText, itemsList, defaultVal, callback)
-    local frame = Instance.new("Frame", section)
-    frame.Size = UDim2.new(0.92, 0, 0, 30)
-    frame.BackgroundColor3 = Theme.ToggleOff
-    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
-    
-    local label = Instance.new("TextLabel", frame)
-    label.Size = UDim2.new(1, -30, 1, 0)
-    label.Position = UDim2.new(0, 10, 0, 0)
-    label.BackgroundTransparency = 1
-    label.Text = headerText .. ": " .. tostring(defaultVal)
-    label.TextColor3 = Theme.Text
-    label.Font = Enum.Font.GothamMedium
-    label.TextSize = 12
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    
-    local isDropped = false
-    local container = Instance.new("Frame", section)
-    container.Size = UDim2.new(0.92, 0, 0, 0)
-    container.BackgroundColor3 = Theme.Background
-    container.ClipsDescendants = true
-    Instance.new("UICorner", container).CornerRadius = UDim.new(0, 6)
-    
-    local list = Instance.new("UIListLayout", container)
-    list.Padding = UDim.new(0, 2)
-    
-    local function populate()
-        for _, c in pairs(container:GetChildren()) do
-            if c:IsA("TextButton") then c:Destroy() end
-        end
-        local currentItems = type(itemsList) == "function" and itemsList() or itemsList
-        for _, item in ipairs(currentItems) do
-            local btn = Instance.new("TextButton", container)
-            btn.Size = UDim2.new(1, 0, 0, 24)
-            btn.BackgroundTransparency = 1
-            btn.Text = "  " .. tostring(item)
-            btn.TextColor3 = Theme.SubText
-            btn.Font = Enum.Font.Gotham
-            btn.TextSize = 11
-            btn.TextXAlignment = Enum.TextXAlignment.Left
-            btn.MouseButton1Click:Connect(function()
-                label.Text = headerText .. ": " .. tostring(item)
-                if callback then callback(item) end
-                isDropped = false
-                TweenService:Create(container, TweenInfo.new(0.2), {Size = UDim2.new(0.92, 0, 0, 0)}):Play()
-            end)
-        end
-    end
-    
-    local clickArea = Instance.new("TextButton", frame)
-    clickArea.Size = UDim2.new(1, 0, 1, 0)
-    clickArea.BackgroundTransparency = 1
-    clickArea.Text = ""
-    SecureTrigger(clickArea, function()
-        isDropped = not isDropped
-        if isDropped then populate() end
-        TweenService:Create(container, TweenInfo.new(0.2), {Size = isDropped and UDim2.new(0.92, 0, 0, list.AbsoluteContentSize.Y) or UDim2.new(0.92, 0, 0, 0)}):Play()
-    end)
-end
+-- ========================================================
+-- TAB 1: COMBAT
+-- ========================================================
+local T_Combat = CreateMainTab("COMBAT")
 
--- ============================================================================
--- FEATURE LOGICS
--- ============================================================================
-
--- 1. Movement Helpers
-local flyBodyPos, flyBodyGyro
-local function ToggleFly(state)
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    
-    if state then
-        flyBodyPos = Instance.new("BodyPosition", root)
-        flyBodyPos.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-        flyBodyPos.Position = root.Position
-        
-        flyBodyGyro = Instance.new("BodyGyro", root)
-        flyBodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-        flyBodyGyro.CFrame = root.CFrame
-        
-        task.spawn(function()
-            while RyuConfig.Fly and root and flyBodyPos and flyBodyGyro do
-                local moveDir = Vector3.new(0,0,0)
-                if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + camera.CFrame.LookVector end
-                if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - camera.CFrame.LookVector end
-                if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - camera.CFrame.RightVector end
-                if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + camera.CFrame.RightVector end
-                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
-                if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir = moveDir - Vector3.new(0, 1, 0) end
-                
-                flyBodyPos.Position = flyBodyPos.Position + (moveDir * (RyuConfig.FlySpeed * 0.05))
-                flyBodyGyro.CFrame = camera.CFrame
-                RunService.RenderStepped:Wait()
-            end
-        end)
-    else
-        if flyBodyPos then flyBodyPos:Destroy() end
-        if flyBodyGyro then flyBodyGyro:Destroy() end
-    end
-end
-
--- Speed & Noclip loops
-RunService.Stepped:Connect(function()
-    local char = LocalPlayer.Character
-    if char then
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum and RyuConfig.SpeedToggle then
-            hum.WalkSpeed = RyuConfig.Speed
-        end
-        if RyuConfig.Noclip then
-            for _, v in pairs(char:GetChildren()) do
-                if v:IsA("BasePart") then v.CanCollide = false end
-            end
-        end
-    end
+-- PLAYER
+local S_Player = CreateSection(T_Combat, "Player")
+CreateToggle(S_Player, "Speed Hack", RyuConfig.Speed, function(v) RyuConfig.Speed = v end)
+CreateSlider(S_Player, "Speed Value", 16, 200, RyuConfig.SpeedVal, function(v) RyuConfig.SpeedVal = v end)
+CreateToggle(S_Player, "Fly", RyuConfig.Fly, function(v) RyuConfig.Fly = v end)
+CreateToggle(S_Player, "Jump High", RyuConfig.JumpHigh, function(v) RyuConfig.JumpHigh = v end)
+CreateToggle(S_Player, "Jump Spam (Inf Jump)", RyuConfig.JumpSpam, function(v) RyuConfig.JumpSpam = v end)
+CreateToggle(S_Player, "Noclip", RyuConfig.Noclip, function(v) RyuConfig.Noclip = v end)
+CreateToggle(S_Player, "Invisible (Local/Desync)", RyuConfig.Invisible, function(v) RyuConfig.Invisible = v end)
+CreateButton(S_Player, "Dance (Visible to others)", function()
+    pcall(function() game:GetService("Players"):Chat("/e dance") end)
 end)
 
--- Jump Spam
-RunService.Heartbeat:Connect(function()
-    if RyuConfig.JumpSpam then
-        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
-    end
-end)
+-- AUTO
+local S_Auto = CreateSection(T_Combat, "Auto Features")
+CreateToggle(S_Auto, "Auto Block", RyuConfig.AutoBlock, function(v) RyuConfig.AutoBlock = v end)
+CreateSlider(S_Auto, "Block React Range", 5, 50, RyuConfig.BlockRange, function(v) RyuConfig.BlockRange = v end)
+CreateToggle(S_Auto, "Auto Black Flash", RyuConfig.AutoBlackFlash, function(v) RyuConfig.AutoBlackFlash = v end)
+CreateLabel(S_Auto, "Auto Combos: Join discord.gg/ryuhub and send me clips of combos.")
+CreateToggle(S_Auto, "Auto Dodge (TP Back on DMG)", RyuConfig.AutoDodge, function(v) RyuConfig.AutoDodge = v end)
+CreateSlider(S_Auto, "Dodge TP Distance", 5, 50, RyuConfig.DodgeRange, function(v) RyuConfig.DodgeRange = v end)
 
--- Auto Block / Parry & Auto Dodge
-local lastDodgeTick = tick()
-local lastHealth = 100
-
-RunService.Heartbeat:Connect(function()
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if not root or not hum then return end
-    
-    -- Auto Block
-    if RyuConfig.AutoBlock then
+-- ABILITY
+local S_Abil = CreateSection(T_Combat, "Abilities")
+CreateToggle(S_Abil, "Lock On (Nearest)", RyuConfig.LockOn, function(v) RyuConfig.LockOn = v end)
+CreateToggle(S_Abil, "Knockback M1s", RyuConfig.Knockback, function(v) RyuConfig.Knockback = v end)
+CreateSlider(S_Abil, "Knockback Force", 10, 200, RyuConfig.KnockbackVal, function(v) RyuConfig.KnockbackVal = v end)
+CreateButton(S_Abil, "TP All To Me (Visual/Bring)", function()
+    pcall(function()
+        local hrp = LocalPlayer.Character.HumanoidRootPart
         for _, p in pairs(Players:GetPlayers()) do
             if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                local eRoot = p.Character.HumanoidRootPart
-                local dist = (eRoot.Position - root.Position).Magnitude
-                if dist <= RyuConfig.BlockRange then
-                    pcall(function()
-                        BlockActivated:FireServer()
-                        task.delay(RyuConfig.BlockTimer, function()
-                            BlockDeactivated:FireServer()
-                        end)
-                    end)
-                    break
+                p.Character.HumanoidRootPart.CFrame = hrp.CFrame * CFrame.new(0,0,-3)
+            end
+        end
+    end)
+end)
+CreateToggle(S_Abil, "Domain Eraser (Bypass Domains)", RyuConfig.DomainBypass, function(v) RyuConfig.DomainBypass = v end)
+CreateToggle(S_Abil, "No Cooldown Dash Spam", RyuConfig.DashSpam, function(v) RyuConfig.DashSpam = v end)
+CreateLabel(S_Abil, "Suggest more in discord.gg/ryuhub")
+
+-- ========================================================
+-- TAB 2: FARM
+-- ========================================================
+local T_Farm = CreateMainTab("FARM")
+
+-- AI FARM
+local S_AIFarm = CreateSection(T_Farm, "AI Auto Farm")
+CreateToggle(S_AIFarm, "Enable AI Farm", RyuConfig.AIFarm, function(v) RyuConfig.AIFarm = v end)
+CreateSlider(S_AIFarm, "Chase Range", 10, 500, RyuConfig.AIRange, function(v) RyuConfig.AIRange = v end)
+CreateToggle(S_AIFarm, "Auto Ultimate (G)", RyuConfig.AutoUlt, function(v) RyuConfig.AutoUlt = v end)
+CreateToggle(S_AIFarm, "Human Mode (Strafe/Jump)", RyuConfig.HumanMode, function(v) RyuConfig.HumanMode = v end)
+CreateToggle(S_AIFarm, "Use Skill 1", RyuConfig.S1, function(v) RyuConfig.S1 = v end)
+CreateSlider(S_AIFarm, "S1 Range", 5, 100, RyuConfig.S1R, function(v) RyuConfig.S1R = v end)
+CreateToggle(S_AIFarm, "Use Skill 2", RyuConfig.S2, function(v) RyuConfig.S2 = v end)
+CreateSlider(S_AIFarm, "S2 Range", 5, 100, RyuConfig.S2R, function(v) RyuConfig.S2R = v end)
+CreateToggle(S_AIFarm, "Use Skill 3", RyuConfig.S3, function(v) RyuConfig.S3 = v end)
+CreateSlider(S_AIFarm, "S3 Range", 5, 100, RyuConfig.S3R, function(v) RyuConfig.S3R = v end)
+CreateToggle(S_AIFarm, "Use Skill 4", RyuConfig.S4, function(v) RyuConfig.S4 = v end)
+CreateSlider(S_AIFarm, "S4 Range", 5, 100, RyuConfig.S4R, function(v) RyuConfig.S4R = v end)
+
+-- TARGET
+local S_Target = CreateSection(T_Farm, "Target Settings")
+CreateInput(S_Target, "Target Username...", function(v) RyuConfig.TargetPlayer = v end)
+CreateToggle(S_Target, "Stay Behind Target", RyuConfig.StayBehind, function(v) RyuConfig.StayBehind = v end)
+CreateSlider(S_Target, "Behind Distance", 1, 15, RyuConfig.BehindDist, function(v) RyuConfig.BehindDist = v end)
+
+-- MONEY FARM
+local S_MFarm = CreateSection(T_Farm, "Money Farm (Alt Method)")
+CreateLabel(S_MFarm, "How to use:\n1. Main account should be set to Farmer\n2. Alts should be set to Victim\n3. Turn everything on.\n\nMissunderstandings:\nYes all of your alts need the script (use a roblox cloner)\nBefore you ask help in the discord make sure to check if you did everything right.\nAlso very importan: stay happy in life and never give up.")
+CreateToggle(S_MFarm, "Enable Money Farm", RyuConfig.MoneyFarm, function(v) RyuConfig.MoneyFarm = v end)
+CreateButton(S_MFarm, "Role: " .. RyuConfig.MFRole, function()
+    if RyuConfig.MFRole == "Farmer" then RyuConfig.MFRole = "Victim" else RyuConfig.MFRole = "Farmer" end
+    S_MFarm:GetChildren()[4].Text = "Role: " .. RyuConfig.MFRole
+end)
+CreateInput(S_MFarm, "Victim: Enter Farmer Name", function(v) RyuConfig.MFVictim = v end)
+
+-- CONFIG
+local S_Cfg = CreateSection(T_Farm, "Config & Server")
+CreateToggle(S_Cfg, "Auto Rejoin", RyuConfig.AutoRejoin, function(v) RyuConfig.AutoRejoin = v end)
+CreateSlider(S_Cfg, "Rejoin if players < X", 1, 10, RyuConfig.MinPlayers, function(v) RyuConfig.MinPlayers = v end)
+CreateToggle(S_Cfg, "Find 80% Full Lobby", RyuConfig.HighPop, function(v) RyuConfig.HighPop = v end)
+CreateInput(S_Cfg, "Alt Joiner: Enter Main Name", function(v) RyuConfig.TargetJoinUser = v end)
+CreateButton(S_Cfg, "Join Main", function()
+    -- snipe / join logic placeholder
+    RyuNotify:Send("Alt Joiner", "Attempting to join " .. RyuConfig.TargetJoinUser, 3)
+end)
+CreateButton(S_Cfg, "Save Settings", function()
+    SaveConfig()
+    RyuNotify:Send("Config", "Settings saved!", 3)
+end)
+
+-- init logic
+Tabs[1].Btn.TextColor3 = Theme.Text
+Tabs[1].Btn.BackgroundColor3 = Theme.SectionBG
+Tabs[1].Page.Visible = true
+
+-- ========================================================
+-- CORE ENGINE & LOOP
+-- ========================================================
+local bv = nil
+local lastHealth = 100
+local m1Spamming = false
+local boxSpawned = false
+local boxPart = nil
+
+-- auto black flash variables
+local lastFov = Workspace.CurrentCamera.FieldOfView
+local flashFired = false
+
+-- domain bypass
+Workspace.ChildAdded:Connect(function(c)
+    if RyuConfig.DomainBypass then
+        task.wait(0.1)
+        if c.Name:lower():find("domain") or c.Name:lower():find("sphere") or c:IsA("MeshPart") then
+            c.Transparency = 1
+            if c:IsA("Model") then
+                for _, p in pairs(c:GetDescendants()) do
+                    if p:IsA("BasePart") then p.Transparency = 1 end
                 end
             end
         end
     end
-    
-    -- Auto Dodge (Teleport backwards on hit)
-    if RyuConfig.AutoDodge and hum.Health < lastHealth then
-        if tick() - lastDodgeTick > 1.5 then
-            lastDodgeTick = tick()
-            root.CFrame = root.CFrame * CFrame.new(0, 0, RyuConfig.DodgeDistance)
-            pcall(function()
-                BlockActivated:FireServer()
-                task.delay(0.2, function() BlockDeactivated:FireServer() end)
-            end)
-        end
-    end
-    lastHealth = hum.Health
 end)
 
--- Auto Black Flash (Raycast FOV M1 Click)
-task.spawn(function()
-    while true do
-        task.wait(0.1)
+RunService.Stepped:Connect(function()
+    pcall(function()
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local cam = Workspace.CurrentCamera
+        
+        if not char or not hrp or not hum then return end
+        
+        -- speed
+        if RyuConfig.Speed and hum.MoveDirection.Magnitude > 0 then
+            hrp.CFrame = hrp.CFrame + (hum.MoveDirection * (RyuConfig.SpeedVal / 100))
+        end
+        
+        -- fly
+        if RyuConfig.Fly then
+            if not bv then
+                bv = Instance.new("BodyVelocity", hrp)
+                bv.MaxForce = Vector3.new(1e9,1e9,1e9)
+            end
+            hum.PlatformStand = true
+            local dir = Vector3.zero
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - cam.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + cam.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0,1,0) end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir = dir - Vector3.new(0,1,0) end
+            
+            if dir.Magnitude > 0 then bv.Velocity = dir.Unit * 50 else bv.Velocity = Vector3.zero end
+            
+            -- fly anim spoof
+            if hum:GetState() ~= Enum.HumanoidStateType.Freefall then
+                hum:ChangeState(Enum.HumanoidStateType.Freefall)
+            end
+        else
+            if bv then bv:Destroy(); bv = nil end
+            hum.PlatformStand = false
+        end
+        
+        -- noclip
+        if RyuConfig.Noclip then
+            for _, p in pairs(char:GetDescendants()) do
+                if p:IsA("BasePart") then p.CanCollide = false end
+            end
+        end
+        
+        -- invisible (löscht lokales right leg = r6 invis glitch oft, oder offset)
+        if RyuConfig.Invisible then
+            local lower = char:FindFirstChild("LowerTorso")
+            if lower and lower.Transparency == 0 then
+                for _, p in pairs(char:GetDescendants()) do
+                    if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then p.Transparency = 1 end
+                end
+            end
+        end
+        
+        -- knockback
+        if RyuConfig.Knockback then
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    local tHrp = p.Character.HumanoidRootPart
+                    if (tHrp.Position - hrp.Position).Magnitude < 5 then
+                        tHrp.Velocity = hrp.CFrame.LookVector * RyuConfig.KnockbackVal
+                    end
+                end
+            end
+        end
+        
+        -- lock on
+        if RyuConfig.LockOn then
+            local near = nil
+            local d = math.huge
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    local mag = (p.Character.HumanoidRootPart.Position - hrp.Position).Magnitude
+                    if mag < d then d = mag; near = p.Character.HumanoidRootPart end
+                end
+            end
+            if near then cam.CFrame = CFrame.lookAt(cam.CFrame.Position, near.Position) end
+        end
+        
+        -- auto black flash (fov detect)
         if RyuConfig.AutoBlackFlash then
-            local char = LocalPlayer.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            if root then
-                for _, p in pairs(Players:GetPlayers()) do
-                    if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                        local eRoot = p.Character.HumanoidRootPart
-                        local dir = (eRoot.Position - root.Position).Unit
-                        local dot = root.CFrame.LookVector:Dot(dir)
-                        if dot > 0.75 and (eRoot.Position - root.Position).Magnitude < 12 then
-                            -- Trigger Divergent / Chase & M1 Simulation
-                            if DivergentActivated and char:FindFirstChild("Moveset") and char.Moveset:FindFirstChild("Divergent Fist") then
-                                pcall(function() DivergentActivated:FireServer(char.Moveset["Divergent Fist"]) end)
+            local cfov = cam.FieldOfView
+            if cfov > lastFov and lastFov < 50 and not flashFired then
+                flashFired = true
+                VirtualInputManager:SendMouseButtonEvent(cam.ViewportSize.X/2, cam.ViewportSize.Y/2, 0, true, game, 0)
+                task.wait(0.05)
+                VirtualInputManager:SendMouseButtonEvent(cam.ViewportSize.X/2, cam.ViewportSize.Y/2, 0, false, game, 0)
+                task.delay(1, function() flashFired = false end)
+            end
+            lastFov = cfov
+        end
+        
+        -- auto dodge
+        if RyuConfig.AutoDodge then
+            if hum.Health < lastHealth then
+                hrp.CFrame = hrp.CFrame * CFrame.new(0, 0, RyuConfig.DodgeRange)
+            end
+        end
+        lastHealth = hum.Health
+        
+        -- auto block
+        if RyuConfig.AutoBlock and remotes.BlockOn and remotes.BlockOff then
+            local enemyAttacking = false
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    if (p.Character.HumanoidRootPart.Position - hrp.Position).Magnitude <= RyuConfig.BlockRange then
+                        local eHum = p.Character:FindFirstChild("Humanoid")
+                        if eHum and eHum:FindFirstChild("Animator") then
+                            for _, t in pairs(eHum.Animator:GetPlayingAnimationTracks()) do
+                                if t.Name:lower():find("attack") or t.Name:lower():find("m1") or t.Name:lower():find("punch") then
+                                    enemyAttacking = true
+                                    break
+                                end
                             end
-                            if ItadoriChase then
-                                pcall(function() ItadoriChase:FireServer(false) end)
-                            end
-                            pcall(function()
-                                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
-                                task.wait(0.05)
-                                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
-                            end)
                         end
                     end
                 end
             end
-        end
-    end
-end)
-
--- Stick / Orbit Target
-RunService.RenderStepped:Connect(function()
-    if RyuConfig.StickToTarget and RyuConfig.SelectedTarget ~= "" then
-        local targetPlayer = Players:FindFirstChild(RyuConfig.SelectedTarget)
-        local tRoot = targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-        local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if tRoot and root then
-            root.CFrame = tRoot.CFrame * CFrame.new(0, 0, RyuConfig.StickDistance)
-        end
-    end
-end)
-
--- AI Auto Farm Core
-task.spawn(function()
-    while true do
-        task.wait(0.15)
-        if RyuConfig.AiFarm then
-            local char = LocalPlayer.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if not root or not hum then continue end
-            
-            local closestTarget = nil
-            local minDistance = math.huge
-            
-            for _, p in pairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChildOfClass("Humanoid") and p.Character:FindFirstChildOfClass("Humanoid").Health > 0 then
-                    local dist = (p.Character.HumanoidRootPart.Position - root.Position).Magnitude
-                    if dist < minDistance then
-                        minDistance = dist
-                        closestTarget = p.Character.HumanoidRootPart
-                    end
-                end
-            end
-            
-            if closestTarget then
-                local dist = (closestTarget.Position - root.Position).Magnitude
-                
-                -- Move towards target
-                if dist > RyuConfig.AttackRange then
-                    hum:MoveTo(closestTarget.Position)
-                    if RyuConfig.HumanMode and math.random(1, 4) == 1 then
-                        hum:ChangeState(Enum.HumanoidStateType.Jumping)
-                        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Q, false, game)
-                        task.delay(0.05, function() VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Q, false, game) end)
-                    end
-                else
-                    -- Spam Attacks & Skills
-                    root.CFrame = CFrame.lookAt(root.Position, Vector3.new(closestTarget.Position.X, root.Position.Y, closestTarget.Position.Z))
-                    
-                    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 1)
-                    task.wait(0.03)
-                    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 1)
-                    
-                    local keys = {}
-                    if RyuConfig.UseSkill1 and dist <= RyuConfig.Skill1Range then table.insert(keys, Enum.KeyCode.One) end
-                    if RyuConfig.UseSkill2 and dist <= RyuConfig.Skill2Range then table.insert(keys, Enum.KeyCode.Two) end
-                    if RyuConfig.UseSkill3 and dist <= RyuConfig.Skill3Range then table.insert(keys, Enum.KeyCode.Three) end
-                    if RyuConfig.UseSkill4 and dist <= RyuConfig.Skill4Range then table.insert(keys, Enum.KeyCode.Four) end
-                    if RyuConfig.AutoUlt then table.insert(keys, Enum.KeyCode.G) end
-                    
-                    if #keys > 0 then
-                        local selectedKey = keys[math.random(1, #keys)]
-                        VirtualInputManager:SendKeyEvent(true, selectedKey, false, game)
-                        task.delay(0.05, function() VirtualInputManager:SendKeyEvent(false, selectedKey, false, game) end)
-                    end
-                end
+            if enemyAttacking then
+                remotes.BlockOn:FireServer()
+            else
+                remotes.BlockOff:FireServer()
             end
         end
-    end
-end)
-
--- Money Farm (Cage + Victim TP)
-local moneyFarmCage
-task.spawn(function()
-    while true do
-        task.wait(0.5)
-        local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if not root then continue end
         
-        if RyuConfig.MoneyFarm then
-            if not moneyFarmCage then
-                moneyFarmCage = Instance.new("Part", Workspace)
-                moneyFarmCage.Size = Vector3.new(20, 1, 20)
-                moneyFarmCage.Position = Vector3.new(0, 5000, 0)
-                moneyFarmCage.Anchored = true
+        -- no cooldown dash (spamming chase remote)
+        if RyuConfig.DashSpam and remotes.Chase then
+            if hum.MoveDirection.Magnitude > 0 then
+                remotes.Chase:FireServer(false)
+            end
+        end
+        
+        -- stay behind target
+        if RyuConfig.StayBehind and RyuConfig.TargetPlayer ~= "" then
+            local tPlr = Players:FindFirstChild(RyuConfig.TargetPlayer)
+            if tPlr and tPlr.Character and tPlr.Character:FindFirstChild("HumanoidRootPart") then
+                hrp.CFrame = tPlr.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, RyuConfig.BehindDist)
+            end
+        end
+        
+        -- AI FARM
+        if RyuConfig.AIFarm then
+            local target = nil
+            local minD = RyuConfig.AIRange
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChild("Humanoid").Health > 0 then
+                    local d = (p.Character.HumanoidRootPart.Position - hrp.Position).Magnitude
+                    if d < minD then minD = d; target = p.Character end
+                end
             end
             
-            if RyuConfig.Role == "Farmer" then
-                if (root.Position - moneyFarmCage.Position).Magnitude > 30 then
-                    root.CFrame = moneyFarmCage.CFrame * CFrame.new(0, 4, 0)
+            if target then
+                local tHrp = target.HumanoidRootPart
+                if RyuConfig.HumanMode then
+                    hum:MoveTo(tHrp.Position)
+                    if math.random(1, 100) > 95 then hum.Jump = true end
+                else
+                    hrp.CFrame = tHrp.CFrame * CFrame.new(0, 0, 3)
                 end
-                RyuConfig.AiFarm = true
-            elseif RyuConfig.Role == "Helper" and RyuConfig.VictimTarget ~= "" then
-                local farmerPlayer = Players:FindFirstChild(RyuConfig.VictimTarget)
-                local fRoot = farmerPlayer and farmerPlayer.Character and farmerPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if fRoot then
-                    if RyuConfig.VictimMode == "Walk" then
-                        LocalPlayer.Character.Humanoid:MoveTo(fRoot.Position)
-                    else
-                        if (fRoot.Position - root.Position).Magnitude > 10 then
-                            root.CFrame = fRoot.CFrame * CFrame.new(0, 0, 3)
+                
+                if not m1Spamming then
+                    m1Spamming = true
+                    task.spawn(function()
+                        VirtualInputManager:SendMouseButtonEvent(0,0,0,true,game,0)
+                        task.wait(0.1)
+                        VirtualInputManager:SendMouseButtonEvent(0,0,0,false,game,0)
+                        
+                        if RyuConfig.S1 and minD <= RyuConfig.S1R then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.One, false, game) end
+                        if RyuConfig.S2 and minD <= RyuConfig.S2R then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Two, false, game) end
+                        if RyuConfig.S3 and minD <= RyuConfig.S3R then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game) end
+                        if RyuConfig.S4 and minD <= RyuConfig.S4R then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Four, false, game) end
+                        if RyuConfig.AutoUlt then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.G, false, game) end
+                        
+                        task.wait(0.2)
+                        m1Spamming = false
+                    end)
+                end
+            end
+        end
+        
+        -- MONEY FARM (BOX & ROLES)
+        if RyuConfig.MoneyFarm then
+            if not boxSpawned then
+                boxPart = Instance.new("Part", Workspace)
+                boxPart.Size = Vector3.new(100, 5, 100)
+                boxPart.Position = Vector3.new(0, 50000, 0)
+                boxPart.Anchored = true
+                boxPart.Transparency = 0.5
+                boxSpawned = true
+            end
+            
+            if RyuConfig.MFRole == "Farmer" then
+                if hrp.Position.Y < 49000 then hrp.CFrame = CFrame.new(0, 50005, 0) end
+                RyuConfig.AIFarm = true -- force ai farm for farmer
+            elseif RyuConfig.MFRole == "Victim" and RyuConfig.MFVictim ~= "" then
+                local fPlr = nil
+                for _, p in pairs(Players:GetPlayers()) do
+                    if p.Name:lower():find(RyuConfig.MFVictim:lower()) or p.DisplayName:lower():find(RyuConfig.MFVictim:lower()) then
+                        fPlr = p
+                        break
+                    end
+                end
+                if fPlr and fPlr.Character and fPlr.Character:FindFirstChild("HumanoidRootPart") then
+                    local fHrp = fPlr.Character.HumanoidRootPart
+                    local d = (hrp.Position - fHrp.Position).Magnitude
+                    if fHrp.Position.Y > 49000 then
+                        if d > 10 then
+                            hrp.CFrame = fHrp.CFrame * CFrame.new(0, 0, -2)
+                        else
+                            hum:MoveTo(fHrp.Position)
                         end
                     end
                 end
             end
         else
-            if moneyFarmCage then
-                moneyFarmCage:Destroy()
-                moneyFarmCage = nil
-            end
+            if boxSpawned and boxPart then boxPart:Destroy(); boxSpawned = false end
         end
-    end
-end)
-
--- Server Hop & Alt Join
-local function ServerHop(fullThreshold, isHigh)
-    local placeId = game.PlaceId
-    local serversApi = "https://games.roblox.com/v1/games/" .. placeId .. "/servers/Public?sortOrder=Desc&limit=100"
-    pcall(function()
-        local raw = game:HttpGet(serversApi)
-        local data = HttpService:JSONDecode(raw)
-        if data and data.data then
-            for _, s in ipairs(data.data) do
-                if s.playing and s.maxPlayers and s.id ~= game.JobId then
-                    local fillRate = s.playing / s.maxPlayers
-                    if isHigh and fillRate >= (fullThreshold / 100) and s.playing < s.maxPlayers then
-                        TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
-                        break
-                    elseif not isHigh and fillRate <= (fullThreshold / 100) then
-                        TeleportService:TeleportToPlaceInstance(placeId, s.id, LocalPlayer)
-                        break
-                    end
-                end
-            end
-        end
+        
     end)
-end
-
--- ============================================================================
--- UI TABS SETUP
--- ============================================================================
-
-local function GetPlayerList()
-    local list = {}
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then table.insert(list, p.Name) end
-    end
-    return list
-end
-
--- TAB 1: COMBAT
-local TabCombat = CreateMainTab("Combat")
-
--- Subtab: Player
-local SubPlayer = CreateSubTab(TabCombat, "Player")
-local SecPlayer = CreateSection(SubPlayer, "Movement & Modifications")
-CreateToggle(SecPlayer, "Speed Modifier", "Applies custom walkspeed to character.", RyuConfig.SpeedToggle, function(v) RyuConfig.SpeedToggle = v end)
-CreateSlider(SecPlayer, "Speed Amount", 16, 120, RyuConfig.Speed, function(v) RyuConfig.Speed = v end)
-CreateToggle(SecPlayer, "Fly", "Fly freely in any direction using camera.", RyuConfig.Fly, function(v) RyuConfig.Fly = v; ToggleFly(v) end)
-CreateSlider(SecPlayer, "Fly Speed", 20, 150, RyuConfig.FlySpeed, function(v) RyuConfig.FlySpeed = v end)
-CreateSlider(SecPlayer, "Jump Power", 50, 200, RyuConfig.JumpPower, function(v)
-    RyuConfig.JumpPower = v
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
-        LocalPlayer.Character.Humanoid.JumpPower = v
-    end
 end)
-CreateToggle(SecPlayer, "Jump Spam", "Spams jumping to ascend infinitely.", RyuConfig.JumpSpam, function(v) RyuConfig.JumpSpam = v end)
-CreateToggle(SecPlayer, "Noclip", "Walk through all solid walls.", RyuConfig.Noclip, function(v) RyuConfig.Noclip = v end)
-CreateToggle(SecPlayer, "Invisibility", "Turns character model client-side invisible.", RyuConfig.Invisible, function(v)
-    RyuConfig.Invisible = v
-    if LocalPlayer.Character then
-        for _, p in pairs(LocalPlayer.Character:GetDescendants()) do
-            if p:IsA("BasePart") or p:IsA("Decal") then p.Transparency = v and 1 or 0 end
+
+-- jump overrides
+UserInputService.JumpRequest:Connect(function()
+    if RyuConfig.JumpSpam then
+        local c = LocalPlayer.Character
+        if c and c:FindFirstChild("HumanoidRootPart") then
+            c.HumanoidRootPart.Velocity = Vector3.new(c.HumanoidRootPart.Velocity.X, 50, c.HumanoidRootPart.Velocity.Z)
+        end
+    elseif RyuConfig.JumpHigh then
+        local c = LocalPlayer.Character
+        if c and c:FindFirstChild("HumanoidRootPart") then
+            c.HumanoidRootPart.Velocity = Vector3.new(c.HumanoidRootPart.Velocity.X, 150, c.HumanoidRootPart.Velocity.Z)
         end
     end
 end)
-CreateButton(SecPlayer, "Play Dance (Sync)", function()
-    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-    if hum then
-        local anim = Instance.new("Animation")
-        anim.AnimationId = "rbxassetid://507771019"
-        local track = hum:LoadAnimation(anim)
-        track:Play()
-    end
-end)
 
--- Subtab: Auto
-local SubAuto = CreateSubTab(TabCombat, "Auto")
-local SecAuto = CreateSection(SubAuto, "Combat Automation")
-CreateToggle(SecAuto, "Auto Block / Parry", "Automatically blocks enemy attacks in range.", RyuConfig.AutoBlock, function(v) RyuConfig.AutoBlock = v end)
-CreateSlider(SecAuto, "Block Hold Time (s)", 0.1, 2, RyuConfig.BlockTimer, function(v) RyuConfig.BlockTimer = v end)
-CreateSlider(SecAuto, "Block Range (Studs)", 5, 30, RyuConfig.BlockRange, function(v) RyuConfig.BlockRange = v end)
-CreateToggle(SecAuto, "Auto Black Flash", "Raycasts opponent FOV and executes flash M1.", RyuConfig.AutoBlackFlash, function(v) RyuConfig.AutoBlackFlash = v end)
-CreateToggle(SecAuto, "Auto Dodge (Backstep)", "Teleports backward instantly on damage.", RyuConfig.AutoDodge, function(v) RyuConfig.AutoDodge = v end)
-CreateSlider(SecAuto, "Dodge Distance", 10, 60, RyuConfig.DodgeDistance, function(v) RyuConfig.DodgeDistance = v end)
-
-local SecCombos = CreateSection(SubAuto, "Auto Combos")
-local comboLabel = Instance.new("TextLabel", SecCombos)
-comboLabel.Size = UDim2.new(0.92, 0, 0, 30); comboLabel.BackgroundTransparency = 1
-comboLabel.Text = "Join discord.gg/ryuhub and send me clips of combos."; comboLabel.TextColor3 = Theme.SubText
-comboLabel.Font = Enum.Font.Gotham; comboLabel.TextSize = 11; comboLabel.TextWrapped = true
-
--- Subtab: Ability
-local SubAbility = CreateSubTab(TabCombat, "Ability")
-local SecAbility = CreateSection(SubAbility, "Super Abilities")
-CreateToggle(SecAbility, "Lock-On Target", "Locks camera orientation toward nearest foe.", RyuConfig.LockOn, function(v) RyuConfig.LockOn = v end)
-CreateToggle(SecAbility, "Knockback Multiplier", "Flings opponents away upon receiving M1.", RyuConfig.Knockback, function(v) RyuConfig.Knockback = v end)
-CreateSlider(SecAbility, "Knockback Force", 50, 300, RyuConfig.KnockbackPower, function(v) RyuConfig.KnockbackPower = v end)
-CreateButton(SecAbility, "TP All Players To Me", function()
-    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if root then
-        for _, p in pairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                p.Character.HumanoidRootPart.CFrame = root.CFrame * CFrame.new(0, 0, -3)
+-- auto rejoin logic
+task.spawn(function()
+    while task.wait(5) do
+        if RyuConfig.AutoRejoin then
+            if #Players:GetPlayers() <= RyuConfig.MinPlayers then
+                local url = "https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100"
+                pcall(function()
+                    local req = game:HttpGet(url)
+                    local data = HttpService:JSONDecode(req)
+                    for _, s in pairs(data.data) do
+                        if s.playing < s.maxPlayers and s.id ~= game.JobId then
+                            local ratio = s.playing / s.maxPlayers
+                            if RyuConfig.HighPop and ratio >= 0.7 and ratio <= 0.9 then
+                                TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer)
+                                break
+                            elseif not RyuConfig.HighPop and s.playing > 2 then
+                                TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer)
+                                break
+                            end
+                        end
+                    end
+                end)
             end
         end
     end
-end)
-CreateToggle(SecAbility, "Infinite Awakening Gauge", "Simulates continuous ultimate state.", RyuConfig.InfiniteAwakening, function(v) RyuConfig.InfiniteAwakening = v end)
-CreateButton(SecAbility, "Instant Reverse Cursed Technique", function()
-    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-    if hum then hum.Health = hum.MaxHealth end
-end)
-
-local suggestLabel = Instance.new("TextLabel", SecAbility)
-suggestLabel.Size = UDim2.new(0.92, 0, 0, 20); suggestLabel.BackgroundTransparency = 1
-suggestLabel.Text = "suggest more in discord.gg/ryuhub"; suggestLabel.TextColor3 = Theme.SubText
-suggestLabel.Font = Enum.Font.GothamBold; suggestLabel.TextSize = 11
-
--- TAB 2: FARM
-local TabFarm = CreateMainTab("Farm")
-
--- Subtab: AI Auto Farm
-local SubAiFarm = CreateSubTab(TabFarm, "AI Auto Farm")
-local SecAi = CreateSection(SubAiFarm, "Automated Player Farming")
-CreateToggle(SecAi, "Enable AI Auto Farm", "Tracks nearest player, spams M1s and skills.", RyuConfig.AiFarm, function(v) RyuConfig.AiFarm = v end)
-CreateSlider(SecAi, "Attack Engagement Range", 5, 25, RyuConfig.AttackRange, function(v) RyuConfig.AttackRange = v end)
-CreateToggle(SecAi, "Auto Ultimate (G)", "Triggers awakening immediately when ready.", RyuConfig.AutoUlt, function(v) RyuConfig.AutoUlt = v end)
-CreateToggle(SecAi, "Use Skill 1", RyuConfig.UseSkill1, function(v) RyuConfig.UseSkill1 = v end)
-CreateSlider(SecAi, "Skill 1 Range", 5, 30, RyuConfig.Skill1Range, function(v) RyuConfig.Skill1Range = v end)
-CreateToggle(SecAi, "Use Skill 2", RyuConfig.UseSkill2, function(v) RyuConfig.UseSkill2 = v end)
-CreateSlider(SecAi, "Skill 2 Range", 5, 30, RyuConfig.Skill2Range, function(v) RyuConfig.Skill2Range = v end)
-CreateToggle(SecAi, "Use Skill 3", RyuConfig.UseSkill3, function(v) RyuConfig.UseSkill3 = v end)
-CreateSlider(SecAi, "Skill 3 Range", 5, 30, RyuConfig.Skill3Range, function(v) RyuConfig.Skill3Range = v end)
-CreateToggle(SecAi, "Use Skill 4", RyuConfig.UseSkill4, function(v) RyuConfig.UseSkill4 = v end)
-CreateSlider(SecAi, "Skill 4 Range", 5, 30, RyuConfig.Skill4Range, function(v) RyuConfig.Skill4Range = v end)
-CreateToggle(SecAi, "Human-Like Movements", "Adds strafes, jump dashes (Q), and natural steps.", RyuConfig.HumanMode, function(v) RyuConfig.HumanMode = v end)
-
--- Subtab: Target
-local SubTarget = CreateSubTab(TabFarm, "Target")
-local SecTarget = CreateSection(SubTarget, "Target Stalking")
-CreateDropdown(SecTarget, "Select Player", GetPlayerList, "None", function(v) RyuConfig.SelectedTarget = v end)
-CreateToggle(SecTarget, "Stick Behind Player", "Permanently positions character behind target.", RyuConfig.StickToTarget, function(v) RyuConfig.StickToTarget = v end)
-CreateSlider(SecTarget, "Follow Offset Distance", 2, 15, RyuConfig.StickDistance, function(v) RyuConfig.StickDistance = v end)
-
--- Subtab: Money Farm
-local SubMoney = CreateSubTab(TabFarm, "Money Farm")
-local SecMoney = CreateSection(SubMoney, "Sky-Cage Automated Farm")
-CreateToggle(SecMoney, "Enable Money Farm", "Spawns a 5k stud sky cage and farms alts.", RyuConfig.MoneyFarm, function(v) RyuConfig.MoneyFarm = v end)
-CreateDropdown(SecMoney, "Account Role", {"Farmer", "Helper"}, RyuConfig.Role, function(v) RyuConfig.Role = v end)
-CreateDropdown(SecMoney, "Helper Target", GetPlayerList, "None", function(v) RyuConfig.VictimTarget = v end)
-CreateDropdown(SecMoney, "Helper Mode", {"Walk", "Teleport"}, RyuConfig.VictimMode, function(v) RyuConfig.VictimMode = v end)
-
-local SecMoneyInfo = CreateSection(SubMoney, "Guide & Instructions")
-local infoText = Instance.new("TextLabel", SecMoneyInfo)
-infoText.Size = UDim2.new(0.92, 0, 0, 150); infoText.BackgroundTransparency = 1
-infoText.Text = "How to use:\n1. Main account should be set to farmer\n2. Alts should be set to helper\n3. Turn everything on.\n\nMissunderstandings:\nYes all of your alts need the script (use a roblox cloner)\nBefore you ask help in the discord make sure to check if you did everything right.\n\nAlso very important: stay happy in life and never give up."
-infoText.TextColor3 = Theme.SubText; infoText.Font = Enum.Font.Gotham; infoText.TextSize = 11
-infoText.TextXAlignment = Enum.TextXAlignment.Left; infoText.TextWrapped = true
-
--- Subtab: Config
-local SubConfig = CreateSubTab(TabFarm, "Config")
-local SecConfig = CreateSection(SubConfig, "Server & Multi-Account Settings")
-CreateToggle(SecConfig, "Auto Rejoin on Player Count", "Rejoins if lobby players drop below count.", RyuConfig.AutoRejoin, function(v) RyuConfig.AutoRejoin = v end)
-CreateSlider(SecConfig, "Player Threshold", 1, 15, RyuConfig.RejoinThreshold, function(v) RyuConfig.RejoinThreshold = v end)
-CreateDropdown(SecConfig, "Lobby Type", {"High", "Low"}, RyuConfig.LobbyType, function(v) RyuConfig.LobbyType = v end)
-CreateButton(SecConfig, "Rejoin Matching Server", function()
-    ServerHop(80, RyuConfig.LobbyType == "High")
-end)
-CreateTextBox(SecConfig, "Main Account Username", function(v) RyuConfig.MainAccountName = v end)
-CreateButton(SecConfig, "Join Main Account", function()
-    if RyuConfig.MainAccountName ~= "" then
-        RyuNotify:Send("Alt Joiner", "Searching session for " .. RyuConfig.MainAccountName, 3)
-    end
-end)
-CreateButton(SecConfig, "Save Settings", function()
-    SaveSettings()
-    RyuNotify:Send("Settings", "Config successfully saved!", 3)
-end)
-
--- init
-task.spawn(function()
-    if Tabs[1] and Tabs[1].ToggleFunc then Tabs[1].ToggleFunc() end
-    if Tabs[1].SubTabs[1] and Tabs[1].SubTabs[1].SelectFunc then Tabs[1].SubTabs[1].SelectFunc() end
-    RyuNotify:Send("Ryu Hub", "Jujutsu Shenanigans Edition Loaded!", 3)
 end)
