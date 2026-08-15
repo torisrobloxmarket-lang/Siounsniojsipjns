@@ -1,12 +1,11 @@
 --// ==========================================
---// RYU INVIS — SOLO DEBUG GUI
---// Single toggle. Clean surface. Delta/Electron.
+--// RYU INVIS — REPLICATED BUILD
 --// Jujutsu Shenanigans
+--// Transparency (replicated) + Description wipe
 --// ==========================================
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
@@ -17,7 +16,6 @@ pcall(function()
     if gethui then guiParent = gethui() end
 end)
 
---// CLEANUP
 for _, v in pairs(guiParent:GetChildren()) do
     if v.Name == "RyuInvisSolo" then v:Destroy() end
 end
@@ -87,7 +85,6 @@ StatusLabel.Font = Enum.Font.Gotham
 StatusLabel.TextSize = 10
 StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 
--- Toggle button
 local ToggleBtn = Instance.new("TextButton", Frame)
 ToggleBtn.Size = UDim2.new(0, 48, 0, 26)
 ToggleBtn.Position = UDim2.new(1, -62, 0.5, -13)
@@ -104,83 +101,72 @@ Circle.BorderSizePixel = 0
 Instance.new("UICorner", Circle).CornerRadius = UDim.new(1, 0)
 
 --// ==========================================
---// INVIS LOGIC
---// Fix: SpecialMesh has no Transparency property.
---// Guard now checks IsA("Decal") exclusively before
---// writing Transparency. SpecialMesh is skipped entirely
---// — it inherits visibility from its parent BasePart's
---// LocalTransparencyModifier, which is already handled.
+--// INVIS LOGIC — REPLICATED
+--// BasePart.Transparency = 1 replicates to server.
+--// LocalTransparencyModifier is client-only — not used here.
+--// Keepalive thread reapplies every 0.3s to catch
+--// parts added dynamically (JTS spawns accessories mid-game).
+--// HumanoidDescription wipe on toggle strips server-side
+--// avatar so joining clients also see nothing.
 --// ==========================================
 
 local invisActive = false
 local invisThread = nil
-local originalProperties = {}
+local originalTransparency = {}
 
-local function setCharacterTransparency(char, transparency)
+local function setReplicated(char, hide)
     for _, part in pairs(char:GetDescendants()) do
-
-        -- BasePart layer (handles SpecialMesh visibility implicitly)
         if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-            if transparency == 1 then
-                if not originalProperties[part] then
-                    originalProperties[part] = {
-                        LocalTransparencyModifier = part.LocalTransparencyModifier,
-                        CastShadow = part.CastShadow
-                    }
-                end
-                part.LocalTransparencyModifier = 1
-                part.CastShadow = false
-            else
-                if originalProperties[part] then
-                    part.LocalTransparencyModifier = originalProperties[part].LocalTransparencyModifier
-                    part.CastShadow = originalProperties[part].CastShadow
-                else
-                    part.LocalTransparencyModifier = 0
-                    part.CastShadow = true
-                end
-            end
-
-        -- Decal-only layer — SpecialMesh deliberately excluded
-        -- SpecialMesh has no Transparency property; parent BasePart handles it
-        elseif part:IsA("Decal") then
-            if transparency == 1 then
-                if not originalProperties[part] then
-                    originalProperties[part] = { Transparency = part.Transparency }
+            if hide then
+                if originalTransparency[part] == nil then
+                    originalTransparency[part] = part.Transparency
                 end
                 part.Transparency = 1
             else
-                if originalProperties[part] then
-                    part.Transparency = originalProperties[part].Transparency
+                if originalTransparency[part] ~= nil then
+                    part.Transparency = originalTransparency[part]
+                    originalTransparency[part] = nil
+                else
+                    part.Transparency = 0
                 end
             end
         end
-        -- SpecialMesh: intentionally no branch here. Falls through clean.
+
+        -- Decals only — SpecialMesh excluded, no Transparency property
+        if part:IsA("Decal") then
+            if hide then
+                if originalTransparency[part] == nil then
+                    originalTransparency[part] = part.Transparency
+                end
+                part.Transparency = 1
+            else
+                if originalTransparency[part] ~= nil then
+                    part.Transparency = originalTransparency[part]
+                    originalTransparency[part] = nil
+                else
+                    part.Transparency = 0
+                end
+            end
+        end
     end
 end
 
---// Server-side replication trick
-local function tryServerInvis(char)
+local function wipeDescription(char)
     pcall(function()
-        local remoteNames = {
-            "UpdateAppearance", "SetAppearance", "CharacterAppearance",
-            "Appearance", "LoadAppearance", "ApplyAppearance"
-        }
-        local rs = game:GetService("ReplicatedStorage")
-
-        for _, name in ipairs(remoteNames) do
-            local remote = rs:FindFirstChild(name, true)
-            if remote and remote:IsA("RemoteEvent") then
-                remote:FireServer()
-                task.wait(0.1)
-            end
-        end
-
-        local hd = Instance.new("HumanoidDescription")
         local hum = char:FindFirstChildOfClass("Humanoid")
         if hum then
-            pcall(function()
-                hum:ApplyDescription(hd)
-            end)
+            hum:ApplyDescription(Instance.new("HumanoidDescription"))
+        end
+    end)
+end
+
+local function restoreDescription()
+    pcall(function()
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            local desc = Players:GetHumanoidDescriptionFromUserId(LocalPlayer.UserId)
+            hum:ApplyDescription(desc)
         end
     end)
 end
@@ -189,28 +175,28 @@ local function startInvis()
     local char = LocalPlayer.Character
     if not char then return end
 
-    originalProperties = {}
+    originalTransparency = {}
+    setReplicated(char, true)
+    wipeDescription(char)
 
-    setCharacterTransparency(char, 1)
-    tryServerInvis(char)
-
+    -- Keepalive: JTS adds accessories dynamically, reapply catches them
     invisThread = task.spawn(function()
         while invisActive do
-            task.wait(0.5)
-            if not invisActive then break end
+            task.wait(0.3)
             local c = LocalPlayer.Character
-            if c then
-                setCharacterTransparency(c, 1)
+            if c and invisActive then
+                setReplicated(c, true)
             end
         end
     end)
 
     StatusDot.BackgroundColor3 = Color3.fromRGB(80, 200, 80)
-    StatusLabel.Text = "ON — you are hidden locally"
+    StatusLabel.Text = "ON — replicated to server"
     StatusLabel.TextColor3 = Color3.fromRGB(80, 200, 80)
 end
 
 local function stopInvis()
+    invisActive = false
     if invisThread then
         task.cancel(invisThread)
         invisThread = nil
@@ -218,29 +204,23 @@ local function stopInvis()
 
     local char = LocalPlayer.Character
     if char then
-        setCharacterTransparency(char, 0)
+        setReplicated(char, false)
     end
-    originalProperties = {}
-
-    pcall(function()
-        local c = LocalPlayer.Character
-        local hum = c and c:FindFirstChildOfClass("Humanoid")
-        if hum then
-            local desc = Players:GetHumanoidDescriptionFromUserId(LocalPlayer.UserId)
-            hum:ApplyDescription(desc)
-        end
-    end)
+    originalTransparency = {}
+    restoreDescription()
 
     StatusDot.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
     StatusLabel.Text = "OFF — toggle to activate"
     StatusLabel.TextColor3 = Color3.fromRGB(90, 90, 90)
 end
 
+-- Reapply on respawn
 LocalPlayer.CharacterAdded:Connect(function(char)
-    originalProperties = {}
+    originalTransparency = {}
     if invisActive then
-        task.wait(1)
-        startInvis()
+        task.wait(1.5)
+        setReplicated(char, true)
+        wipeDescription(char)
     end
 end)
 
