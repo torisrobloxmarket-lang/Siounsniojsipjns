@@ -1,340 +1,948 @@
 --// ==========================================
---// RYU HUB - ADVANCED INVISIBLE TEST GUI (30 METHODS)
+--// RYU HUB - UI OVERLAY (TJS EDITION)
+--// 100% MONOCHROME CLEAN TEMPLATE
 --// ==========================================
 
+local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
--- Altes GUI löschen
-local guiParent = LocalPlayer:FindFirstChild("PlayerGui")
-if not guiParent then guiParent = game.CoreGui end
-for _, v in pairs(guiParent:GetChildren()) do
-    if v.Name == "AdvInvisTestGui" then v:Destroy() end
+--// GUI PARENT RESOLVER & CLEANUP
+local guiParent
+pcall(function()
+    if type(gethui) == "function" then
+        guiParent = gethui()
+    elseif syn and syn.protect_gui then
+        guiParent = CoreGui
+    end
+end)
+if not guiParent then guiParent = LocalPlayer:WaitForChild("PlayerGui") end
+
+for _, v in pairs(guiParent:GetChildren()) do 
+    if v.Name == "RyuHubUI" then v:Destroy() end 
 end
 
--- GUI Setup
-local sg = Instance.new("ScreenGui", guiParent)
-sg.Name = "AdvInvisTestGui"
-sg.ResetOnSpawn = false
+--// THEME
+local Theme = {
+    Background = Color3.fromRGB(15, 15, 15),
+    Sidebar = Color3.fromRGB(22, 22, 22),
+    SectionBG = Color3.fromRGB(30, 30, 30),
+    Text = Color3.fromRGB(255, 255, 255),
+    SubText = Color3.fromRGB(150, 150, 150),
+    Accent = Color3.fromRGB(255, 255, 255),
+    ToggleOff = Color3.fromRGB(45, 45, 45),
+    ToggleOn = Color3.fromRGB(255, 255, 255),
+    Stroke = Color3.fromRGB(60, 60, 60)
+}
 
-local frame = Instance.new("Frame", sg)
-frame.Size = UDim2.new(0, 320, 0, 500)
-frame.Position = UDim2.new(0, 50, 0.5, -250)
-frame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-frame.BorderSizePixel = 0
-Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 8)
-Instance.new("UIStroke", frame).Color = Color3.fromRGB(60, 60, 60)
+local MainSize = UDim2.new(0, math.min(750, camera.ViewportSize.X - 40), 0, math.min(480, camera.ViewportSize.Y - 40))
+local SidebarWidth = 160
 
-local title = Instance.new("TextLabel", frame)
-title.Size = UDim2.new(1, 0, 0, 40)
-title.BackgroundTransparency = 1
-title.Text = "Invis Tests (30 Variants)"
-title.TextColor3 = Color3.new(1, 1, 1)
-title.Font = Enum.Font.GothamBold
-title.TextSize = 14
+local RyuHub = Instance.new("ScreenGui")
+RyuHub.Name = "RyuHubUI"
+RyuHub.ResetOnSpawn = false
+RyuHub.IgnoreGuiInset = true
+RyuHub.Parent = guiParent
 
-local scroll = Instance.new("ScrollingFrame", frame)
-scroll.Size = UDim2.new(1, 0, 1, -80)
-scroll.Position = UDim2.new(0, 0, 0, 40)
-scroll.BackgroundTransparency = 1
-scroll.ScrollBarThickness = 4
-local layout = Instance.new("UIListLayout", scroll)
-layout.Padding = UDim.new(0, 5)
-layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-
-local activeConnections = {}
-local function clearLoops()
-    for _, conn in pairs(activeConnections) do conn:Disconnect() end
-    activeConnections = {}
-    print("Loops cleared.")
-end
-
-local resetBtn = Instance.new("TextButton", frame)
-resetBtn.Size = UDim2.new(0.9, 0, 0, 30)
-resetBtn.Position = UDim2.new(0.05, 0, 1, -35)
-resetBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-resetBtn.Text = "RESET / CLEAR LOOPS"
-resetBtn.TextColor3 = Color3.new(1, 1, 1)
-resetBtn.Font = Enum.Font.GothamBold
-resetBtn.TextSize = 12
-Instance.new("UICorner", resetBtn).CornerRadius = UDim.new(0, 4)
-resetBtn.MouseButton1Click:Connect(clearLoops)
-
-local function makeButton(name, func)
-    local btn = Instance.new("TextButton", scroll)
-    btn.Size = UDim2.new(0.95, 0, 0, 30)
-    btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    btn.Text = name
-    btn.TextColor3 = Color3.fromRGB(200, 200, 200)
-    btn.Font = Enum.Font.GothamMedium
-    btn.TextSize = 11
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-    Instance.new("UIStroke", btn).Color = Color3.fromRGB(50, 50, 50)
-    
-    btn.MouseButton1Click:Connect(function()
-        clearLoops()
-        local char = LocalPlayer.Character
-        if not char then return end
-        print("Testing Method: " .. name)
-        btn.TextColor3 = Color3.fromRGB(100, 255, 100)
-        task.delay(0.5, function() btn.TextColor3 = Color3.fromRGB(200, 200, 200) end)
-        pcall(func, char)
+local function AddClickPop(element)
+    local orig = element.Size
+    element.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            pcall(function() TweenService:Create(element, TweenInfo.new(0.1), {Size = UDim2.new(orig.X.Scale, orig.X.Offset - 4, orig.Y.Scale, orig.Y.Offset - 4)}):Play() end)
+        end
+    end)
+    element.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            pcall(function() TweenService:Create(element, TweenInfo.new(0.3), {Size = orig}):Play() end)
+        end
     end)
 end
 
---// ==========================================
---// DIE 30 NEUEN INVISIBLE METHODEN
---// ==========================================
+--// TOGGLE BUTTON (STATIC UNDER ROBLOX LOGO)
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
+ToggleBtn.Position = UDim2.new(0, 15, 0, 60)
+ToggleBtn.BackgroundColor3 = Theme.Sidebar
+ToggleBtn.Text = ""
+ToggleBtn.Parent = RyuHub
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
 
--- [ MATH & PHYSICS BREAKERS ]
-makeButton("11. NaN CFrame (Math Break)", function(char)
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    table.insert(activeConnections, RunService.Heartbeat:Connect(function()
-        root.CFrame = CFrame.new(0/0, 0/0, 0/0)
-    end))
-end)
+local btnStroke = Instance.new("UIStroke", ToggleBtn)
+btnStroke.Color = Theme.Accent
+btnStroke.Thickness = 2
+btnStroke.Transparency = 0.5
 
-makeButton("12. NaN Velocity", function(char)
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    table.insert(activeConnections, RunService.Heartbeat:Connect(function()
-        root.Velocity = Vector3.new(0/0, 0/0, 0/0)
-    end))
-end)
+local Katana = Instance.new("Frame", ToggleBtn)
+Katana.Size = UDim2.new(1, 0, 1, 0)
+Katana.BackgroundTransparency = 1
+Katana.Rotation = 45
 
-makeButton("13. Inf Velocity", function(char)
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    table.insert(activeConnections, RunService.Stepped:Connect(function()
-        root.Velocity = Vector3.new(math.huge, math.huge, math.huge)
-    end))
-end)
+local Blade = Instance.new("Frame", Katana)
+Blade.Size = UDim2.new(0, 2, 0, 24)
+Blade.Position = UDim2.new(0.5, -1, 0.5, -18)
+Blade.BackgroundColor3 = Theme.Text
+Blade.BorderSizePixel = 0
 
-makeButton("14. Inf RotVelocity", function(char)
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    table.insert(activeConnections, RunService.Stepped:Connect(function()
-        root.RotVelocity = Vector3.new(math.huge, math.huge, math.huge)
-    end))
-end)
+local Guard = Instance.new("Frame", Katana)
+Guard.Size = UDim2.new(0, 12, 0, 2)
+Guard.Position = UDim2.new(0.5, -6, 0.5, 6)
+Guard.BackgroundColor3 = Theme.SubText
+Guard.BorderSizePixel = 0
 
-makeButton("15. Extreme Y-Fling", function(char)
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    table.insert(activeConnections, RunService.RenderStepped:Connect(function()
-        root.CFrame = root.CFrame * CFrame.new(0, 100000, 0)
-        RunService.RenderStepped:Wait()
-        root.CFrame = root.CFrame * CFrame.new(0, -100000, 0)
-    end))
-end)
+local Handle = Instance.new("Frame", Katana)
+Handle.Size = UDim2.new(0, 4, 0, 10)
+Handle.Position = UDim2.new(0.5, -2, 0.5, 8)
+Handle.BackgroundColor3 = Theme.Stroke
+Handle.BorderSizePixel = 0
 
--- [ RIG & JOINT BREAKERS ]
-makeButton("16. Break Waist Joint", function(char)
-    local upper = char:FindFirstChild("UpperTorso")
-    if upper then
-        local waist = upper:FindFirstChild("Waist")
-        if waist then waist:Destroy() end
+Instance.new("UICorner", Blade).CornerRadius = UDim.new(1, 0)
+Instance.new("UICorner", Guard).CornerRadius = UDim.new(1, 0)
+Instance.new("UICorner", Handle).CornerRadius = UDim.new(0, 1)
+AddClickPop(ToggleBtn)
+
+--// MAIN CONTAINER
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 0, 0, 0)
+MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+MainFrame.BackgroundColor3 = Theme.Background
+MainFrame.BorderSizePixel = 0
+MainFrame.Visible = false
+MainFrame.ClipsDescendants = true
+MainFrame.Active = true
+MainFrame.Parent = RyuHub
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
+
+local mainStroke = Instance.new("UIStroke", MainFrame)
+mainStroke.Color = Theme.Stroke
+mainStroke.Thickness = 1.5
+
+local DragText = Instance.new("TextLabel", MainFrame)
+DragText.Size = UDim2.new(1, 0, 1, 0)
+DragText.Position = UDim2.new(0, 0, 0, 0)
+DragText.BackgroundTransparency = 1
+DragText.Text = "DISCORD.GG/RYUHUB"
+DragText.Font = Enum.Font.GothamBlack
+DragText.TextSize = 50
+DragText.TextColor3 = Theme.Text
+DragText.TextTransparency = 0.95
+DragText.ZIndex = 0
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    if MainFrame.Visible then
+        pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play() end)
+        task.delay(0.3, function() MainFrame.Visible = false end)
+    else
+        MainFrame.Visible = true
+        pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = MainSize, Position = UDim2.new(0.5, -MainSize.X.Offset / 2, 0.5, -MainSize.Y.Offset / 2)}):Play() end)
     end
 end)
 
-makeButton("17. Break Neck Joint", function(char)
-    local head = char:FindFirstChild("Head")
-    if head then
-        local neck = head:FindFirstChild("Neck")
-        if neck then neck:Destroy() end
+local ContentWrapper = Instance.new("Frame", MainFrame)
+ContentWrapper.Size = UDim2.new(1, 0, 1, 0)
+ContentWrapper.BackgroundTransparency = 1
+ContentWrapper.BorderSizePixel = 0
+
+local Topbar = Instance.new("Frame", ContentWrapper)
+Topbar.Size = UDim2.new(1, 0, 0, 60)
+Topbar.BackgroundTransparency = 1
+
+local Title = Instance.new("TextLabel", Topbar)
+Title.Size = UDim2.new(0, 300, 1, 0)
+Title.Position = UDim2.new(0, 20, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "RYU HUB"
+Title.Font = Enum.Font.GothamBlack
+Title.TextSize = 22
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.TextColor3 = Theme.Text
+
+local SubTitle = Instance.new("TextLabel", Topbar)
+SubTitle.Size = UDim2.new(0, 300, 0, 15)
+SubTitle.Position = UDim2.new(0, 20, 0, 38)
+SubTitle.BackgroundTransparency = 1
+SubTitle.Text = "Jujutsu Shenanigans"
+SubTitle.TextColor3 = Theme.SubText
+SubTitle.Font = Enum.Font.Gotham
+SubTitle.TextSize = 11
+SubTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local CloseBtn = Instance.new("TextButton", Topbar)
+CloseBtn.Size = UDim2.new(0, 28, 0, 28)
+CloseBtn.Position = UDim2.new(1, -40, 0, 15)
+CloseBtn.BackgroundColor3 = Theme.SectionBG
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Theme.Text
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 14
+Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
+Instance.new("UIStroke", CloseBtn).Color = Theme.Stroke
+
+CloseBtn.MouseButton1Click:Connect(function()
+    pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play() end)
+    task.delay(0.3, function() MainFrame.Visible = false end)
+end)
+
+-- Window Dragging
+local mDragging, mDragStart, mStartPos = false, nil, nil
+Topbar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
+        mDragging = true
+        mDragStart = input.Position
+        mStartPos = MainFrame.Position 
+    end
+end)
+Topbar.InputChanged:Connect(function(input)
+    if mDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - mDragStart
+        MainFrame.Position = UDim2.new(mStartPos.X.Scale, mStartPos.X.Offset + delta.X, mStartPos.Y.Scale, mStartPos.Y.Offset + delta.Y)
+    end
+end)
+Topbar.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
+        mDragging = false 
     end
 end)
 
-makeButton("18. Destroy All Motor6Ds (Ragdoll)", function(char)
-    for _, v in pairs(char:GetDescendants()) do
-        if v:IsA("Motor6D") and v.Name ~= "Root" then
-            v:Destroy()
+local Line = Instance.new("Frame", ContentWrapper)
+Line.Size = UDim2.new(1, -40, 0, 1)
+Line.Position = UDim2.new(0, 20, 0, 65)
+Line.BackgroundColor3 = Theme.Stroke
+Line.BorderSizePixel = 0
+
+-- Sidebar Layout
+local Sidebar = Instance.new("ScrollingFrame", ContentWrapper)
+Sidebar.Size = UDim2.new(0, SidebarWidth, 1, -85)
+Sidebar.Position = UDim2.new(0, 10, 0, 75)
+Sidebar.BackgroundTransparency = 1
+Sidebar.ScrollBarThickness = 0
+
+local SideLayout = Instance.new("UIListLayout", Sidebar)
+SideLayout.Padding = UDim.new(0, 6)
+SideLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+SideLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+-- Content Container
+local ContentContainer = Instance.new("Frame", ContentWrapper)
+ContentContainer.Size = UDim2.new(1, -(SidebarWidth + 25), 1, -85)
+ContentContainer.Position = UDim2.new(0, SidebarWidth + 15, 0, 75)
+ContentContainer.BackgroundTransparency = 1
+
+--// UI GENERATION FUNCTIONS
+local Tabs = {}
+local itemOrderCounter = 0
+
+local function UpdateSidebarCanvas()
+    local totalH = 10
+    for _, t in pairs(Tabs) do
+        totalH = totalH + 36 + 6
+        if t.IsOpen then totalH = totalH + t.SubLayout.AbsoluteContentSize.Y + 6 end
+    end
+    Sidebar.CanvasSize = UDim2.new(0, 0, 0, totalH)
+end
+
+local function CreateMainTab(name)
+    local tabObj = { Btn = nil, SubContainer = nil, SubLayout = nil, IsOpen = false, SubTabs = {} }
+    
+    local tabBtn = Instance.new("TextButton", Sidebar)
+    tabBtn.Size = UDim2.new(1, 0, 0, 36)
+    tabBtn.BackgroundColor3 = Theme.Sidebar
+    tabBtn.Text = "  " .. string.upper(name)
+    tabBtn.TextColor3 = Theme.SubText
+    tabBtn.Font = Enum.Font.GothamBlack
+    tabBtn.TextSize = 13
+    tabBtn.TextXAlignment = Enum.TextXAlignment.Left
+    Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 8)
+    tabObj.Btn = tabBtn
+
+    local subContainer = Instance.new("Frame", Sidebar)
+    subContainer.Size = UDim2.new(1, 0, 0, 0)
+    subContainer.BackgroundTransparency = 1
+    subContainer.ClipsDescendants = true
+    tabObj.SubContainer = subContainer
+
+    local subLayout = Instance.new("UIListLayout", subContainer)
+    subLayout.Padding = UDim.new(0, 2)
+    subLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+    subLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    tabObj.SubLayout = subLayout
+
+    tabBtn.MouseButton1Click:Connect(function()
+        tabObj.IsOpen = not tabObj.IsOpen
+        local targetSize = tabObj.IsOpen and UDim2.new(1, 0, 0, subLayout.AbsoluteContentSize.Y) or UDim2.new(1, 0, 0, 0)
+        pcall(function()
+            TweenService:Create(subContainer, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = targetSize}):Play()
+            tabBtn.TextColor3 = tabObj.IsOpen and Theme.Text or Theme.SubText
+            tabBtn.BackgroundColor3 = tabObj.IsOpen and Theme.SectionBG or Theme.Sidebar
+        end)
+        task.delay(0.26, UpdateSidebarCanvas)
+    end)
+
+    subLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        if tabObj.IsOpen then subContainer.Size = UDim2.new(1, 0, 0, subLayout.AbsoluteContentSize.Y) end
+    end)
+
+    table.insert(Tabs, tabObj)
+    return tabObj
+end
+
+local function CreateSubTab(tabObj, subName)
+    local subObj = { Btn = nil, Page = nil }
+    local subBtn = Instance.new("TextButton", tabObj.SubContainer)
+    subBtn.Size = UDim2.new(1, 0, 0, 28)
+    subBtn.BackgroundTransparency = 1
+    subBtn.Text = "     " .. subName
+    subBtn.TextColor3 = Theme.SubText
+    subBtn.Font = Enum.Font.GothamMedium
+    subBtn.TextSize = 12
+    subBtn.TextXAlignment = Enum.TextXAlignment.Left
+    subObj.Btn = subBtn
+
+    local page = Instance.new("ScrollingFrame", ContentContainer)
+    page.Size = UDim2.new(1, 0, 1, 0)
+    page.BackgroundTransparency = 1
+    page.ScrollBarThickness = 2
+    page.ScrollBarImageColor3 = Theme.Accent
+    page.Visible = false
+    subObj.Page = page
+
+    local pageLayout = Instance.new("UIListLayout", page)
+    pageLayout.Padding = UDim.new(0, 12)
+    pageLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    pageLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        page.CanvasSize = UDim2.new(0, 0, 0, pageLayout.AbsoluteContentSize.Y + 20)
+    end)
+
+    subBtn.MouseButton1Click:Connect(function()
+        for _, t in pairs(Tabs) do
+            for _, st in pairs(t.SubTabs) do
+                st.Page.Visible = false
+                st.Btn.TextColor3 = Theme.SubText
+            end
         end
+        page.Visible = true
+        subBtn.TextColor3 = Theme.Text
+    end)
+
+    table.insert(tabObj.SubTabs, subObj)
+    return page
+end
+
+local function CreateSection(page, titleText)
+    local section = Instance.new("Frame", page)
+    section.Size = UDim2.new(0.98, 0, 0, 50)
+    section.BackgroundColor3 = Theme.SectionBG
+    section.BackgroundTransparency = 0
+    Instance.new("UICorner", section).CornerRadius = UDim.new(0, 10)
+    Instance.new("UIStroke", section).Color = Theme.Stroke
+    
+    local secLayout = Instance.new("UIListLayout", section)
+    secLayout.Padding = UDim.new(0, 10)
+    secLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    secLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    
+    local secPadding = Instance.new("UIPadding", section)
+    secPadding.PaddingTop = UDim.new(0, 12)
+    secPadding.PaddingBottom = UDim.new(0, 12)
+    
+    local title = Instance.new("TextLabel", section)
+    title.LayoutOrder = -1
+    title.Size = UDim2.new(0.92, 0, 0, 24)
+    title.BackgroundTransparency = 1
+    title.Text = titleText
+    title.TextColor3 = Theme.Text
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 14
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    
+    secLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() 
+        section.Size = UDim2.new(1, 0, 0, secLayout.AbsoluteContentSize.Y + 24) 
+    end)
+    return section
+end
+
+local function CreateLabel(section, text)
+    itemOrderCounter = itemOrderCounter + 1
+    local frame = Instance.new("Frame", section)
+    frame.LayoutOrder = itemOrderCounter
+    frame.Size = UDim2.new(0.92, 0, 0, 30)
+    frame.BackgroundTransparency = 1
+    
+    local lbl = Instance.new("TextLabel", frame)
+    lbl.Size = UDim2.new(1, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = text
+    lbl.TextColor3 = Theme.SubText
+    lbl.Font = Enum.Font.GothamMedium
+    lbl.TextSize = 11
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.TextWrapped = true
+    return lbl
+end
+
+local function CreateToggle(section, text, descText, defaultState, callback)
+    if type(descText) == "boolean" then callback = defaultState; defaultState = descText; descText = nil end
+    itemOrderCounter = itemOrderCounter + 1
+    
+    local frame = Instance.new("Frame", section)
+    frame.LayoutOrder = itemOrderCounter
+    frame.Size = UDim2.new(0.92, 0, 0, descText and 52 or 34)
+    frame.BackgroundTransparency = 1
+    
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(0.7, 0, 0, 34)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = defaultState and Theme.Text or Theme.SubText
+    label.Font = Enum.Font.GothamMedium
+    label.TextSize = 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    
+    if descText then
+        local descLabel = Instance.new("TextLabel", frame)
+        descLabel.Size = UDim2.new(0.7, 0, 0, 15)
+        descLabel.Position = UDim2.new(0, 0, 0, 30)
+        descLabel.BackgroundTransparency = 1
+        descLabel.Text = descText
+        descLabel.TextColor3 = Theme.SubText
+        descLabel.Font = Enum.Font.Gotham
+        descLabel.TextSize = 11
+        descLabel.TextXAlignment = Enum.TextXAlignment.Left
+    end
+    
+    local tBtn = Instance.new("TextButton", frame)
+    tBtn.Size = UDim2.new(0, 42, 0, 22)
+    tBtn.Position = UDim2.new(1, -42, 0, 6)
+    tBtn.BackgroundColor3 = defaultState and Theme.ToggleOn or Theme.ToggleOff
+    tBtn.Text = ""
+    Instance.new("UICorner", tBtn).CornerRadius = UDim.new(1, 0)
+    
+    local circle = Instance.new("Frame", tBtn)
+    circle.Size = UDim2.new(0, 16, 0, 16)
+    circle.Position = defaultState and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
+    circle.BackgroundColor3 = defaultState and Theme.Background or Color3.fromRGB(150, 150, 150)
+    Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
+    
+    local isOn = defaultState or false
+    tBtn.MouseButton1Click:Connect(function()
+        isOn = not isOn
+        pcall(function()
+            TweenService:Create(tBtn, TweenInfo.new(0.2), {BackgroundColor3 = isOn and Theme.ToggleOn or Theme.ToggleOff}):Play()
+            TweenService:Create(circle, TweenInfo.new(0.2), {Position = isOn and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8), BackgroundColor3 = isOn and Theme.Background or Color3.fromRGB(150, 150, 150)}):Play()
+            label.TextColor3 = isOn and Theme.Text or Theme.SubText
+        end)
+        if callback then pcall(function() callback(isOn) end) end
+    end)
+end
+
+local function CreateSlider(section, text, min, max, default, callback)
+    itemOrderCounter = itemOrderCounter + 1
+    local frame = Instance.new("Frame", section)
+    frame.LayoutOrder = itemOrderCounter
+    frame.Size = UDim2.new(0.92, 0, 0, 50)
+    frame.BackgroundTransparency = 1
+    
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(1, -40, 0, 18)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Theme.SubText
+    label.Font = Enum.Font.GothamMedium
+    label.TextSize = 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local valLabel = Instance.new("TextLabel", frame)
+    valLabel.Size = UDim2.new(0, 40, 0, 18)
+    valLabel.Position = UDim2.new(1, -40, 0, 0)
+    valLabel.BackgroundTransparency = 1
+    valLabel.Text = tostring(default)
+    valLabel.TextColor3 = Theme.Accent
+    valLabel.Font = Enum.Font.GothamBold
+    valLabel.TextSize = 13
+    valLabel.TextXAlignment = Enum.TextXAlignment.Right
+    
+    local sliderBg = Instance.new("Frame", frame)
+    sliderBg.Size = UDim2.new(1, 0, 0, 4)
+    sliderBg.Position = UDim2.new(0, 0, 0, 32)
+    sliderBg.BackgroundColor3 = Theme.ToggleOff
+    Instance.new("UICorner", sliderBg).CornerRadius = UDim.new(1, 0)
+    
+    local sliderFill = Instance.new("Frame", sliderBg)
+    local percentage = math.clamp((default - min) / (max - min), 0, 1)
+    sliderFill.Size = UDim2.new(percentage, 0, 1, 0)
+    sliderFill.BackgroundColor3 = Theme.Accent
+    Instance.new("UICorner", sliderFill).CornerRadius = UDim.new(1, 0)
+    
+    local knob = Instance.new("TextButton", sliderFill)
+    knob.Size = UDim2.new(0, 14, 0, 14)
+    knob.Position = UDim2.new(1, -7, 0.5, -7)
+    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    knob.Text = ""
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+    
+    local dragging = false
+    knob.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = true end end)
+    UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local relative = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
+            local value = math.floor(min + (max - min) * relative)
+            valLabel.Text = tostring(value)
+            sliderFill.Size = UDim2.new(relative, 0, 1, 0)
+            if callback then pcall(function() callback(value) end) end
+        end
+    end)
+end
+
+local function CreateButton(section, text, color, callback)
+    if type(color) == "function" then callback = color; color = Theme.SectionBG end
+    itemOrderCounter = itemOrderCounter + 1
+    
+    local btn = Instance.new("TextButton", section)
+    btn.LayoutOrder = itemOrderCounter
+    btn.Size = UDim2.new(0.92, 0, 0, 34)
+    btn.BackgroundColor3 = color
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 12
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    Instance.new("UIStroke", btn).Color = Theme.Stroke
+    AddClickPop(btn)
+    
+    btn.MouseButton1Click:Connect(function() pcall(callback) end)
+    return btn
+end
+
+local function CreateDropdown(section, headerText, itemsList, targetConfigKey, callback)
+    itemOrderCounter = itemOrderCounter + 1
+    local frame = Instance.new("Frame", section)
+    frame.LayoutOrder = itemOrderCounter
+    frame.Size = UDim2.new(0.92, 0, 0, 160)
+    frame.BackgroundTransparency = 1
+    
+    local header = Instance.new("TextLabel", frame)
+    header.Size = UDim2.new(1, 0, 0, 20)
+    header.BackgroundTransparency = 1
+    header.Text = headerText .. ": None"
+    header.TextColor3 = Theme.SubText
+    header.Font = Enum.Font.GothamMedium
+    header.TextSize = 12
+    header.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local scroll = Instance.new("ScrollingFrame", frame)
+    scroll.Size = UDim2.new(1, 0, 0, 130)
+    scroll.Position = UDim2.new(0, 0, 0, 25)
+    scroll.BackgroundColor3 = Theme.Background
+    scroll.ScrollBarThickness = 4
+    Instance.new("UICorner", scroll).CornerRadius = UDim.new(0, 6)
+    
+    local listLayout = Instance.new("UIListLayout", scroll)
+    listLayout.Padding = UDim.new(0, 4)
+    listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    
+    local function populate(list)
+        for _, child in pairs(scroll:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end
+        for _, itemName in ipairs(list) do
+            local btn = Instance.new("TextButton", scroll)
+            btn.Size = UDim2.new(0.94, 0, 0, 26)
+            btn.BackgroundColor3 = Theme.SectionBG
+            btn.Text = "  " .. tostring(itemName)
+            btn.TextColor3 = Theme.Text
+            btn.Font = Enum.Font.GothamBold
+            btn.TextSize = 12
+            btn.TextXAlignment = Enum.TextXAlignment.Left
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+            
+            btn.MouseButton1Click:Connect(function() 
+                header.Text = headerText .. ": " .. tostring(itemName)
+                if callback then callback(itemName) end
+            end)
+        end
+        task.defer(function() scroll.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10) end)
+    end
+    
+    populate(itemsList)
+    return { Refresh = populate }
+end
+
+local function CreateKeybind(section, text, defaultKey, callback)
+    itemOrderCounter = itemOrderCounter + 1
+    local frame = Instance.new("Frame", section)
+    frame.LayoutOrder = itemOrderCounter
+    frame.Size = UDim2.new(0.92, 0, 0, 34)
+    frame.BackgroundTransparency = 1
+    
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(0.7, 0, 0, 34)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Theme.Text
+    label.Font = Enum.Font.GothamMedium
+    label.TextSize = 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local btn = Instance.new("TextButton", frame)
+    btn.Size = UDim2.new(0, 80, 0, 22)
+    btn.Position = UDim2.new(1, -80, 0, 6)
+    btn.BackgroundColor3 = Theme.ToggleOff
+    btn.Text = defaultKey.Name
+    btn.TextColor3 = Theme.Text
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 12
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+    
+    local waiting = false
+    btn.MouseButton1Click:Connect(function() waiting = true; btn.Text = "..." end)
+    UserInputService.InputBegan:Connect(function(input)
+        if waiting and input.UserInputType == Enum.UserInputType.Keyboard then
+            waiting = false
+            btn.Text = input.KeyCode.Name
+            if callback then pcall(function() callback(input.KeyCode) end) end
+        end
+    end)
+end
+
+local function CreateInput(section, placeholder, callback)
+    itemOrderCounter = itemOrderCounter + 1
+    local box = Instance.new("TextBox", section)
+    box.LayoutOrder = itemOrderCounter
+    box.Size = UDim2.new(0.92, 0, 0, 34)
+    box.BackgroundColor3 = Theme.Background
+    box.Text = ""
+    box.PlaceholderText = placeholder
+    box.TextColor3 = Theme.Text
+    box.Font = Enum.Font.GothamMedium
+    box.TextSize = 12
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 6)
+    Instance.new("UIStroke", box).Color = Theme.Stroke
+    
+    if callback then 
+        box.FocusLost:Connect(function() pcall(function() callback(box.Text) end) end) 
+    end
+    return box
+end
+
+
+--// ==========================================
+--// MOVEMENT LOGIC (NO MOMENTUM, INSTANT)
+--// ==========================================
+local MovementState = {
+    Speed = false, SpeedValue = 50,
+    Fly = false, FlySpeed = 50, FlyKey = Enum.KeyCode.X,
+    HighJump = false, JumpPower = 150,
+    InfJump = false, Noclip = false, Invis = false
+}
+
+local flyBodyVelocity
+local flyBodyGyro
+
+local function StartFly()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    
+    if flyBodyVelocity then flyBodyVelocity:Destroy() end
+    if flyBodyGyro then flyBodyGyro:Destroy() end
+    
+    flyBodyVelocity = Instance.new("BodyVelocity")
+    flyBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+    flyBodyVelocity.Parent = root
+    
+    flyBodyGyro = Instance.new("BodyGyro")
+    flyBodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+    flyBodyGyro.D = 100
+    flyBodyGyro.P = 10000
+    flyBodyGyro.CFrame = root.CFrame
+    flyBodyGyro.Parent = root
+end
+
+local function StopFly()
+    if flyBodyVelocity then flyBodyVelocity:Destroy(); flyBodyVelocity = nil end
+    if flyBodyGyro then flyBodyGyro:Destroy(); flyBodyGyro = nil end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then hum.PlatformStand = false end
+end
+
+-- Fly Keybind hook
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == MovementState.FlyKey then
+        MovementState.Fly = not MovementState.Fly
+        if MovementState.Fly then StartFly() else StopFly() end
     end
 end)
 
-makeButton("19. R15 to R6 Break", function(char)
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then hum.RigType = Enum.HumanoidRigType.R6 end -- Breaks server rendering often
-end)
-
-makeButton("20. Break Humanoid (Permadeath)", function(char)
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then hum:Destroy() end
-end)
-
--- [ STATE MANIPULATION ]
-makeButton("21. State: Dead", function(char)
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then hum:ChangeState(Enum.HumanoidStateType.Dead) end
-end)
-
-makeButton("22. State: Physics", function(char)
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then hum:ChangeState(Enum.HumanoidStateType.Physics) end
-end)
-
-makeButton("23. PlatformStand Spam", function(char)
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
-    table.insert(activeConnections, RunService.Stepped:Connect(function()
-        hum.PlatformStand = true
-    end))
-end)
-
-makeButton("24. NetworkOwnership Drop", function(char)
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if root then root.Anchored = true end -- Drops network ownership instantly
-end)
-
-makeButton("25. Sit + High Velocity", function(char)
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    local root = char:FindFirstChild("HumanoidRootPart")
+-- Inf Jump & High Jump force
+UserInputService.JumpRequest:Connect(function()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    
     if hum and root then
-        hum.Sit = true
-        table.insert(activeConnections, RunService.Stepped:Connect(function()
-            root.Velocity = Vector3.new(0, 5000, 0)
-        end))
-    end
-end)
-
--- [ TJS SPECIFIC COMBOS ]
-makeButton("26. TJS: Hide Attribute + CFrame", function(char)
-    LocalPlayer:SetAttribute("HidePlayer", true)
-    char:SetAttribute("HidePlayer", true)
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if root then
-        local realPos = root.CFrame
-        table.insert(activeConnections, RunService.Stepped:Connect(function()
-            root.CFrame = CFrame.new(0, 99999, 0)
-        end))
-        table.insert(activeConnections, RunService.RenderStepped:Connect(function()
-            root.CFrame = realPos
-        end))
-    end
-end)
-
-makeButton("27. TJS: Megumi + NaN Velocity", function(char)
-    pcall(function() ReplicatedStorage.Knit.Knit.Services.MegumiService.RE.RightActivated:FireServer() end)
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if root then
-        table.insert(activeConnections, RunService.Heartbeat:Connect(function()
-            root.Velocity = Vector3.new(0/0, 0/0, 0/0)
-        end))
-    end
-end)
-
-makeButton("28. TJS: Ragdoll Attr + Fall", function(char)
-    char:SetAttribute("Ragdoll", 999)
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if root then
-        table.insert(activeConnections, RunService.Heartbeat:Connect(function()
-            root.CFrame = CFrame.new(root.Position.X, -490, root.Position.Z)
-        end))
-    end
-end)
-
-makeButton("29. TJS: Dash Bypass Remote Spam", function(char)
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if root then
-        table.insert(activeConnections, RunService.RenderStepped:Connect(function()
-            pcall(function() ReplicatedStorage.Events.takestam:FireServer(0.5, "dash", root.CFrame * CFrame.new(0,9999,0)) end)
-        end))
-    end
-end)
-
-makeButton("30. TJS: Hide + Garuda Clone", function(char)
-    char:SetAttribute("Hidden", true)
-    pcall(function() LocalPlayer:SetAttribute("HidePlayer", true) end)
-    local upper = char:FindFirstChild("UpperTorso")
-    if upper then upper:Destroy() end
-end)
-
--- [ WEIRD / GLITCH EXPLOITS ]
-makeButton("31. Accessory Drop Lag", function(char)
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    for _, v in pairs(char:GetChildren()) do
-        if v:IsA("Accessory") then
-            v.Parent = Workspace
+        if MovementState.InfJump or MovementState.HighJump then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+        if MovementState.HighJump then
+            -- Setzt die vertikale Geschwindigkeit sofort, ohne Verzögerung
+            root.Velocity = Vector3.new(root.Velocity.X, MovementState.JumpPower, root.Velocity.Z)
         end
     end
 end)
 
-makeButton("32. Head Destroy + Sit", function(char)
-    local head = char:FindFirstChild("Head")
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if head then head:Destroy() end
-    if hum then hum.Sit = true end
-end)
-
-makeButton("33. Fast CFrame Flicker", function(char)
+-- FE Server-Sided Invis (Root Break + Underground Hold)
+local InvisLoop
+local function ToggleInvis(state)
+    local char = LocalPlayer.Character
+    if not char then return end
+    
     local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    local tickCounter = 0
-    table.insert(activeConnections, RunService.RenderStepped:Connect(function()
-        tickCounter = tickCounter + 1
-        if tickCounter % 2 == 0 then
-            root.CFrame = root.CFrame * CFrame.new(0, 10000, 0)
+    local lowerTorso = char:FindFirstChild("LowerTorso")
+    local rootJoint = lowerTorso and lowerTorso:FindFirstChild("Root")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    
+    if state then
+        if root and lowerTorso and rootJoint and hum and not Workspace:FindFirstChild("RyuLocalGhost") then
+            
+            -- 1. Kamera fest an den unsichtbaren Kern (Root) klemmen
+            camera.CameraSubject = root
+            
+            -- 2. Lokalen Geist erstellen, damit wir sehen, wo wir wirklich sind
+            char.Archivable = true
+            local ghost = char:Clone()
+            ghost.Name = "RyuLocalGhost"
+            ghost.Parent = Workspace
+            
+            for _, v in pairs(ghost:GetDescendants()) do
+                if v:IsA("BasePart") then
+                    v.Transparency = 0.5
+                    v.CanCollide = false
+                    v.Anchored = true
+                elseif v:IsA("Script") or v:IsA("LocalScript") then
+                    v:Destroy()
+                end
+            end
+            
+            -- 3. Physischen Körper (für andere sichtbar) vom unsichtbaren Kern trennen!
+            rootJoint.Part0 = nil
+            
+            -- 4. Render-Loop: Sichtbaren Körper permanent tief in den Boden zwingen
+            InvisLoop = RunService.RenderStepped:Connect(function()
+                if char and root and lowerTorso and ghost and ghost.PrimaryPart then
+                    -- Für den Server und andere Spieler ist unser Körper tief vergraben
+                    lowerTorso.Velocity = Vector3.new(0, 0, 0)
+                    lowerTorso.CFrame = root.CFrame * CFrame.new(0, -100, 0)
+                    
+                    -- Unser lokaler Geist bleibt bei unserer echten, unsichtbaren Position oben
+                    ghost:SetPrimaryPartCFrame(root.CFrame)
+                end
+            end)
+        end
+    else
+        -- ALLES SAUBER ZURÜCKSETZEN
+        if InvisLoop then InvisLoop:Disconnect(); InvisLoop = nil end
+        
+        local ghost = Workspace:FindFirstChild("RyuLocalGhost")
+        if ghost then ghost:Destroy() end
+        
+        if rootJoint and root then
+            rootJoint.Part0 = root
+        end
+        
+        if lowerTorso and root then
+            lowerTorso.CFrame = root.CFrame
+        end
+        
+        if hum then camera.CameraSubject = hum end
+    end
+end
+
+-- Core Render Loop for Speed, Fly, Noclip & Jump Override
+RunService.RenderStepped:Connect(function()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not char or not hum or not root then return end
+
+    -- Noclip logic
+    if MovementState.Noclip then
+        for _, v in pairs(char:GetDescendants()) do
+            if v:IsA("BasePart") and v.CanCollide then
+                v.CanCollide = false
+            end
+        end
+    end
+    
+    -- Erzwungene High Jump Power gegen Anticheat-Resets
+    if MovementState.HighJump then
+        hum.UseJumpPower = true
+        hum.JumpPower = MovementState.JumpPower
+    end
+
+    -- Fly logic
+    if MovementState.Fly and flyBodyVelocity and flyBodyGyro then
+        hum.PlatformStand = true
+        local moveDir = Vector3.new(0,0,0)
+        
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0,1,0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDir = moveDir - Vector3.new(0,1,0) end
+        
+        if moveDir.Magnitude > 0 then
+            flyBodyVelocity.Velocity = moveDir.Unit * MovementState.FlySpeed
         else
-            root.CFrame = root.CFrame * CFrame.new(0, -10000, 0)
+            flyBodyVelocity.Velocity = Vector3.new(0,0,0)
         end
-    end))
-end)
-
-makeButton("34. BodyPosition Sky Anchor", function(char)
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    local bp = Instance.new("BodyPosition", root)
-    bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    bp.Position = Vector3.new(0, 99999, 0)
-    table.insert(activeConnections, {Disconnect = function() bp:Destroy() end})
-end)
-
-makeButton("35. HipHeight Inf", function(char)
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then hum.HipHeight = math.huge end
-end)
-
-makeButton("36. Target Part Fling", function(char)
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    local bg = Instance.new("BodyAngularVelocity", root)
-    bg.AngularVelocity = Vector3.new(9999, 9999, 9999)
-    bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-    table.insert(activeConnections, {Disconnect = function() bg:Destroy() end})
-end)
-
-makeButton("37. LowerTorso Destroy", function(char)
-    local lt = char:FindFirstChild("LowerTorso") or char:FindFirstChild("Torso")
-    if lt then lt:Destroy() end
-end)
-
-makeButton("38. Local Re-Parent (Camera)", function(char)
-    char.Parent = camera
-end)
-
-makeButton("39. Local Re-Parent (Lighting)", function(char)
-    char.Parent = game:GetService("Lighting")
-end)
-
-makeButton("40. Ultimate Chaos (Attr + NaN + Reparent)", function(char)
-    LocalPlayer:SetAttribute("HidePlayer", true)
-    char:SetAttribute("Hidden", true)
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if root then
-        table.insert(activeConnections, RunService.Heartbeat:Connect(function()
-            root.Velocity = Vector3.new(0/0, 0/0, 0/0)
-        end))
+        flyBodyGyro.CFrame = camera.CFrame
+    else
+        -- Speed logic
+        if MovementState.Speed then
+            if hum.MoveDirection.Magnitude > 0 then
+                local flatDir = hum.MoveDirection
+                root.Velocity = Vector3.new(flatDir.X * MovementState.SpeedValue, root.Velocity.Y, flatDir.Z * MovementState.SpeedValue)
+            else
+                root.Velocity = Vector3.new(0, root.Velocity.Y, 0)
+            end
+        end
     end
-    char.Parent = camera
 end)
 
-task.defer(function()
-    scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 20)
+
+--// ==========================================
+--// STRUCTURE SETUP
+--// ==========================================
+
+-- TAB 1: COMBAT
+local TabCombat = CreateMainTab("Combat")
+
+local SubPlayer = CreateSubTab(TabCombat, "Player")
+local SecPlayer = CreateSection(SubPlayer, "Movement")
+CreateToggle(SecPlayer, "Speed Hack", false, function(state) MovementState.Speed = state end)
+CreateSlider(SecPlayer, "Speed Value", 16, 150, 50, function(val) MovementState.SpeedValue = val end)
+
+CreateToggle(SecPlayer, "Fly", false, function(state) 
+    MovementState.Fly = state 
+    if state then StartFly() else StopFly() end
+end)
+CreateSlider(SecPlayer, "Fly Speed", 10, 200, 50, function(val) MovementState.FlySpeed = val end)
+CreateKeybind(SecPlayer, "Fly Keybind", Enum.KeyCode.X, function(key) MovementState.FlyKey = key end)
+
+CreateToggle(SecPlayer, "High Jump", false, function(state) MovementState.HighJump = state end)
+CreateSlider(SecPlayer, "Jump Power", 50, 300, 150, function(val) MovementState.JumpPower = val end)
+
+CreateToggle(SecPlayer, "Infinite Jump Spam", false, function(state) MovementState.InfJump = state end)
+CreateToggle(SecPlayer, "Noclip", false, function(state) MovementState.Noclip = state end)
+CreateToggle(SecPlayer, "Invisible (FE Server-Sided)", false, function(state) 
+    MovementState.Invis = state
+    ToggleInvis(state)
+end)
+
+local SubAuto = CreateSubTab(TabCombat, "Auto")
+local SecAutoDef = CreateSection(SubAuto, "Defensive")
+CreateToggle(SecAutoDef, "Auto Block", false, function() end)
+CreateSlider(SecAutoDef, "Block React Range", 5, 50, 15, function() end)
+CreateSlider(SecAutoDef, "Block Hold Duration (ms)", 100, 1500, 500, function() end)
+CreateToggle(SecAutoDef, "Auto Dodge (TP Back)", false, function() end)
+CreateSlider(SecAutoDef, "Dodge Distance", 5, 50, 20, function() end)
+
+local SecAutoOff = CreateSection(SubAuto, "Offensive")
+CreateToggle(SecAutoOff, "Auto Black Flash (Yuji)", false, function() end)
+CreateToggle(SecAutoOff, "Auto Todo Slap", false, function() end)
+CreateLabel(SecAutoOff, "Auto Combos: Join discord.gg/ryuhub and send clips of your combos!")
+
+local SecAutoUtils = CreateSection(SubAuto, "Utilities")
+CreateToggle(SecAutoUtils, "Auto Train", false, function() end)
+CreateToggle(SecAutoUtils, "Enable Auto Item", false, function() end)
+CreateDropdown(SecAutoUtils, "Target Item", {"None", "Cursed Finger", "Bat"}, "TargetItem", function() end)
+
+local SubAbil = CreateSubTab(TabCombat, "Abilities")
+local SecAbil = CreateSection(SubAbil, "Combat Enhancements")
+CreateToggle(SecAbil, "Lock On (Stationary Camera)", false, function() end)
+CreateKeybind(SecAbil, "Lock On Keybind", Enum.KeyCode.C, function() end)
+CreateSlider(SecAbil, "Lock On Y-Offset", -10, 10, 0, function() end)
+CreateToggle(SecAbil, "Knockback M1s", false, function() end)
+CreateSlider(SecAbil, "Knockback Force", 10, 300, 50, function() end)
+CreateToggle(SecAbil, "Domain Eraser (Local)", false, function() end)
+CreateToggle(SecAbil, "No Cooldown Dash", false, function() end)
+CreateButton(SecAbil, "Teleport All to Me", Theme.SectionBG, function() end)
+
+-- TAB 2: FARM
+local TabFarm = CreateMainTab("Farm")
+
+local SubAIFarm = CreateSubTab(TabFarm, "AI Auto Farm")
+local SecAIFarm = CreateSection(SubAIFarm, "Auto Combat")
+CreateToggle(SecAIFarm, "Enable AI Farm", false, function() end)
+CreateSlider(SecAIFarm, "Chase Range", 10, 500, 15, function() end)
+CreateToggle(SecAIFarm, "Auto Ultimate (G)", false, function() end)
+
+local SecAISkills = CreateSection(SubAIFarm, "Choose Skills")
+local function MakeSkillRow(name)
+    local active = false
+    local btn
+    btn = CreateButton(SecAISkills, name, Theme.ToggleOff, function()
+        active = not active
+        btn.BackgroundColor3 = active and Theme.Accent or Theme.ToggleOff
+        btn.TextColor3 = active and Theme.Background or Theme.Text
+    end)
+    CreateSlider(SecAISkills, name .. " Range", 5, 100, 10, function() end)
+end
+MakeSkillRow("Skill 1")
+MakeSkillRow("Skill 2")
+MakeSkillRow("Skill 3")
+MakeSkillRow("Skill 4")
+
+local SubTarget = CreateSubTab(TabFarm, "Target")
+local SecTarget = CreateSection(SubTarget, "Specific Target Follow")
+CreateDropdown(SecTarget, "Target Player", {"None", "Dummy1", "Player1"}, "TargetPlayer", function() end)
+CreateToggle(SecTarget, "Enable Target Farm", false, function() end)
+CreateSlider(SecTarget, "Distance Behind", 1, 15, 3, function() end)
+
+local SubMFarm = CreateSubTab(TabFarm, "Money Farm")
+local SecMFarm = CreateSection(SubMFarm, "Alt Money Farm")
+CreateToggle(SecMFarm, "Enable Money Farm (Y=500 Box)", false, function() end)
+CreateButton(SecMFarm, "Role: Farmer", Theme.ToggleOff, function() end)
+CreateInput(SecMFarm, "Victim: Enter Farmer Name...", function() end)
+
+local SubFarmConfig = CreateSubTab(TabFarm, "Config")
+local SecServerConfig = CreateSection(SubFarmConfig, "Server & Connections")
+CreateToggle(SecServerConfig, "Auto Rejoin Low Pop", false, function() end)
+CreateSlider(SecServerConfig, "Rejoin if players < X", 1, 10, 3, function() end)
+CreateToggle(SecServerConfig, "Find 80% Full Lobbys", false, function() end)
+CreateInput(SecServerConfig, "Alt Joiner: Enter Main Username", function() end)
+
+-- TAB 3: SETTINGS
+local TabSettings = CreateMainTab("Settings")
+local SubSettings = CreateSubTab(TabSettings, "Settings")
+
+local SecCosmetics = CreateSection(SubSettings, "Cosmetics")
+CreateInput(SecCosmetics, "Fake Name (Visual)", function() end)
+
+local SecCfg = CreateSection(SubSettings, "System & Protection")
+CreateToggle(SecCfg, "Anti-AFK Protection", false, function() end)
+CreateButton(SecCfg, "Save Settings", Theme.SectionBG, function() end)
+CreateButton(SecCfg, "Reset Settings", Theme.SectionBG, function() end)
+
+-- Open first tab on load
+pcall(function()
+    if Tabs[1] and Tabs[1].Btn then
+        Tabs[1].IsOpen = true
+        Tabs[1].SubContainer.Size = UDim2.new(1, 0, 0, Tabs[1].SubLayout.AbsoluteContentSize.Y)
+        Tabs[1].Btn.TextColor3 = Theme.Text
+        Tabs[1].Btn.BackgroundColor3 = Theme.SectionBG
+    end
+    if Tabs[1] and Tabs[1].SubTabs[1] and Tabs[1].SubTabs[1].Page then
+        Tabs[1].SubTabs[1].Page.Visible = true
+        Tabs[1].SubTabs[1].Btn.TextColor3 = Theme.Text
+    end
+    UpdateSidebarCanvas()
 end)
