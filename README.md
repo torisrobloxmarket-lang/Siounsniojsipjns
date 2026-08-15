@@ -105,10 +105,11 @@ Instance.new("UICorner", Circle).CornerRadius = UDim.new(1, 0)
 
 --// ==========================================
 --// INVIS LOGIC
---// Approach: local transparency + replicated
---// accessory/part hiding via RemoteEvent spam
---// suppression. Falls back to HumanoidDescription
---// swap if direct part hide doesn't replicate.
+--// Fix: SpecialMesh has no Transparency property.
+--// Guard now checks IsA("Decal") exclusively before
+--// writing Transparency. SpecialMesh is skipped entirely
+--// — it inherits visibility from its parent BasePart's
+--// LocalTransparencyModifier, which is already handled.
 --// ==========================================
 
 local invisActive = false
@@ -117,9 +118,10 @@ local originalProperties = {}
 
 local function setCharacterTransparency(char, transparency)
     for _, part in pairs(char:GetDescendants()) do
+
+        -- BasePart layer (handles SpecialMesh visibility implicitly)
         if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
             if transparency == 1 then
-                -- store original before hiding
                 if not originalProperties[part] then
                     originalProperties[part] = {
                         LocalTransparencyModifier = part.LocalTransparencyModifier,
@@ -129,7 +131,6 @@ local function setCharacterTransparency(char, transparency)
                 part.LocalTransparencyModifier = 1
                 part.CastShadow = false
             else
-                -- restore
                 if originalProperties[part] then
                     part.LocalTransparencyModifier = originalProperties[part].LocalTransparencyModifier
                     part.CastShadow = originalProperties[part].CastShadow
@@ -138,31 +139,28 @@ local function setCharacterTransparency(char, transparency)
                     part.CastShadow = true
                 end
             end
-        end
-        -- Hide accessories/meshes too
-        if part:IsA("Decal") or part:IsA("SpecialMesh") then
+
+        -- Decal-only layer — SpecialMesh deliberately excluded
+        -- SpecialMesh has no Transparency property; parent BasePart handles it
+        elseif part:IsA("Decal") then
             if transparency == 1 then
                 if not originalProperties[part] then
                     originalProperties[part] = { Transparency = part.Transparency }
                 end
-                if part:IsA("Decal") then part.Transparency = 1 end
+                part.Transparency = 1
             else
-                if originalProperties[part] and part:IsA("Decal") then
+                if originalProperties[part] then
                     part.Transparency = originalProperties[part].Transparency
                 end
             end
         end
+        -- SpecialMesh: intentionally no branch here. Falls through clean.
     end
 end
 
---// Server-side replication trick:
---// Fire a RemoteEvent that JTS uses for appearance updates
---// with a nil/empty HumanoidDescription to wipe server-side
---// character appearance — other clients render you as invisible
---// because the server has no appearance data to replicate.
+--// Server-side replication trick
 local function tryServerInvis(char)
     pcall(function()
-        -- Try common JTS appearance remotes
         local remoteNames = {
             "UpdateAppearance", "SetAppearance", "CharacterAppearance",
             "Appearance", "LoadAppearance", "ApplyAppearance"
@@ -172,19 +170,15 @@ local function tryServerInvis(char)
         for _, name in ipairs(remoteNames) do
             local remote = rs:FindFirstChild(name, true)
             if remote and remote:IsA("RemoteEvent") then
-                -- Fire with empty description — server clears appearance
                 remote:FireServer()
                 task.wait(0.1)
             end
         end
 
-        -- Also try via Players service description wipe
-        -- This forces the server to re-replicate with blank appearance
         local hd = Instance.new("HumanoidDescription")
         local hum = char:FindFirstChildOfClass("Humanoid")
         if hum then
             pcall(function()
-                -- Apply blank description locally first
                 hum:ApplyDescription(hd)
             end)
         end
@@ -197,14 +191,9 @@ local function startInvis()
 
     originalProperties = {}
 
-    -- Layer 1: Local transparency (instant, works locally)
     setCharacterTransparency(char, 1)
-
-    -- Layer 2: Attempt server-side appearance wipe
     tryServerInvis(char)
 
-    -- Layer 3: Keepalive — reapply on character descendants added
-    -- (new accessories/parts added by game would reveal us)
     invisThread = task.spawn(function()
         while invisActive do
             task.wait(0.5)
@@ -216,7 +205,6 @@ local function startInvis()
         end
     end)
 
-    -- Update status
     StatusDot.BackgroundColor3 = Color3.fromRGB(80, 200, 80)
     StatusLabel.Text = "ON — you are hidden locally"
     StatusLabel.TextColor3 = Color3.fromRGB(80, 200, 80)
@@ -234,10 +222,9 @@ local function stopInvis()
     end
     originalProperties = {}
 
-    -- Restore appearance via HumanoidDescription reload
     pcall(function()
-        local char = LocalPlayer.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local c = LocalPlayer.Character
+        local hum = c and c:FindFirstChildOfClass("Humanoid")
         if hum then
             local desc = Players:GetHumanoidDescriptionFromUserId(LocalPlayer.UserId)
             hum:ApplyDescription(desc)
@@ -249,11 +236,10 @@ local function stopInvis()
     StatusLabel.TextColor3 = Color3.fromRGB(90, 90, 90)
 end
 
--- Reapply on respawn
 LocalPlayer.CharacterAdded:Connect(function(char)
     originalProperties = {}
     if invisActive then
-        task.wait(1) -- wait for character to fully load
+        task.wait(1)
         startInvis()
     end
 end)
