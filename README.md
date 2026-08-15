@@ -8,6 +8,7 @@ local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
@@ -627,6 +628,159 @@ local function CreateInput(section, placeholder, callback)
     return box
 end
 
+
+--// ==========================================
+--// MOVEMENT LOGIC (NO MOMENTUM, INSTANT)
+--// ==========================================
+local MovementState = {
+    Speed = false, SpeedValue = 50,
+    Fly = false, FlySpeed = 50, FlyKey = Enum.KeyCode.X,
+    HighJump = false, JumpPower = 150,
+    InfJump = false, Noclip = false, Invis = false
+}
+
+local flyBodyVelocity
+local flyBodyGyro
+
+local function StartFly()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    
+    if flyBodyVelocity then flyBodyVelocity:Destroy() end
+    if flyBodyGyro then flyBodyGyro:Destroy() end
+    
+    flyBodyVelocity = Instance.new("BodyVelocity")
+    flyBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+    flyBodyVelocity.Parent = root
+    
+    flyBodyGyro = Instance.new("BodyGyro")
+    flyBodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+    flyBodyGyro.D = 100
+    flyBodyGyro.P = 10000
+    flyBodyGyro.CFrame = root.CFrame
+    flyBodyGyro.Parent = root
+end
+
+local function StopFly()
+    if flyBodyVelocity then flyBodyVelocity:Destroy(); flyBodyVelocity = nil end
+    if flyBodyGyro then flyBodyGyro:Destroy(); flyBodyGyro = nil end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then hum.PlatformStand = false end
+end
+
+-- Fly Keybind hook
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == MovementState.FlyKey then
+        MovementState.Fly = not MovementState.Fly
+        if MovementState.Fly then StartFly() else StopFly() end
+    end
+end)
+
+-- Inf Jump hook
+UserInputService.JumpRequest:Connect(function()
+    if MovementState.InfJump then
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end
+end)
+
+-- FE Server-Sided Invis (Fake Root Method)
+local InvisLoop
+local function ToggleInvis(state)
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    if state then
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if root and not char:FindFirstChild("FakeRoot") then
+            local clone = root:Clone()
+            clone.Name = "FakeRoot"
+            clone.Parent = char
+            char.PrimaryPart = clone
+            
+            InvisLoop = RunService.RenderStepped:Connect(function()
+                if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("FakeRoot") then
+                    -- Moves the real root far under the map constantly
+                    char.HumanoidRootPart.CFrame = char.FakeRoot.CFrame * CFrame.new(0, 9999, 0)
+                end
+            end)
+        end
+    else
+        if InvisLoop then InvisLoop:Disconnect(); InvisLoop = nil end
+        local fake = char:FindFirstChild("FakeRoot")
+        local root = char:FindFirstChild("HumanoidRootPart")
+        if fake and root then
+            root.CFrame = fake.CFrame
+            char.PrimaryPart = root
+            fake:Destroy()
+        end
+    end
+end
+
+-- Core Render Loop for Speed, Fly, Noclip, High Jump
+RunService.RenderStepped:Connect(function()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not char or not hum or not root then return end
+
+    -- Noclip logic
+    if MovementState.Noclip then
+        for _, v in pairs(char:GetDescendants()) do
+            if v:IsA("BasePart") and v.CanCollide then
+                v.CanCollide = false
+            end
+        end
+    end
+
+    -- High Jump logic
+    if MovementState.HighJump then
+        hum.UseJumpPower = true
+        hum.JumpPower = MovementState.JumpPower
+    end
+
+    -- Fly logic
+    if MovementState.Fly and flyBodyVelocity and flyBodyGyro then
+        hum.PlatformStand = true
+        local moveDir = Vector3.new(0,0,0)
+        
+        -- Admin style movement relative to camera
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0,1,0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDir = moveDir - Vector3.new(0,1,0) end
+        
+        if moveDir.Magnitude > 0 then
+            flyBodyVelocity.Velocity = moveDir.Unit * MovementState.FlySpeed
+        else
+            -- Instant Stop
+            flyBodyVelocity.Velocity = Vector3.new(0,0,0)
+        end
+        flyBodyGyro.CFrame = camera.CFrame
+    else
+        -- Speed logic (only if not flying to avoid conflicts)
+        if MovementState.Speed then
+            if hum.MoveDirection.Magnitude > 0 then
+                local flatDir = hum.MoveDirection
+                root.Velocity = Vector3.new(flatDir.X * MovementState.SpeedValue, root.Velocity.Y, flatDir.Z * MovementState.SpeedValue)
+            else
+                -- Instant Stop on horizontal plane
+                root.Velocity = Vector3.new(0, root.Velocity.Y, 0)
+            end
+        end
+    end
+end)
+
+
 --// ==========================================
 --// STRUCTURE SETUP
 --// ==========================================
@@ -635,17 +789,26 @@ end
 local TabCombat = CreateMainTab("Combat")
 
 local SubPlayer = CreateSubTab(TabCombat, "Player")
-local SecPlayer = CreateSection(SubPlayer, "Movement Mods")
-CreateToggle(SecPlayer, "Speed Hack (WalkSpeed)", false, function() end)
-CreateSlider(SecPlayer, "Speed Value", 16, 150, 50, function() end)
-CreateToggle(SecPlayer, "Fly (Frozen Body)", false, function() end)
-CreateSlider(SecPlayer, "Fly Speed", 10, 200, 50, function() end)
-CreateKeybind(SecPlayer, "Fly Keybind", Enum.KeyCode.X, function() end)
-CreateToggle(SecPlayer, "High Jump", false, function() end)
-CreateSlider(SecPlayer, "Jump Power", 50, 300, 150, function() end)
-CreateToggle(SecPlayer, "Infinite Jump Spam", false, function() end)
-CreateToggle(SecPlayer, "Noclip", false, function() end)
-CreateToggle(SecPlayer, "Invisible (FE Server-Sided)", false, function() end)
+local SecPlayer = CreateSection(SubPlayer, "Movement")
+CreateToggle(SecPlayer, "Speed Hack", false, function(state) MovementState.Speed = state end)
+CreateSlider(SecPlayer, "Speed Value", 16, 150, 50, function(val) MovementState.SpeedValue = val end)
+
+CreateToggle(SecPlayer, "Fly", false, function(state) 
+    MovementState.Fly = state 
+    if state then StartFly() else StopFly() end
+end)
+CreateSlider(SecPlayer, "Fly Speed", 10, 200, 50, function(val) MovementState.FlySpeed = val end)
+CreateKeybind(SecPlayer, "Fly Keybind", Enum.KeyCode.X, function(key) MovementState.FlyKey = key end)
+
+CreateToggle(SecPlayer, "High Jump", false, function(state) MovementState.HighJump = state end)
+CreateSlider(SecPlayer, "Jump Power", 50, 300, 150, function(val) MovementState.JumpPower = val end)
+
+CreateToggle(SecPlayer, "Infinite Jump Spam", false, function(state) MovementState.InfJump = state end)
+CreateToggle(SecPlayer, "Noclip", false, function(state) MovementState.Noclip = state end)
+CreateToggle(SecPlayer, "Invisible (FE Server-Sided)", false, function(state) 
+    MovementState.Invis = state
+    ToggleInvis(state)
+end)
 
 local SubAuto = CreateSubTab(TabCombat, "Auto")
 local SecAutoDef = CreateSection(SubAuto, "Defensive")
