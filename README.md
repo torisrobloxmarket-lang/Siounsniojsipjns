@@ -1,6 +1,6 @@
 --// ==========================================
---// RYU HUB - JUJUTSU SHENANIGANS EDITION (TJS) v3.0
---// STABLE ENGINE - EVENT BASED LOGIC - MONOCHROME UI
+--// RYU HUB - JUJUTSU SHENANIGANS EDITION (TJS) v4.0
+--// ULTIMATE MONOCHROME - 100% STABLE & FIXED PATHS
 --// ==========================================
 
 local CoreGui = game:GetService("CoreGui")
@@ -13,12 +13,13 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local VirtualUser = game:GetService("VirtualUser")
 
 local LocalPlayer = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
---// 1. GUI CLEANUP
+--// 1. GUI CLEANUP & INJECTION
 local guiParent
 pcall(function()
     if type(gethui) == "function" then
@@ -27,13 +28,60 @@ pcall(function()
         guiParent = CoreGui
     end
 end)
-if not guiParent then guiParent = LocalPlayer:WaitForChild("PlayerGui") end
+if not guiParent then guiParent = LocalPlayer:WaitForChild("PlayerGui", 5) or CoreGui end
 
 for _, v in pairs(guiParent:GetChildren()) do 
     if v.Name == "RyuHubTJS" then v:Destroy() end 
 end
 
---// 2. CONFIGURATION
+--// 2. TJS REMOTES CACHE (FIXED DOUBLE KNIT PATH)
+local remotes = {}
+task.spawn(function()
+    pcall(function()
+        local knit1 = ReplicatedStorage:WaitForChild("Knit", 5)
+        local knit2 = knit1 and knit1:WaitForChild("Knit", 5)
+        local serv = knit2 and knit2:WaitForChild("Services", 5)
+        if serv then
+            remotes.BlockOn = serv:FindFirstChild("BlockService") and serv.BlockService.RE:FindFirstChild("Activated")
+            remotes.BlockOff = serv:FindFirstChild("BlockService") and serv.BlockService.RE:FindFirstChild("Deactivated")
+            remotes.Chase = serv:FindFirstChild("ItadoriService") and serv.ItadoriService.RE:FindFirstChild("Chase")
+            remotes.ItadoriActivated = serv:FindFirstChild("ItadoriService") and serv.ItadoriService.RE:FindFirstChild("Activated")
+            remotes.TodoActivated = serv:FindFirstChild("TodoService") and serv.TodoService.RE:FindFirstChild("Activated")
+            remotes.Divergent = serv:FindFirstChild("DivergentFistService") and serv.DivergentFistService.RE:FindFirstChild("Activated")
+            remotes.Teleport = serv:FindFirstChild("AntiCheatService") and serv.AntiCheatService.RE:FindFirstChild("Teleport")
+        end
+        remotes.Train = Workspace:FindFirstChild("Map") and Workspace.Map:FindFirstChild("Destructible") and Workspace.Map.Destructible:FindFirstChild("Model") and Workspace.Map.Destructible.Model:FindFirstChild("StationControl") and Workspace.Map.Destructible.Model.StationControl:FindFirstChild("Handle") and Workspace.Map.Destructible.Model.StationControl.Handle:FindFirstChild("Train")
+    end)
+end)
+
+local function TJSTeleport(cframeObj)
+    pcall(function()
+        if remotes.Teleport then remotes.Teleport:FireServer(1786781036.3533041) end
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            LocalPlayer.Character.HumanoidRootPart.CFrame = cframeObj
+        end
+    end)
+end
+
+local function PressKey(keyCode)
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+        task.wait()
+        VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+    end)
+end
+
+local function SimulateClick()
+    pcall(function()
+        if VirtualInputManager then
+            VirtualInputManager:SendMouseButtonEvent(0,0,0,true,game,0)
+            task.wait(0.05)
+            VirtualInputManager:SendMouseButtonEvent(0,0,0,false,game,0)
+        end
+    end)
+end
+
+--// 3. CONFIGURATION & SAVE SYSTEM
 local CONFIG_FILE = "RyuHub_TJS_Config.json"
 
 local RyuConfig = {
@@ -55,9 +103,7 @@ local RyuConfig = {
     TargetFarm = false, TargetPlayer = "None", TargetDist = 3,
     MoneyFarm = false, MFRole = "Farmer", MFVictim = "",
     
-    AutoRejoin = false, MinPlayers = 3, HighPop = true, AntiAFK = false,
-    
-    GuiColor = Color3.fromRGB(255, 255, 255)
+    AutoRejoin = false, MinPlayers = 3, HighPop = true, AntiAFK = false
 }
 
 pcall(function()
@@ -71,46 +117,22 @@ local function SaveConfig()
     pcall(function() if writefile then writefile(CONFIG_FILE, HttpService:JSONEncode(RyuConfig)) end end)
 end
 
---// 3. SECURE REMOTE / TP SYSTEM
-local function FireKnitRemote(serviceName, remoteName, args)
+local function ResetConfig()
     pcall(function()
-        local remote = ReplicatedStorage:FindFirstChild("Knit", true)
-        if remote then
-            local service = remote:FindFirstChild(serviceName, true)
-            if service and service:FindFirstChild("RE") then
-                local re = service.RE:FindFirstChild(remoteName)
-                if re then
-                    if args ~= nil then re:FireServer(args) else re:FireServer() end
-                end
-            end
+        if isfile(CONFIG_FILE) then delfile(CONFIG_FILE) end
+        for k, v in pairs(RyuConfig) do
+            if type(v) == "boolean" then RyuConfig[k] = false end
         end
     end)
 end
 
-local function TJSTeleport(cframeObj)
-    pcall(function()
-        FireKnitRemote("AntiCheatService", "Teleport", 1786781036.3533041)
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-            LocalPlayer.Character.HumanoidRootPart.CFrame = cframeObj
-        end
-    end)
-end
-
-local function PressKey(keyCode)
-    pcall(function()
-        VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
-        task.wait()
-        VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
-    end)
-end
-
---// 4. UI FRAMEWORK (MONOCHROME)
+--// 4. UI FRAMEWORK (PURE MONOCHROME)
 local Theme = {
     Background = Color3.fromRGB(15, 15, 15), Sidebar = Color3.fromRGB(22, 22, 22),
     SectionBG = Color3.fromRGB(30, 30, 30), Text = Color3.fromRGB(255, 255, 255),
     SubText = Color3.fromRGB(150, 150, 150), Accent = Color3.fromRGB(255, 255, 255),
     ToggleOff = Color3.fromRGB(45, 45, 45), ToggleOn = Color3.fromRGB(255, 255, 255),
-    Stroke = Color3.fromRGB(60, 60, 60), Warning = Color3.fromRGB(200, 200, 200)
+    Stroke = Color3.fromRGB(60, 60, 60), Warning = Color3.fromRGB(255, 255, 255)
 }
 
 local MainSize = UDim2.new(0, math.min(750, camera.ViewportSize.X - 40), 0, math.min(480, camera.ViewportSize.Y - 40))
@@ -136,7 +158,7 @@ local function AddClickPop(element)
     end)
 end
 
--- FIXED TOP LEFT TOGGLE BUTTON (Y=60)
+-- FIXED TOP LEFT TOGGLE BUTTON
 local ToggleBtn = Instance.new("TextButton")
 ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
 ToggleBtn.Position = UDim2.new(0, 15, 0, 60)
@@ -204,7 +226,7 @@ local SubTitle = Instance.new("TextLabel", Topbar)
 SubTitle.Size = UDim2.new(0, 300, 0, 15); SubTitle.Position = UDim2.new(0, 20, 0, 38); SubTitle.BackgroundTransparency = 1
 SubTitle.Text = "Jujutsu Shenanigans"; SubTitle.TextColor3 = Theme.SubText; SubTitle.Font = Enum.Font.Gotham; SubTitle.TextSize = 11; SubTitle.TextXAlignment = Enum.TextXAlignment.Left
 
--- CLOSE BUTTON (WHITE)
+-- CLOSE BUTTON (WHITE MONOCHROME)
 local CloseBtn = Instance.new("TextButton", Topbar)
 CloseBtn.Size = UDim2.new(0, 28, 0, 28)
 CloseBtn.Position = UDim2.new(1, -40, 0, 15)
@@ -239,7 +261,6 @@ end)
 local Line = Instance.new("Frame", ContentWrapper)
 Line.Size = UDim2.new(1, -40, 0, 1); Line.Position = UDim2.new(0, 20, 0, 65); Line.BackgroundColor3 = Theme.Stroke; Line.BorderSizePixel = 0
 
--- UI Layout Framework
 local Sidebar = Instance.new("ScrollingFrame", ContentWrapper)
 Sidebar.Size = UDim2.new(0, SidebarWidth, 1, -85); Sidebar.Position = UDim2.new(0, 10, 0, 75); Sidebar.BackgroundTransparency = 1; Sidebar.ScrollBarThickness = 0
 local SideLayout = Instance.new("UIListLayout", Sidebar)
@@ -250,6 +271,15 @@ ContentContainer.Size = UDim2.new(1, -(SidebarWidth + 25), 1, -85); ContentConta
 
 local Tabs = {}
 local itemOrderCounter = 0
+
+local function UpdateSidebarCanvas()
+    local totalH = 10
+    for _, t in pairs(Tabs) do
+        totalH = totalH + 36 + 6
+        if t.IsOpen then totalH = totalH + t.SubLayout.AbsoluteContentSize.Y + 6 end
+    end
+    Sidebar.CanvasSize = UDim2.new(0, 0, 0, totalH)
+end
 
 local function CreateMainTab(name)
     local tabObj = { Btn = nil, SubContainer = nil, SubLayout = nil, IsOpen = false, SubTabs = {} }
@@ -276,11 +306,7 @@ local function CreateMainTab(name)
             tabBtn.TextColor3 = tabObj.IsOpen and Theme.Text or Theme.SubText
             tabBtn.BackgroundColor3 = tabObj.IsOpen and Theme.SectionBG or Theme.Sidebar
         end)
-        task.delay(0.26, function()
-            local th = 10
-            for _, t in pairs(Tabs) do th = th + 36 + 6; if t.IsOpen then th = th + t.SubLayout.AbsoluteContentSize.Y + 6 end end
-            Sidebar.CanvasSize = UDim2.new(0, 0, 0, th)
-        end)
+        task.delay(0.26, UpdateSidebarCanvas)
     end)
 
     subLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
@@ -339,8 +365,20 @@ local function CreateSection(page, titleText)
     return section
 end
 
+local function CreateLabel(section, text)
+    itemOrderCounter = itemOrderCounter + 1
+    local frame = Instance.new("Frame", section)
+    frame.LayoutOrder = itemOrderCounter; frame.Size = UDim2.new(0.92, 0, 0, 30); frame.BackgroundTransparency = 1
+    local lbl = Instance.new("TextLabel", frame)
+    lbl.Size = UDim2.new(1, 0, 1, 0); lbl.BackgroundTransparency = 1; lbl.Text = text; lbl.TextColor3 = Theme.SubText
+    lbl.Font = Enum.Font.GothamMedium; lbl.TextSize = 11; lbl.TextXAlignment = Enum.TextXAlignment.Left; lbl.TextWrapped = true
+    return lbl
+end
+
 local function CreateToggle(section, text, descText, defaultState, callback)
     if type(descText) == "boolean" then callback = defaultState; defaultState = descText; descText = nil end
+    if type(defaultState) == "function" then callback = defaultState; defaultState = false end
+    
     itemOrderCounter = itemOrderCounter + 1
     local frame = Instance.new("Frame", section)
     frame.LayoutOrder = itemOrderCounter; frame.Size = UDim2.new(0.92, 0, 0, descText and 52 or 34); frame.BackgroundTransparency = 1
@@ -497,9 +535,10 @@ local function CreateInput(section, placeholder, callback)
 end
 
 --// ==========================================
---// 5. TABS & FEATURES SETUP
+--// 5. TABS & SETTINGS
 --// ==========================================
 
+-- TAB: COMBAT
 local TabCombat = CreateMainTab("Combat")
 
 local SubPlayer = CreateSubTab(TabCombat, "Player")
@@ -534,7 +573,7 @@ CreateToggle(SecAutoItem, "Enable Auto Item", RyuConfig.AutoItem, function(v) Ry
 local ItemDropdown = CreateDropdown(SecAutoItem, "Target Item", {"None"}, "TargetItem")
 
 task.spawn(function()
-    while task.wait(10) do
+    while task.wait(5) do
         pcall(function()
             local items = {"None"}
             local itemFolder = Workspace:FindFirstChild("Items") or Workspace
@@ -662,7 +701,7 @@ CreateToggle(SecCfg, "Anti-AFK Protection", "Prevents Roblox Kick", RyuConfig.An
 CreateButton(SecCfg, "Save Settings", Theme.SectionBG, function() SaveConfig() end)
 CreateButton(SecCfg, "Reset Settings", Theme.Warning, function() 
     pcall(function()
-        if isfile(CONFIG_FILE) then delfile(CONFIG_FILE) end
+        ResetConfig()
         RyuHub:Destroy()
     end)
 end)
@@ -673,12 +712,53 @@ pcall(function()
     if Tabs[1].SubTabs[1] and Tabs[1].SubTabs[1].Open then Tabs[1].SubTabs[1].Open() end 
 end)
 
---// 6. TJS RUNTIME EXPLOITATION ENGINE
-local lastHealth = 100
-local boxSpawned = false
-local boxPart = nil
-local bv = nil
-_G.RyuLockOnActive = false
+--// 6. RUNTIME EVENT LISTENERS (Black Flash & Todo)
+local bfAnims = {
+    ["rbxassetid://100962226150441"] = 0.18,
+    ["rbxassetid://95852624447551"] = 0.18,
+    ["rbxassetid://74145636023952"] = 0.18,
+    ["rbxassetid://72475960800126"] = 0.20,
+}
+local todoAnims = {
+    ["rbxassetid://131358603583212"] = true,
+    ["rbxassetid://91074768993486"] = true,
+    ["rbxassetid://116040503139675"] = true
+}
+
+local function HookCharAnims(char)
+    local hum = char:WaitForChild("Humanoid", 5)
+    if not hum then return end
+    local animator = hum:WaitForChild("Animator", 5)
+    if not animator then return end
+    
+    animator.AnimationPlayed:Connect(function(track)
+        if not track or not track.Animation then return end
+        local id = track.Animation.AnimationId
+        
+        -- Black Flash Logic (Listens to the exact animations)
+        if RyuConfig.AutoBlackFlash and bfAnims[id] then
+            task.delay(bfAnims[id], function()
+                if hum.Health > 0 and RyuConfig.AutoBlackFlash then
+                    PressKey(Enum.KeyCode.Three)
+                    task.delay(0.5, function() SimulateClick() end)
+                end
+            end)
+        end
+        
+        -- Todo Slap Logic
+        if RyuConfig.AutoTodo and todoAnims[id] then
+            task.spawn(function()
+                repeat task.wait() until track.TimePosition >= 0.55 or not track.IsPlaying
+                if track.IsPlaying and RyuConfig.AutoTodo and remotes.TodoActivated then
+                    remotes.TodoActivated:FireServer(false)
+                end
+            end)
+        end
+    end)
+end
+
+if LocalPlayer.Character then HookCharAnims(LocalPlayer.Character) end
+LocalPlayer.CharacterAdded:Connect(function(c) task.wait(0.3) HookCharAnims(c) end)
 
 -- Fake Name Loop
 RunService.RenderStepped:Connect(function()
@@ -737,7 +817,7 @@ Workspace.ChildAdded:Connect(function(c)
     end
 end)
 
--- Anti AFK Engine
+-- Anti AFK
 LocalPlayer.Idled:Connect(function()
     if RyuConfig.AntiAFK then
         pcall(function()
@@ -762,7 +842,6 @@ UserInputService.JumpRequest:Connect(function()
     end)
 end)
 
--- Lock On Toggle (Keybind)
 local lockOnTarget = nil
 UserInputService.InputBegan:Connect(function(i, gp)
     if not gp and i.KeyCode == RyuConfig.LockOnKey then
@@ -810,56 +889,10 @@ RunService.RenderStepped:Connect(function()
     end)
 end)
 
--- Animation Event Listener (Auto Black Flash & Todo)
-local bfAnims = {
-    ["rbxassetid://100962226150441"] = 0.18,
-    ["rbxassetid://95852624447551"] = 0.18,
-    ["rbxassetid://74145636023952"] = 0.18,
-    ["rbxassetid://72475960800126"] = 0.20,
-}
-local todoAnims = {
-    ["rbxassetid://131358603583212"] = true,
-    ["rbxassetid://91074768993486"] = true,
-    ["rbxassetid://116040503139675"] = true
-}
-
-local function HookCharAnims(char)
-    local hum = char:WaitForChild("Humanoid", 5)
-    if not hum then return end
-    local animator = hum:WaitForChild("Animator", 5)
-    if not animator then return end
-    
-    animator.AnimationPlayed:Connect(function(track)
-        if not track or not track.Animation then return end
-        local id = track.Animation.AnimationId
-        
-        -- Black Flash Logic
-        if RyuConfig.AutoBlackFlash and bfAnims[id] then
-            task.delay(bfAnims[id], function()
-                if hum.Health > 0 and RyuConfig.AutoBlackFlash then
-                    PressKey(Enum.KeyCode.Three)
-                end
-            end)
-        end
-        
-        -- Todo Slap Logic
-        if RyuConfig.AutoTodo and todoAnims[id] then
-            task.spawn(function()
-                repeat task.wait() until track.TimePosition >= 0.55 or not track.IsPlaying
-                if track.IsPlaying and RyuConfig.AutoTodo and remotes.TodoActivated then
-                    remotes.TodoActivated:FireServer(false)
-                end
-            end)
-        end
-    end)
-end
-
-if LocalPlayer.Character then HookCharAnims(LocalPlayer.Character) end
-LocalPlayer.CharacterAdded:Connect(function(c) task.wait(0.3) HookCharAnims(c) end)
-
-
--- Main Background Loop (Physics & Combat Logic)
+--// 7. BACKGROUND PHYSICS & COMBAT LOOP
+local lastHealth = 100
 local blockWait = false
+local bv = nil
 
 RunService.Stepped:Connect(function()
     pcall(function()
@@ -906,7 +939,7 @@ RunService.Stepped:Connect(function()
             end
         end
         
-        -- INVISIBLE (FE Server-Sided via Desync/LowerTorso)
+        -- INVISIBLE (FE Server-Sided via LowerTorso Desync)
         if RyuConfig.Invisible then
             local lower = char:FindFirstChild("LowerTorso")
             if lower then lower:Destroy() end 
@@ -952,8 +985,8 @@ RunService.Stepped:Connect(function()
             end
             if attacking then
                 blockWait = true
-                if remotes.BlockOn then remotes.BlockOn:FireServer() end
                 if remotes.ItadoriActivated then remotes.ItadoriActivated:FireServer(false) end
+                if remotes.BlockOn then remotes.BlockOn:FireServer() end
                 task.delay(RyuConfig.BlockTime / 1000, function()
                     if remotes.BlockOff then remotes.BlockOff:FireServer() end
                     blockWait = false
@@ -1009,14 +1042,12 @@ RunService.Stepped:Connect(function()
                     end
                 end
             end
-        else
-            if boxSpawned and boxPart then boxPart:Destroy(); boxSpawned = false end
         end
         
     end)
 end)
 
---// AI FARMING ENGINE
+--// 8. AI FARMING ENGINE
 local m1Combo = 0
 local m1Tick = os.clock()
 local aiStuckPos = Vector3.zero
@@ -1074,11 +1105,7 @@ task.spawn(function()
                 if dist < 6 then
                     if os.clock() - m1Tick > 0.4 then
                         m1Tick = os.clock()
-                        if VirtualInputManager then
-                            VirtualInputManager:SendMouseButtonEvent(0,0,0,true,game,0)
-                            task.wait(0.05)
-                            VirtualInputManager:SendMouseButtonEvent(0,0,0,false,game,0)
-                        end
+                        SimulateClick()
                         m1Combo = m1Combo + 1
                         
                         -- Use skills after 4 hits
