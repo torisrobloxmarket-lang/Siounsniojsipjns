@@ -9,6 +9,7 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
@@ -697,48 +698,40 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
--- FE Server-Sided Invis (Megumi Remote + HidePlayer Attributes)
+--// FE Server-Sided Invis (NaN Desync Glitch)
 local function ToggleInvis(state)
     local char = LocalPlayer.Character
     if not char then return end
-    
+
     if state then
-        -- 1. Server-Sided Invis über Megumi Remote aktivieren
-        pcall(function()
-            game:GetService("ReplicatedStorage"):WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("MegumiService"):WaitForChild("RE"):WaitForChild("RightActivated"):FireServer()
+        task.spawn(function()
+            pcall(function()
+                local knitServices = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
+                local acTeleport = knitServices:WaitForChild("AntiCheatService"):WaitForChild("RE"):WaitForChild("Teleport")
+                local acCamera = knitServices:WaitForChild("AntiCheatService"):WaitForChild("RE"):WaitForChild("Camera")
+                local naoyaRight = knitServices:WaitForChild("NaoyaService"):WaitForChild("RE"):WaitForChild("RightActivated")
+
+                -- 1. Anti-Cheat Teleport Logs spammen (Timestamps)
+                acTeleport:FireServer(1786818932.1222)
+                acTeleport:FireServer(1786818933.1388242)
+                acTeleport:FireServer(1786818851.6917179)
+                acTeleport:FireServer(1786818634.939621)
+
+                -- 2. Naoya Dash/Skill auslösen
+                local unp = table.unpack or unpack
+                naoyaRight:FireServer(Vector3.new(-70.33029174804688, 21.359237670898438, -5.304592132568359))
+
+                -- 3. Camera NaN (0/0) Desync für Invisibility
+                local buf1 = buffer.fromstring("\255\2556\000\000\028\000\000\198")
+                local buf2 = buffer.fromstring("\182\255\019\t\000\031L\000\210E\f\185\251E\f")
+                acCamera:FireServer(buf1, buf2, char, 0/0)
+            end)
         end)
-        
-        -- 2. TJS spezifische Game-Attributes setzen (Server/Client Ausblendung)
-        pcall(function() LocalPlayer:SetAttribute("HidePlayer", true) end)
-        pcall(function() char:SetAttribute("HidePlayer", true) end)
-        pcall(function() char:SetAttribute("Hidden", true) end)
-        
-        -- 3. Lokaler "Geist"-Effekt: Mache dich selbst zu 50% durchsichtig
-        for _, v in pairs(char:GetDescendants()) do
-            if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" and v.Transparency < 1 then
-                if not v:GetAttribute("OldTrans") then
-                    v:SetAttribute("OldTrans", v.Transparency)
-                end
-                v.Transparency = 0.5
-            elseif (v:IsA("Decal") or v:IsA("Texture")) and v.Transparency < 1 then
-                if not v:GetAttribute("OldTrans") then
-                    v:SetAttribute("OldTrans", v.Transparency)
-                end
-                v.Transparency = 0.5
-            end
-        end
     else
-        -- 1. Attribute sauber entfernen
-        pcall(function() LocalPlayer:SetAttribute("HidePlayer", nil) end)
-        pcall(function() char:SetAttribute("HidePlayer", nil) end)
-        pcall(function() char:SetAttribute("Hidden", nil) end)
-        
-        -- 2. Visuelles Aussehen wiederherstellen
-        for _, v in pairs(char:GetDescendants()) do
-            if v:GetAttribute("OldTrans") then
-                v.Transparency = v:GetAttribute("OldTrans")
-                v:SetAttribute("OldTrans", nil)
-            end
+        -- Bei einem NaN-Desync muss der Charakter resettet werden, um wieder sichtbar/normal zu werden
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.Health = 0
         end
     end
 end
