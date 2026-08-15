@@ -680,13 +680,17 @@ UserInputService.InputBegan:Connect(function(input, gpe)
     end
 end)
 
--- Inf Jump hook
+-- Inf Jump & High Jump hook
 UserInputService.JumpRequest:Connect(function()
-    if MovementState.InfJump then
-        local char = LocalPlayer.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if hum then
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if hum and root then
+        if MovementState.InfJump then
             hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+        if MovementState.HighJump then
+            root.Velocity = Vector3.new(root.Velocity.X, MovementState.JumpPower, root.Velocity.Z)
         end
     end
 end)
@@ -702,12 +706,16 @@ local function ToggleInvis(state)
         if root and not char:FindFirstChild("FakeRoot") then
             local clone = root:Clone()
             clone.Name = "FakeRoot"
+            clone.Transparency = 1
+            clone.CanCollide = false
             clone.Parent = char
             char.PrimaryPart = clone
             
+            camera.CameraSubject = clone -- Kamera bleibt unten auf dem FakeRoot
+            
             InvisLoop = RunService.RenderStepped:Connect(function()
                 if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("FakeRoot") then
-                    -- Moves the real root far under the map constantly
+                    -- Zieht den echten Root weit nach oben weg
                     char.HumanoidRootPart.CFrame = char.FakeRoot.CFrame * CFrame.new(0, 9999, 0)
                 end
             end)
@@ -716,15 +724,18 @@ local function ToggleInvis(state)
         if InvisLoop then InvisLoop:Disconnect(); InvisLoop = nil end
         local fake = char:FindFirstChild("FakeRoot")
         local root = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        
         if fake and root then
             root.CFrame = fake.CFrame
             char.PrimaryPart = root
+            if hum then camera.CameraSubject = hum end -- Kamera wieder auf Normalzustand
             fake:Destroy()
         end
     end
 end
 
--- Core Render Loop for Speed, Fly, Noclip, High Jump
+-- Core Render Loop for Speed, Fly, Noclip
 RunService.RenderStepped:Connect(function()
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -738,12 +749,6 @@ RunService.RenderStepped:Connect(function()
                 v.CanCollide = false
             end
         end
-    end
-
-    -- High Jump logic
-    if MovementState.HighJump then
-        hum.UseJumpPower = true
-        hum.JumpPower = MovementState.JumpPower
     end
 
     -- Fly logic
