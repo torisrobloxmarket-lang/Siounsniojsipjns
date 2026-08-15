@@ -14,22 +14,167 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
---// GUI PARENT RESOLVER & CLEANUP
-local guiParent
-pcall(function()
-    if type(gethui) == "function" then
-        guiParent = gethui()
-    elseif syn and syn.protect_gui then
-        guiParent = CoreGui
-    end
-end)
-if not guiParent then guiParent = LocalPlayer:WaitForChild("PlayerGui") end
-
-for _, v in pairs(guiParent:GetChildren()) do 
-    if v.Name == "RyuHubUI" then v:Destroy() end 
+--// PLATZHALTER-FUNKTION
+local function Ryuhub()
+    -- Für zukünftige Features
 end
 
---// THEME
+--// ANTI-ANNOYING MESSAGE & SOUND HIDER (CLIMB ERROR/CD)
+task.spawn(function()
+    local pg = LocalPlayer:WaitForChild("PlayerGui", 10)
+    if pg then
+        pg.DescendantAdded:Connect(function(descendant)
+            if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
+                task.delay(0.01, function()
+                    pcall(function()
+                        if descendant and descendant.Parent and descendant.Text then
+                            local txt = string.lower(descendant.Text)
+                            if txt:match("cd") or txt:match("cooldown") or txt:match("climb") or txt:match("error") then
+                                descendant.Visible = false
+                                descendant.TextTransparency = 1
+                            end
+                        end
+                    end)
+                end)
+            elseif descendant:IsA("Sound") then
+                task.delay(0.01, function()
+                    pcall(function()
+                        if descendant then
+                            local sndName = string.lower(descendant.Name)
+                            if sndName:match("error") or sndName:match("climb") then
+                                descendant:Stop()
+                                descendant.Volume = 0
+                            end
+                        end
+                    end)
+                end)
+            end
+        end)
+    end
+end)
+
+--// QUEST PING TRACKER (__namecall Hook)
+local lastQuestPing = tick()
+pcall(function()
+    local oldNamecall
+    oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+        if not getnamecallmethod then return oldNamecall(self, ...) end
+        
+        local method = getnamecallmethod()
+        if method == "InvokeServer" and typeof(self) == "Instance" and self.Name == "Quest" then
+            local args = {...}
+            if args[1] == "getNPCQuestLocations" or (type(args[1]) == "table" and args[1][1] == "getNPCQuestLocations") then
+                lastQuestPing = tick()
+            end
+        end
+        return oldNamecall(self, ...)
+    end)
+end)
+
+--// GUI CLEANUP
+local guiParent = LocalPlayer:WaitForChild("PlayerGui")
+pcall(function() if gethui then guiParent = gethui() elseif syn and syn.protect_gui then guiParent = CoreGui end end)
+for _, v in pairs(guiParent:GetChildren()) do if v.Name == "RyuHubPremium" then v:Destroy() end end
+
+--// DYNAMISCHER WORKSPACE SCANNER FÜR INSELN, NPCs & WAFFEN
+local function GetDynamicLists()
+    local islands = {}
+    local islandsFolder = Workspace:FindFirstChild("Islands")
+    if islandsFolder then
+        for _, v in pairs(islandsFolder:GetChildren()) do
+            table.insert(islands, v.Name)
+        end
+    else
+        islands = {
+            "???? Shrine", "A rock", "Coco Island", "Colosseum", "Colosseum of Arc", 
+            "Desert Kingdom", "Dokkan Island", "Fishman Cave", "Fishman Island", 
+            "Foro Island", "Impel Base", "Marine Base G-1", "Marine Fort F-1", 
+            "Mirror World", "Mysterious Cliff", "Mysterious Reef", "Orange Town", 
+            "Restaurant Baratie", "Reverse Mountain", "Roca Island", "Rose Kingdom", 
+            "Rovo Island", "Sakura Stronghold", "Sandora", "Sashi Island", 
+            "Sett's Arena", "Shark Park", "Shell's Town", "Sphinx Island", 
+            "Spirit Island", "Thriller Bark", "Town of Beginnings", 
+            "Turtleback Cave", "Umi Island", "Whole Cake Island"
+        }
+    end
+    table.sort(islands)
+    return islands
+end
+
+local function GetNPCNames()
+    local names = {}
+    local dict = {}
+    if Workspace:FindFirstChild("NPCs") then
+        for _, v in pairs(Workspace.NPCs:GetChildren()) do
+            if v:IsA("Model") and v:FindFirstChild("HumanoidRootPart") and not dict[v.Name] then
+                dict[v.Name] = true
+                table.insert(names, v.Name)
+            end
+        end
+    end
+    table.sort(names)
+    return names
+end
+
+local function GetWeapons()
+    local weapons = {}
+    local dict = {}
+    local function add(t)
+        if t and t:IsA("Tool") and not dict[t.Name] then
+            dict[t.Name] = true
+            table.insert(weapons, t.Name)
+        end
+    end
+    if LocalPlayer.Character then
+        for _, v in pairs(LocalPlayer.Character:GetChildren()) do add(v) end
+    end
+    local bp = LocalPlayer:FindFirstChild("Backpack")
+    if bp then
+        for _, v in pairs(bp:GetChildren()) do add(v) end
+    end
+    if #weapons == 0 then return {"Melee"} end
+    table.sort(weapons)
+    return weapons
+end
+
+local InitIslands = GetDynamicLists()
+
+--// RYU CONFIGURATION (GPO)
+local RyuConfig = {
+    TargetIsland = InitIslands[1] or "Town of Beginnings",
+    IslandSpeed = 65, 
+    TweenWallDistance = 1,
+    GuiColor = Color3.fromRGB(255, 255, 255),
+    
+    AutoFarm = false,
+    FarmMode = "Solo", 
+    FarmTweenType = "FarmTween (Direct)",
+    TargetNPC = "",
+    TargetMob = "",
+    FarmHoverHeight = 6.5,
+    FarmHitDelay = 0.45,
+    FarmComboDelay = 1.0, 
+    UseGun = false, 
+    FarmStyle = "Melee",
+    
+    AutoBuso = false,
+    AutoGeppo = false,
+    
+    NoclipDash = false,
+    
+    EnableAutoStats = false,
+    AutoStats = {
+        Strength = 0,
+        Stamina = 0,
+        Defense = 0,
+        SwordMastery = 0,
+        GunMastery = 0
+    },
+    
+    FakeName = ""
+}
+
+--// PREMIUM MONOCHROME THEME
 local Theme = {
     Background = Color3.fromRGB(15, 15, 15),
     Sidebar = Color3.fromRGB(22, 22, 22),
@@ -42,6 +187,7 @@ local Theme = {
     Stroke = Color3.fromRGB(60, 60, 60)
 }
 
+local isMobile = camera.ViewportSize.X < 850
 local MainSize = UDim2.new(0, math.min(750, camera.ViewportSize.X - 40), 0, math.min(480, camera.ViewportSize.Y - 40))
 local SidebarWidth = 160
 
@@ -134,13 +280,41 @@ DragText.TextColor3 = Theme.Text
 DragText.TextTransparency = 0.95
 DragText.ZIndex = 0
 
+local tDragStart, tStartPos, isDraggingBtn = nil, nil, false
+ToggleBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDraggingBtn = false
+        tDragStart = input.Position
+        tStartPos = ToggleBtn.Position
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if tDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - tDragStart
+        if delta.Magnitude > 5 then 
+            isDraggingBtn = true
+            ToggleBtn.Position = UDim2.new(tStartPos.X.Scale, tStartPos.X.Offset + delta.X, tStartPos.Y.Scale, tStartPos.Y.Offset + delta.Y) 
+        end
+    end
+end)
+
 ToggleBtn.MouseButton1Click:Connect(function()
-    if MainFrame.Visible then
-        pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play() end)
-        task.delay(0.3, function() MainFrame.Visible = false end)
-    else
-        MainFrame.Visible = true
-        pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = MainSize, Position = UDim2.new(0.5, -MainSize.X.Offset / 2, 0.5, -MainSize.Y.Offset / 2)}):Play() end)
+    if not isDraggingBtn then
+        if MainFrame and MainFrame.Visible then
+            pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play() end)
+            task.delay(0.3, function() if MainFrame then MainFrame.Visible = false end end)
+        else
+            if MainFrame then MainFrame.Visible = true end
+            pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = MainSize, Position = UDim2.new(0.5, -MainSize.X.Offset / 2, 0.5, -MainSize.Y.Offset / 2)}):Play() end)
+        end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if tDragStart then
+            tDragStart = nil
+        end
     end
 end)
 
@@ -163,6 +337,19 @@ Title.TextSize = 22
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.TextColor3 = Theme.Text
 
+local TitleGradient = Instance.new("UIGradient", Title)
+TitleGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(180, 180, 185)),   
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)), 
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 180, 185))    
+}
+TitleGradient.Offset = Vector2.new(-1, 0)
+
+task.spawn(function()
+    local tweenInfo = TweenInfo.new(2.0, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
+    pcall(function() TweenService:Create(TitleGradient, tweenInfo, {Offset = Vector2.new(1, 0)}):Play() end)
+end)
+
 local SubTitle = Instance.new("TextLabel", Topbar)
 SubTitle.Size = UDim2.new(0, 300, 0, 15)
 SubTitle.Position = UDim2.new(0, 20, 0, 38)
@@ -183,10 +370,11 @@ CloseBtn.Font = Enum.Font.GothamBold
 CloseBtn.TextSize = 14
 Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
 Instance.new("UIStroke", CloseBtn).Color = Theme.Stroke
+AddHoverEffect(CloseBtn, Theme.SectionBG, Theme.Warning)
 
 CloseBtn.MouseButton1Click:Connect(function()
     pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play() end)
-    task.delay(0.3, function() MainFrame.Visible = false end)
+    task.delay(0.3, function() if MainFrame then MainFrame.Visible = false end end)
 end)
 
 -- Window Dragging
@@ -245,6 +433,14 @@ local function UpdateSidebarCanvas()
         if t.IsOpen then totalH = totalH + t.SubLayout.AbsoluteContentSize.Y + 6 end
     end
     Sidebar.CanvasSize = UDim2.new(0, 0, 0, totalH)
+end
+
+local function SecureTrigger(button, func)
+    button.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            pcall(func)
+        end
+    end)
 end
 
 local function CreateMainTab(name)
@@ -322,12 +518,12 @@ local function CreateSubTab(tabObj, subName)
     subBtn.MouseButton1Click:Connect(function()
         for _, t in pairs(Tabs) do
             for _, st in pairs(t.SubTabs) do
-                st.Page.Visible = false
-                st.Btn.TextColor3 = Theme.SubText
+                if st and st.Page then pcall(function() st.Page.Visible = false end) end
+                if st and st.Btn then pcall(function() TweenService:Create(st.Btn, TweenInfo.new(0.2), {TextColor3 = Theme.SubText}):Play() end) end
             end
         end
-        page.Visible = true
-        subBtn.TextColor3 = Theme.Text
+        if page then pcall(function() page.Visible = true end) end
+        pcall(function() TweenService:Create(subBtn, TweenInfo.new(0.2), {TextColor3 = Theme.Text}):Play() end)
     end)
 
     table.insert(tabObj.SubTabs, subObj)
@@ -629,6 +825,64 @@ local function CreateInput(section, placeholder, callback)
     return box
 end
 
+--// ==========================================
+--// TJS SPECIFIC LOGIC (Auto Block)
+--// ==========================================
+local TJSConfig = {
+    AutoBlock = false,
+    BlockReactRange = 15,
+    BlockHoldDuration = 500
+}
+
+-- RenderStepped Auto Block Logik
+RunService.RenderStepped:Connect(function()
+    if not TJSConfig.AutoBlock then return end
+
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local enemyRoot = player.Character:FindFirstChild("HumanoidRootPart")
+            if enemyRoot then
+                local distance = (root.Position - enemyRoot.Position).Magnitude
+                if distance <= TJSConfig.BlockReactRange then
+                    -- Check, ob der Gegner eine Angriffsanimation abspielt
+                    local enemyHum = player.Character:FindFirstChildOfClass("Humanoid")
+                    if enemyHum then
+                        local isAttacking = false
+                        for _, track in pairs(enemyHum:GetPlayingAnimationTracks()) do
+                            -- Einfache Heuristik: "Punch", "Attack", "Strike" etc.
+                            local animName = string.lower(track.Name)
+                            if animName:match("punch") or animName:match("attack") or animName:match("strike") or animName:match("kick") then
+                                isAttacking = true
+                                break
+                            end
+                        end
+
+                        if isAttacking then
+                            -- Block-Remote feuern
+                            pcall(function()
+                                local combatEvent = ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("Combat")
+                                if combatEvent then
+                                    combatEvent:FireServer("Block", true)
+                                    
+                                    -- Block halten und dann loslassen
+                                    task.spawn(function()
+                                        task.wait(TJSConfig.BlockHoldDuration / 1000)
+                                        pcall(function() combatEvent:FireServer("Block", false) end)
+                                    end)
+                                end
+                            end)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
 
 --// ==========================================
 --// MOVEMENT LOGIC (NO MOMENTUM, INSTANT)
@@ -701,7 +955,8 @@ end)
 --// FE Server-Sided Invis (NaN Desync Glitch)
 local function ToggleInvis(state)
     local char = LocalPlayer.Character
-    if not char then return end
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not char or not root then return end
 
     if state then
         task.spawn(function()
@@ -711,7 +966,7 @@ local function ToggleInvis(state)
                 local acCamera = knitServices:WaitForChild("AntiCheatService"):WaitForChild("RE"):WaitForChild("Camera")
                 local naoyaRight = knitServices:WaitForChild("NaoyaService"):WaitForChild("RE"):WaitForChild("RightActivated")
 
-                -- 1. Anti-Cheat Teleport Logs spammen (Timestamps)
+                -- 1. Anti-Cheat Teleport Logs spammen
                 acTeleport:FireServer(1786818932.1222)
                 acTeleport:FireServer(1786818933.1388242)
                 acTeleport:FireServer(1786818851.6917179)
@@ -721,14 +976,24 @@ local function ToggleInvis(state)
                 local unp = table.unpack or unpack
                 naoyaRight:FireServer(Vector3.new(-70.33029174804688, 21.359237670898438, -5.304592132568359))
 
-                -- 3. Camera NaN (0/0) Desync für Invisibility
+                -- 3. Camera NaN Desync (Safe NaN für Mobile Executoren)
+                local safeNaN = math.acos(2) -- Erzeugt garantiert NaN, wird nicht gefiltert
                 local buf1 = buffer.fromstring("\255\2556\000\000\028\000\000\198")
                 local buf2 = buffer.fromstring("\182\255\019\t\000\031L\000\210E\f\185\251E\f")
-                acCamera:FireServer(buf1, buf2, char, 0/0)
+                
+                acCamera:FireServer(buf1, buf2, char, safeNaN)
+            end)
+            
+            -- 4. Backup Physics Desync (Zwingt den Server, dich auszublenden)
+            task.wait(0.2)
+            pcall(function()
+                local nanVec = Vector3.new(math.acos(2), math.acos(2), math.acos(2))
+                root.Velocity = nanVec
+                root.RotVelocity = nanVec
             end)
         end)
     else
-        -- Bei einem NaN-Desync muss der Charakter resettet werden, um wieder sichtbar/normal zu werden
+        -- Bei einem NaN-Desync muss der Charakter resettet werden
         local hum = char:FindFirstChildOfClass("Humanoid")
         if hum then
             hum.Health = 0
@@ -821,9 +1086,9 @@ end)
 
 local SubAuto = CreateSubTab(TabCombat, "Auto")
 local SecAutoDef = CreateSection(SubAuto, "Defensive")
-CreateToggle(SecAutoDef, "Auto Block", false, function() end)
-CreateSlider(SecAutoDef, "Block React Range", 5, 50, 15, function() end)
-CreateSlider(SecAutoDef, "Block Hold Duration (ms)", 100, 1500, 500, function() end)
+CreateToggle(SecAutoDef, "Auto Block", false, function(state) TJSConfig.AutoBlock = state end)
+CreateSlider(SecAutoDef, "Block React Range", 5, 50, 15, function(val) TJSConfig.BlockReactRange = val end)
+CreateSlider(SecAutoDef, "Block Hold Duration (ms)", 100, 1500, 500, function(val) TJSConfig.BlockHoldDuration = val end)
 CreateToggle(SecAutoDef, "Auto Dodge (TP Back)", false, function() end)
 CreateSlider(SecAutoDef, "Dodge Distance", 5, 50, 20, function() end)
 
