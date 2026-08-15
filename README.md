@@ -691,91 +691,49 @@ UserInputService.JumpRequest:Connect(function()
             hum:ChangeState(Enum.HumanoidStateType.Jumping)
         end
         if MovementState.HighJump then
+            -- Setzt die vertikale Geschwindigkeit sofort, ohne Verzögerung
             root.Velocity = Vector3.new(root.Velocity.X, MovementState.JumpPower, root.Velocity.Z)
         end
     end
 end)
 
--- FE Server-Sided Invis (Ghost Local & Root in Sky)
-local InvisLoop
+-- FE Server-Sided Invis (Attribute & Transparency Method)
 local function ToggleInvis(state)
     local char = LocalPlayer.Character
     if not char then return end
     
-    local root = char:FindFirstChild("HumanoidRootPart")
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    
     if state then
-        if root and hum and not char:FindFirstChild("FakeRoot") then
-            -- 1. FakeRoot klonen, der für dich auf dem Boden bleibt
-            local clone = root:Clone()
-            clone.Name = "FakeRoot"
-            clone.Transparency = 1
-            clone.CanCollide = false
-            clone.Parent = char
-            char.PrimaryPart = clone
-            
-            -- 2. RootJoint abkapseln und an den FakeRoot heften. 
-            -- Dadurch bleibt dein sichtbarer Körper (Torso etc.) am FakeRoot!
-            local rootJoint
-            for _, v in pairs(char:GetDescendants()) do
-                if v:IsA("Motor6D") and (v.Name == "RootJoint" or v.Name == "Root") then
-                    rootJoint = v
-                    break
-                end
+        -- 1. TJS Spezifisches HidePlayer Attribut (aus dem Client-Script Leak)
+        pcall(function() LocalPlayer:SetAttribute("HidePlayer", true) end)
+        pcall(function() char:SetAttribute("HidePlayer", true) end)
+        
+        -- 2. Lokaler Geist-Effekt (Super durchsichtig)
+        for _, v in pairs(char:GetDescendants()) do
+            if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" and v.Transparency < 1 then
+                v:SetAttribute("OldTrans", v.Transparency)
+                v.Transparency = 0.8 -- Fast unsichtbar
+            elseif v:IsA("Decal") or v:IsA("Texture") then
+                v:SetAttribute("OldTrans", v.Transparency)
+                v.Transparency = 1
             end
-            if rootJoint then
-                rootJoint.Part0 = clone
+        end
+        
+        -- 3. Keine Kollisionen mehr mit anderen
+        for _, v in pairs(char:GetDescendants()) do
+            if v:IsA("BasePart") then
+                v.CanCollide = false
             end
-            
-            -- 3. KAMERA FIX: Kamera an den neuen FakeRoot binden, damit sie nicht in den Himmel fliegt
-            if camera then camera.CameraSubject = clone end
-            
-            -- 4. GEIST-EFFEKT: Mach den Körper lokal für DICH transparent
-            for _, v in pairs(char:GetDescendants()) do
-                if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" and v.Name ~= "FakeRoot" and v.Transparency < 1 then
-                    v:SetAttribute("OldTrans", v.Transparency)
-                    v.Transparency = 0.5
-                end
-            end
-            
-            -- 5. SERVER BYPASS: Halte den ECHTEN Root-Part in den Wolken (für andere bist du weg!)
-            InvisLoop = RunService.RenderStepped:Connect(function()
-                if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("FakeRoot") then
-                    char.HumanoidRootPart.CFrame = char.FakeRoot.CFrame * CFrame.new(0, 9999, 0)
-                end
-            end)
         end
     else
-        -- ALLES SAUBER ZURÜCKSETZEN
-        if InvisLoop then InvisLoop:Disconnect(); InvisLoop = nil end
-        local clone = char:FindFirstChild("FakeRoot")
+        -- Alles zurücksetzen
+        pcall(function() LocalPlayer:SetAttribute("HidePlayer", nil) end)
+        pcall(function() char:SetAttribute("HidePlayer", nil) end)
         
-        if clone and root then
-            local rootJoint
-            for _, v in pairs(char:GetDescendants()) do
-                if v:IsA("Motor6D") and (v.Name == "RootJoint" or v.Name == "Root") then
-                    rootJoint = v
-                    break
-                end
+        for _, v in pairs(char:GetDescendants()) do
+            if (v:IsA("BasePart") or v:IsA("Decal") or v:IsA("Texture")) and v:GetAttribute("OldTrans") then
+                v.Transparency = v:GetAttribute("OldTrans")
+                v:SetAttribute("OldTrans", nil)
             end
-            if rootJoint then
-                rootJoint.Part0 = root
-            end
-            
-            char.PrimaryPart = root
-            root.CFrame = clone.CFrame
-            
-            if hum and camera then camera.CameraSubject = hum end
-            
-            for _, v in pairs(char:GetDescendants()) do
-                if v:IsA("BasePart") and v:GetAttribute("OldTrans") then
-                    v.Transparency = v:GetAttribute("OldTrans")
-                    v:SetAttribute("OldTrans", nil)
-                end
-            end
-            
-            clone:Destroy()
         end
     end
 end
@@ -796,7 +754,7 @@ RunService.RenderStepped:Connect(function()
         end
     end
     
-    -- High Jump Fallback
+    -- Erzwungene High Jump Power gegen Anticheat-Resets
     if MovementState.HighJump then
         hum.UseJumpPower = true
         hum.JumpPower = MovementState.JumpPower
