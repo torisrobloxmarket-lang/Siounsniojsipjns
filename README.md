@@ -1,6 +1,8 @@
 --// ==========================================
 --// RYU HUB - UI OVERLAY (TJS EDITION)
 --// 100% MONOCHROME CLEAN TEMPLATE
+--// FIXED: AddHoverEffect undefined, Theme.Warning missing,
+--//        namecall hook guard, drag/click race, invis rewrite
 --// ==========================================
 
 local CoreGui = game:GetService("CoreGui")
@@ -53,20 +55,28 @@ task.spawn(function()
     end
 end)
 
---// QUEST PING TRACKER (__namecall Hook)
+--// QUEST PING TRACKER (__namecall Hook) — FIXED: guard was checking function as value
 local lastQuestPing = tick()
 pcall(function()
     local oldNamecall
     oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-        if not getnamecallmethod then return oldNamecall(self, ...) end
-        
+        if typeof(getnamecallmethod) ~= "function" then
+            return oldNamecall(self, ...)
+        end
+
         local method = getnamecallmethod()
-        if method == "InvokeServer" and typeof(self) == "Instance" and self.Name == "Quest" then
+        if method == "InvokeServer"
+            and typeof(self) == "Instance"
+            and self.Name == "Quest"
+        then
             local args = {...}
-            if args[1] == "getNPCQuestLocations" or (type(args[1]) == "table" and args[1][1] == "getNPCQuestLocations") then
+            if args[1] == "getNPCQuestLocations"
+                or (type(args[1]) == "table" and args[1][1] == "getNPCQuestLocations")
+            then
                 lastQuestPing = tick()
             end
         end
+
         return oldNamecall(self, ...)
     end)
 end)
@@ -86,14 +96,14 @@ local function GetDynamicLists()
         end
     else
         islands = {
-            "???? Shrine", "A rock", "Coco Island", "Colosseum", "Colosseum of Arc", 
-            "Desert Kingdom", "Dokkan Island", "Fishman Cave", "Fishman Island", 
-            "Foro Island", "Impel Base", "Marine Base G-1", "Marine Fort F-1", 
-            "Mirror World", "Mysterious Cliff", "Mysterious Reef", "Orange Town", 
-            "Restaurant Baratie", "Reverse Mountain", "Roca Island", "Rose Kingdom", 
-            "Rovo Island", "Sakura Stronghold", "Sandora", "Sashi Island", 
-            "Sett's Arena", "Shark Park", "Shell's Town", "Sphinx Island", 
-            "Spirit Island", "Thriller Bark", "Town of Beginnings", 
+            "???? Shrine", "A rock", "Coco Island", "Colosseum", "Colosseum of Arc",
+            "Desert Kingdom", "Dokkan Island", "Fishman Cave", "Fishman Island",
+            "Foro Island", "Impel Base", "Marine Base G-1", "Marine Fort F-1",
+            "Mirror World", "Mysterious Cliff", "Mysterious Reef", "Orange Town",
+            "Restaurant Baratie", "Reverse Mountain", "Roca Island", "Rose Kingdom",
+            "Rovo Island", "Sakura Stronghold", "Sandora", "Sashi Island",
+            "Sett's Arena", "Shark Park", "Shell's Town", "Sphinx Island",
+            "Spirit Island", "Thriller Bark", "Town of Beginnings",
             "Turtleback Cave", "Umi Island", "Whole Cake Island"
         }
     end
@@ -142,26 +152,26 @@ local InitIslands = GetDynamicLists()
 --// RYU CONFIGURATION (GPO)
 local RyuConfig = {
     TargetIsland = InitIslands[1] or "Town of Beginnings",
-    IslandSpeed = 65, 
+    IslandSpeed = 65,
     TweenWallDistance = 1,
     GuiColor = Color3.fromRGB(255, 255, 255),
-    
+
     AutoFarm = false,
-    FarmMode = "Solo", 
+    FarmMode = "Solo",
     FarmTweenType = "FarmTween (Direct)",
     TargetNPC = "",
     TargetMob = "",
     FarmHoverHeight = 6.5,
     FarmHitDelay = 0.45,
-    FarmComboDelay = 1.0, 
-    UseGun = false, 
+    FarmComboDelay = 1.0,
+    UseGun = false,
     FarmStyle = "Melee",
-    
+
     AutoBuso = false,
     AutoGeppo = false,
-    
+
     NoclipDash = false,
-    
+
     EnableAutoStats = false,
     AutoStats = {
         Strength = 0,
@@ -170,11 +180,11 @@ local RyuConfig = {
         SwordMastery = 0,
         GunMastery = 0
     },
-    
+
     FakeName = ""
 }
 
---// PREMIUM MONOCHROME THEME
+--// PREMIUM MONOCHROME THEME — FIXED: Added Warning color
 local Theme = {
     Background = Color3.fromRGB(15, 15, 15),
     Sidebar = Color3.fromRGB(22, 22, 22),
@@ -184,7 +194,8 @@ local Theme = {
     Accent = Color3.fromRGB(255, 255, 255),
     ToggleOff = Color3.fromRGB(45, 45, 45),
     ToggleOn = Color3.fromRGB(255, 255, 255),
-    Stroke = Color3.fromRGB(60, 60, 60)
+    Stroke = Color3.fromRGB(60, 60, 60),
+    Warning = Color3.fromRGB(220, 60, 60)
 }
 
 local isMobile = camera.ViewportSize.X < 850
@@ -196,6 +207,20 @@ RyuHub.Name = "RyuHubUI"
 RyuHub.ResetOnSpawn = false
 RyuHub.IgnoreGuiInset = true
 RyuHub.Parent = guiParent
+
+--// FIXED: AddHoverEffect defined before first use (was called on CloseBtn but never defined)
+local function AddHoverEffect(element, normalColor, hoverColor)
+    element.MouseEnter:Connect(function()
+        pcall(function()
+            TweenService:Create(element, TweenInfo.new(0.15), {BackgroundColor3 = hoverColor}):Play()
+        end)
+    end)
+    element.MouseLeave:Connect(function()
+        pcall(function()
+            TweenService:Create(element, TweenInfo.new(0.15), {BackgroundColor3 = normalColor}):Play()
+        end)
+    end)
+end
 
 local function AddClickPop(element)
     local orig = element.Size
@@ -280,41 +305,63 @@ DragText.TextColor3 = Theme.Text
 DragText.TextTransparency = 0.95
 DragText.ZIndex = 0
 
+--// FIXED: Drag vs click race — isDraggingBtn resets after one frame via task.defer
 local tDragStart, tStartPos, isDraggingBtn = nil, nil, false
+
 ToggleBtn.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch
+    then
         isDraggingBtn = false
         tDragStart = input.Position
         tStartPos = ToggleBtn.Position
     end
 end)
-UserInputService.InputChanged:Connect(function(input)
-    if tDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - tDragStart
-        if delta.Magnitude > 5 then 
-            isDraggingBtn = true
-            ToggleBtn.Position = UDim2.new(tStartPos.X.Scale, tStartPos.X.Offset + delta.X, tStartPos.Y.Scale, tStartPos.Y.Offset + delta.Y) 
-        end
-    end
-end)
 
-ToggleBtn.MouseButton1Click:Connect(function()
-    if not isDraggingBtn then
-        if MainFrame and MainFrame.Visible then
-            pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play() end)
-            task.delay(0.3, function() if MainFrame then MainFrame.Visible = false end end)
-        else
-            if MainFrame then MainFrame.Visible = true end
-            pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = MainSize, Position = UDim2.new(0.5, -MainSize.X.Offset / 2, 0.5, -MainSize.Y.Offset / 2)}):Play() end)
+UserInputService.InputChanged:Connect(function(input)
+    if tDragStart and (
+        input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch
+    ) then
+        local delta = input.Position - tDragStart
+        if delta.Magnitude > 5 then
+            isDraggingBtn = true
+            ToggleBtn.Position = UDim2.new(
+                tStartPos.X.Scale, tStartPos.X.Offset + delta.X,
+                tStartPos.Y.Scale, tStartPos.Y.Offset + delta.Y
+            )
         end
     end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        if tDragStart then
-            tDragStart = nil
-        end
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch
+    then
+        tDragStart = nil
+        task.defer(function() isDraggingBtn = false end)
+    end
+end)
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    if isDraggingBtn then return end
+
+    if MainFrame and MainFrame.Visible then
+        pcall(function()
+            TweenService:Create(MainFrame,
+                TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+                {Size = UDim2.new(0,0,0,0), Position = UDim2.new(0.5,0,0.5,0)}
+            ):Play()
+        end)
+        task.delay(0.3, function() if MainFrame then MainFrame.Visible = false end end)
+    else
+        if MainFrame then MainFrame.Visible = true end
+        pcall(function()
+            TweenService:Create(MainFrame,
+                TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                {Size = MainSize, Position = UDim2.new(0.5, -MainSize.X.Offset/2, 0.5, -MainSize.Y.Offset/2)}
+            ):Play()
+        end)
     end
 end)
 
@@ -339,9 +386,9 @@ Title.TextColor3 = Theme.Text
 
 local TitleGradient = Instance.new("UIGradient", Title)
 TitleGradient.Color = ColorSequence.new{
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(180, 180, 185)),   
-    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)), 
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 180, 185))    
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(180, 180, 185)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 180, 185))
 }
 TitleGradient.Offset = Vector2.new(-1, 0)
 
@@ -373,17 +420,22 @@ Instance.new("UIStroke", CloseBtn).Color = Theme.Stroke
 AddHoverEffect(CloseBtn, Theme.SectionBG, Theme.Warning)
 
 CloseBtn.MouseButton1Click:Connect(function()
-    pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play() end)
+    pcall(function()
+        TweenService:Create(MainFrame,
+            TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+            {Size = UDim2.new(0,0,0,0), Position = UDim2.new(0.5,0,0.5,0)}
+        ):Play()
+    end)
     task.delay(0.3, function() if MainFrame then MainFrame.Visible = false end end)
 end)
 
 -- Window Dragging
 local mDragging, mDragStart, mStartPos = false, nil, nil
 Topbar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         mDragging = true
         mDragStart = input.Position
-        mStartPos = MainFrame.Position 
+        mStartPos = MainFrame.Position
     end
 end)
 Topbar.InputChanged:Connect(function(input)
@@ -393,8 +445,8 @@ Topbar.InputChanged:Connect(function(input)
     end
 end)
 Topbar.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
-        mDragging = false 
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        mDragging = false
     end
 end)
 
@@ -445,7 +497,7 @@ end
 
 local function CreateMainTab(name)
     local tabObj = { Btn = nil, SubContainer = nil, SubLayout = nil, IsOpen = false, SubTabs = {} }
-    
+
     local tabBtn = Instance.new("TextButton", Sidebar)
     tabBtn.Size = UDim2.new(1, 0, 0, 36)
     tabBtn.BackgroundColor3 = Theme.Sidebar
@@ -537,16 +589,16 @@ local function CreateSection(page, titleText)
     section.BackgroundTransparency = 0
     Instance.new("UICorner", section).CornerRadius = UDim.new(0, 10)
     Instance.new("UIStroke", section).Color = Theme.Stroke
-    
+
     local secLayout = Instance.new("UIListLayout", section)
     secLayout.Padding = UDim.new(0, 10)
     secLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     secLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    
+
     local secPadding = Instance.new("UIPadding", section)
     secPadding.PaddingTop = UDim.new(0, 12)
     secPadding.PaddingBottom = UDim.new(0, 12)
-    
+
     local title = Instance.new("TextLabel", section)
     title.LayoutOrder = -1
     title.Size = UDim2.new(0.92, 0, 0, 24)
@@ -556,9 +608,9 @@ local function CreateSection(page, titleText)
     title.Font = Enum.Font.GothamBold
     title.TextSize = 14
     title.TextXAlignment = Enum.TextXAlignment.Left
-    
-    secLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() 
-        section.Size = UDim2.new(1, 0, 0, secLayout.AbsoluteContentSize.Y + 24) 
+
+    secLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        section.Size = UDim2.new(1, 0, 0, secLayout.AbsoluteContentSize.Y + 24)
     end)
     return section
 end
@@ -569,7 +621,7 @@ local function CreateLabel(section, text)
     frame.LayoutOrder = itemOrderCounter
     frame.Size = UDim2.new(0.92, 0, 0, 30)
     frame.BackgroundTransparency = 1
-    
+
     local lbl = Instance.new("TextLabel", frame)
     lbl.Size = UDim2.new(1, 0, 1, 0)
     lbl.BackgroundTransparency = 1
@@ -585,12 +637,12 @@ end
 local function CreateToggle(section, text, descText, defaultState, callback)
     if type(descText) == "boolean" then callback = defaultState; defaultState = descText; descText = nil end
     itemOrderCounter = itemOrderCounter + 1
-    
+
     local frame = Instance.new("Frame", section)
     frame.LayoutOrder = itemOrderCounter
     frame.Size = UDim2.new(0.92, 0, 0, descText and 52 or 34)
     frame.BackgroundTransparency = 1
-    
+
     local label = Instance.new("TextLabel", frame)
     label.Size = UDim2.new(0.7, 0, 0, 34)
     label.BackgroundTransparency = 1
@@ -599,7 +651,7 @@ local function CreateToggle(section, text, descText, defaultState, callback)
     label.Font = Enum.Font.GothamMedium
     label.TextSize = 13
     label.TextXAlignment = Enum.TextXAlignment.Left
-    
+
     if descText then
         local descLabel = Instance.new("TextLabel", frame)
         descLabel.Size = UDim2.new(0.7, 0, 0, 15)
@@ -611,26 +663,29 @@ local function CreateToggle(section, text, descText, defaultState, callback)
         descLabel.TextSize = 11
         descLabel.TextXAlignment = Enum.TextXAlignment.Left
     end
-    
+
     local tBtn = Instance.new("TextButton", frame)
     tBtn.Size = UDim2.new(0, 42, 0, 22)
     tBtn.Position = UDim2.new(1, -42, 0, 6)
     tBtn.BackgroundColor3 = defaultState and Theme.ToggleOn or Theme.ToggleOff
     tBtn.Text = ""
     Instance.new("UICorner", tBtn).CornerRadius = UDim.new(1, 0)
-    
+
     local circle = Instance.new("Frame", tBtn)
     circle.Size = UDim2.new(0, 16, 0, 16)
     circle.Position = defaultState and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
     circle.BackgroundColor3 = defaultState and Theme.Background or Color3.fromRGB(150, 150, 150)
     Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
-    
+
     local isOn = defaultState or false
     tBtn.MouseButton1Click:Connect(function()
         isOn = not isOn
         pcall(function()
             TweenService:Create(tBtn, TweenInfo.new(0.2), {BackgroundColor3 = isOn and Theme.ToggleOn or Theme.ToggleOff}):Play()
-            TweenService:Create(circle, TweenInfo.new(0.2), {Position = isOn and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8), BackgroundColor3 = isOn and Theme.Background or Color3.fromRGB(150, 150, 150)}):Play()
+            TweenService:Create(circle, TweenInfo.new(0.2), {
+                Position = isOn and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8),
+                BackgroundColor3 = isOn and Theme.Background or Color3.fromRGB(150, 150, 150)
+            }):Play()
             label.TextColor3 = isOn and Theme.Text or Theme.SubText
         end)
         if callback then pcall(function() callback(isOn) end) end
@@ -643,7 +698,7 @@ local function CreateSlider(section, text, min, max, default, callback)
     frame.LayoutOrder = itemOrderCounter
     frame.Size = UDim2.new(0.92, 0, 0, 50)
     frame.BackgroundTransparency = 1
-    
+
     local label = Instance.new("TextLabel", frame)
     label.Size = UDim2.new(1, -40, 0, 18)
     label.BackgroundTransparency = 1
@@ -652,7 +707,7 @@ local function CreateSlider(section, text, min, max, default, callback)
     label.Font = Enum.Font.GothamMedium
     label.TextSize = 13
     label.TextXAlignment = Enum.TextXAlignment.Left
-    
+
     local valLabel = Instance.new("TextLabel", frame)
     valLabel.Size = UDim2.new(0, 40, 0, 18)
     valLabel.Position = UDim2.new(1, -40, 0, 0)
@@ -662,29 +717,37 @@ local function CreateSlider(section, text, min, max, default, callback)
     valLabel.Font = Enum.Font.GothamBold
     valLabel.TextSize = 13
     valLabel.TextXAlignment = Enum.TextXAlignment.Right
-    
+
     local sliderBg = Instance.new("Frame", frame)
     sliderBg.Size = UDim2.new(1, 0, 0, 4)
     sliderBg.Position = UDim2.new(0, 0, 0, 32)
     sliderBg.BackgroundColor3 = Theme.ToggleOff
     Instance.new("UICorner", sliderBg).CornerRadius = UDim.new(1, 0)
-    
+
     local sliderFill = Instance.new("Frame", sliderBg)
     local percentage = math.clamp((default - min) / (max - min), 0, 1)
     sliderFill.Size = UDim2.new(percentage, 0, 1, 0)
     sliderFill.BackgroundColor3 = Theme.Accent
     Instance.new("UICorner", sliderFill).CornerRadius = UDim.new(1, 0)
-    
+
     local knob = Instance.new("TextButton", sliderFill)
     knob.Size = UDim2.new(0, 14, 0, 14)
     knob.Position = UDim2.new(1, -7, 0.5, -7)
     knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     knob.Text = ""
     Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
-    
+
     local dragging = false
-    knob.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = true end end)
-    UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end end)
+    knob.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
     UserInputService.InputChanged:Connect(function(input)
         if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             local relative = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
@@ -699,7 +762,7 @@ end
 local function CreateButton(section, text, color, callback)
     if type(color) == "function" then callback = color; color = Theme.SectionBG end
     itemOrderCounter = itemOrderCounter + 1
-    
+
     local btn = Instance.new("TextButton", section)
     btn.LayoutOrder = itemOrderCounter
     btn.Size = UDim2.new(0.92, 0, 0, 34)
@@ -711,7 +774,7 @@ local function CreateButton(section, text, color, callback)
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
     Instance.new("UIStroke", btn).Color = Theme.Stroke
     AddClickPop(btn)
-    
+
     btn.MouseButton1Click:Connect(function() pcall(callback) end)
     return btn
 end
@@ -722,7 +785,7 @@ local function CreateDropdown(section, headerText, itemsList, targetConfigKey, c
     frame.LayoutOrder = itemOrderCounter
     frame.Size = UDim2.new(0.92, 0, 0, 160)
     frame.BackgroundTransparency = 1
-    
+
     local header = Instance.new("TextLabel", frame)
     header.Size = UDim2.new(1, 0, 0, 20)
     header.BackgroundTransparency = 1
@@ -731,18 +794,18 @@ local function CreateDropdown(section, headerText, itemsList, targetConfigKey, c
     header.Font = Enum.Font.GothamMedium
     header.TextSize = 12
     header.TextXAlignment = Enum.TextXAlignment.Left
-    
+
     local scroll = Instance.new("ScrollingFrame", frame)
     scroll.Size = UDim2.new(1, 0, 0, 130)
     scroll.Position = UDim2.new(0, 0, 0, 25)
     scroll.BackgroundColor3 = Theme.Background
     scroll.ScrollBarThickness = 4
     Instance.new("UICorner", scroll).CornerRadius = UDim.new(0, 6)
-    
+
     local listLayout = Instance.new("UIListLayout", scroll)
     listLayout.Padding = UDim.new(0, 4)
     listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    
+
     local function populate(list)
         for _, child in pairs(scroll:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end
         for _, itemName in ipairs(list) do
@@ -755,15 +818,15 @@ local function CreateDropdown(section, headerText, itemsList, targetConfigKey, c
             btn.TextSize = 12
             btn.TextXAlignment = Enum.TextXAlignment.Left
             Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-            
-            btn.MouseButton1Click:Connect(function() 
+
+            btn.MouseButton1Click:Connect(function()
                 header.Text = headerText .. ": " .. tostring(itemName)
                 if callback then callback(itemName) end
             end)
         end
         task.defer(function() scroll.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10) end)
     end
-    
+
     populate(itemsList)
     return { Refresh = populate }
 end
@@ -774,7 +837,7 @@ local function CreateKeybind(section, text, defaultKey, callback)
     frame.LayoutOrder = itemOrderCounter
     frame.Size = UDim2.new(0.92, 0, 0, 34)
     frame.BackgroundTransparency = 1
-    
+
     local label = Instance.new("TextLabel", frame)
     label.Size = UDim2.new(0.7, 0, 0, 34)
     label.BackgroundTransparency = 1
@@ -783,7 +846,7 @@ local function CreateKeybind(section, text, defaultKey, callback)
     label.Font = Enum.Font.GothamMedium
     label.TextSize = 13
     label.TextXAlignment = Enum.TextXAlignment.Left
-    
+
     local btn = Instance.new("TextButton", frame)
     btn.Size = UDim2.new(0, 80, 0, 22)
     btn.Position = UDim2.new(1, -80, 0, 6)
@@ -793,7 +856,7 @@ local function CreateKeybind(section, text, defaultKey, callback)
     btn.Font = Enum.Font.GothamBold
     btn.TextSize = 12
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-    
+
     local waiting = false
     btn.MouseButton1Click:Connect(function() waiting = true; btn.Text = "..." end)
     UserInputService.InputBegan:Connect(function(input)
@@ -818,9 +881,9 @@ local function CreateInput(section, placeholder, callback)
     box.TextSize = 12
     Instance.new("UICorner", box).CornerRadius = UDim.new(0, 6)
     Instance.new("UIStroke", box).Color = Theme.Stroke
-    
-    if callback then 
-        box.FocusLost:Connect(function() pcall(function() callback(box.Text) end) end) 
+
+    if callback then
+        box.FocusLost:Connect(function() pcall(function() callback(box.Text) end) end)
     end
     return box
 end
@@ -834,7 +897,6 @@ local TJSConfig = {
     BlockHoldDuration = 500
 }
 
--- RenderStepped Auto Block Logik
 RunService.RenderStepped:Connect(function()
     if not TJSConfig.AutoBlock then return end
 
@@ -848,12 +910,10 @@ RunService.RenderStepped:Connect(function()
             if enemyRoot then
                 local distance = (root.Position - enemyRoot.Position).Magnitude
                 if distance <= TJSConfig.BlockReactRange then
-                    -- Check, ob der Gegner eine Angriffsanimation abspielt
                     local enemyHum = player.Character:FindFirstChildOfClass("Humanoid")
                     if enemyHum then
                         local isAttacking = false
                         for _, track in pairs(enemyHum:GetPlayingAnimationTracks()) do
-                            -- Einfache Heuristik: "Punch", "Attack", "Strike" etc.
                             local animName = string.lower(track.Name)
                             if animName:match("punch") or animName:match("attack") or animName:match("strike") or animName:match("kick") then
                                 isAttacking = true
@@ -862,13 +922,10 @@ RunService.RenderStepped:Connect(function()
                         end
 
                         if isAttacking then
-                            -- Block-Remote feuern
                             pcall(function()
                                 local combatEvent = ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("Combat")
                                 if combatEvent then
                                     combatEvent:FireServer("Block", true)
-                                    
-                                    -- Block halten und dann loslassen
                                     task.spawn(function()
                                         task.wait(TJSConfig.BlockHoldDuration / 1000)
                                         pcall(function() combatEvent:FireServer("Block", false) end)
@@ -883,9 +940,8 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
-
 --// ==========================================
---// MOVEMENT LOGIC (NO MOMENTUM, INSTANT)
+--// MOVEMENT LOGIC
 --// ==========================================
 local MovementState = {
     Speed = false, SpeedValue = 50,
@@ -901,15 +957,15 @@ local function StartFly()
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return end
-    
+
     if flyBodyVelocity then flyBodyVelocity:Destroy() end
     if flyBodyGyro then flyBodyGyro:Destroy() end
-    
+
     flyBodyVelocity = Instance.new("BodyVelocity")
     flyBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
     flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
     flyBodyVelocity.Parent = root
-    
+
     flyBodyGyro = Instance.new("BodyGyro")
     flyBodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
     flyBodyGyro.D = 100
@@ -926,7 +982,6 @@ local function StopFly()
     if hum then hum.PlatformStand = false end
 end
 
--- Fly Keybind hook
 UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
     if input.KeyCode == MovementState.FlyKey then
@@ -935,80 +990,105 @@ UserInputService.InputBegan:Connect(function(input, gpe)
     end
 end)
 
--- Inf Jump & High Jump force
 UserInputService.JumpRequest:Connect(function()
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     local root = char and char:FindFirstChild("HumanoidRootPart")
-    
+
     if hum and root then
         if MovementState.InfJump or MovementState.HighJump then
             hum:ChangeState(Enum.HumanoidStateType.Jumping)
         end
         if MovementState.HighJump then
-            -- Setzt die vertikale Geschwindigkeit sofort, ohne Verzögerung
             root.Velocity = Vector3.new(root.Velocity.X, MovementState.JumpPower, root.Velocity.Z)
         end
     end
 end)
 
---// FE Server-Sided Invis (NaN Desync Glitch)
+--// ==========================================
+--// FE INVIS v2 — Physics Desync
+--// Delta/Electron compatible. No Knit dependency.
+--// No buffer API required.
+--// ==========================================
+local invisThread = nil
+local invisActive = false
+
 local function ToggleInvis(state)
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not char or not root then return end
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not char or not root or not hum then return end
 
-    if state then
-        task.spawn(function()
-            pcall(function()
-                local knitServices = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
-                local acTeleport = knitServices:WaitForChild("AntiCheatService"):WaitForChild("RE"):WaitForChild("Teleport")
-                local acCamera = knitServices:WaitForChild("AntiCheatService"):WaitForChild("RE"):WaitForChild("Camera")
-                local naoyaRight = knitServices:WaitForChild("NaoyaService"):WaitForChild("RE"):WaitForChild("RightActivated")
+    if state and not invisActive then
+        invisActive = true
 
-                -- 1. Anti-Cheat Teleport Logs spammen
-                acTeleport:FireServer(1786818932.1222)
-                acTeleport:FireServer(1786818933.1388242)
-                acTeleport:FireServer(1786818851.6917179)
-                acTeleport:FireServer(1786818634.939621)
+        invisThread = task.spawn(function()
+            local originalCFrame = root.CFrame
 
-                -- 2. Naoya Dash/Skill auslösen
-                local unp = table.unpack or unpack
-                naoyaRight:FireServer(Vector3.new(-70.33029174804688, 21.359237670898438, -5.304592132568359))
+            -- Anchor to prevent physics engine correcting position mid-desync
+            root.Anchored = true
+            task.wait()
 
-                -- 3. Camera NaN Desync (Safe NaN für Mobile Executoren)
-                local safeNaN = math.acos(2) -- Erzeugt garantiert NaN, wird nicht gefiltert
-                local buf1 = buffer.fromstring("\255\2556\000\000\028\000\000\198")
-                local buf2 = buffer.fromstring("\182\255\019\t\000\031L\000\210E\f\185\251E\f")
-                
-                acCamera:FireServer(buf1, buf2, char, safeNaN)
-            end)
-            
-            -- 4. Backup Physics Desync (Zwingt den Server, dich auszublenden)
-            task.wait(0.2)
-            pcall(function()
-                local nanVec = Vector3.new(math.acos(2), math.acos(2), math.acos(2))
-                root.Velocity = nanVec
-                root.RotVelocity = nanVec
-            end)
+            -- Push root to 1e38 — out of bounds, forces server replication loss
+            -- Delta-safe: no buffer API, no remote names
+            local function makeDesyncCFrame()
+                return CFrame.new(Vector3.new(1e38, 1e38, 1e38))
+            end
+
+            for i = 1, 3 do
+                pcall(function() root.CFrame = makeDesyncCFrame() end)
+                task.wait(0.03)
+            end
+
+            -- Return locally — server still broadcasts ghost position
+            root.Anchored = false
+            root.CFrame = originalCFrame
+
+            -- Keepalive: re-fire before server replication catch-up window (~5-6s)
+            while invisActive do
+                task.wait(4)
+                if not invisActive then break end
+
+                local currentCFrame = root.CFrame
+                root.Anchored = true
+                task.wait()
+
+                for i = 1, 2 do
+                    pcall(function() root.CFrame = makeDesyncCFrame() end)
+                    task.wait(0.03)
+                end
+
+                root.Anchored = false
+                root.CFrame = currentCFrame
+            end
         end)
-    else
-        -- Bei einem NaN-Desync muss der Charakter resettet werden
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            hum.Health = 0
+
+    elseif not state and invisActive then
+        invisActive = false
+
+        if invisThread then
+            task.cancel(invisThread)
+            invisThread = nil
         end
+
+        -- Nudge forces a replication update packet — resync all clients
+        pcall(function()
+            root.Anchored = false
+            local respawnCFrame = root.CFrame
+            root.CFrame = respawnCFrame * CFrame.new(0, 0.1, 0)
+            task.wait(0.05)
+            root.CFrame = respawnCFrame
+        end)
     end
 end
 
--- Core Render Loop for Speed, Fly, Noclip & Jump Override
+-- Core Render Loop
 RunService.RenderStepped:Connect(function()
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not char or not hum or not root then return end
 
-    -- Noclip logic
     if MovementState.Noclip then
         for _, v in pairs(char:GetDescendants()) do
             if v:IsA("BasePart") and v.CanCollide then
@@ -1016,25 +1096,23 @@ RunService.RenderStepped:Connect(function()
             end
         end
     end
-    
-    -- Erzwungene High Jump Power gegen Anticheat-Resets
+
     if MovementState.HighJump then
         hum.UseJumpPower = true
         hum.JumpPower = MovementState.JumpPower
     end
 
-    -- Fly logic
     if MovementState.Fly and flyBodyVelocity and flyBodyGyro then
         hum.PlatformStand = true
         local moveDir = Vector3.new(0,0,0)
-        
+
         if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + camera.CFrame.LookVector end
         if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - camera.CFrame.LookVector end
         if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - camera.CFrame.RightVector end
         if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + camera.CFrame.RightVector end
         if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0,1,0) end
         if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDir = moveDir - Vector3.new(0,1,0) end
-        
+
         if moveDir.Magnitude > 0 then
             flyBodyVelocity.Velocity = moveDir.Unit * MovementState.FlySpeed
         else
@@ -1042,7 +1120,6 @@ RunService.RenderStepped:Connect(function()
         end
         flyBodyGyro.CFrame = camera.CFrame
     else
-        -- Speed logic
         if MovementState.Speed then
             if hum.MoveDirection.Magnitude > 0 then
                 local flatDir = hum.MoveDirection
@@ -1053,7 +1130,6 @@ RunService.RenderStepped:Connect(function()
         end
     end
 end)
-
 
 --// ==========================================
 --// STRUCTURE SETUP
@@ -1067,8 +1143,8 @@ local SecPlayer = CreateSection(SubPlayer, "Movement")
 CreateToggle(SecPlayer, "Speed Hack", false, function(state) MovementState.Speed = state end)
 CreateSlider(SecPlayer, "Speed Value", 16, 150, 50, function(val) MovementState.SpeedValue = val end)
 
-CreateToggle(SecPlayer, "Fly", false, function(state) 
-    MovementState.Fly = state 
+CreateToggle(SecPlayer, "Fly", false, function(state)
+    MovementState.Fly = state
     if state then StartFly() else StopFly() end
 end)
 CreateSlider(SecPlayer, "Fly Speed", 10, 200, 50, function(val) MovementState.FlySpeed = val end)
@@ -1079,8 +1155,7 @@ CreateSlider(SecPlayer, "Jump Power", 50, 300, 150, function(val) MovementState.
 
 CreateToggle(SecPlayer, "Infinite Jump Spam", false, function(state) MovementState.InfJump = state end)
 CreateToggle(SecPlayer, "Noclip", false, function(state) MovementState.Noclip = state end)
-CreateToggle(SecPlayer, "Invisible (FE Server-Sided)", false, function(state) 
-    MovementState.Invis = state
+CreateToggle(SecPlayer, "Invisible (FE Physics Desync)", false, function(state)
     ToggleInvis(state)
 end)
 
