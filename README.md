@@ -1,6 +1,6 @@
 --// ==========================================
---// RYU HUB - JUJUTSU SHENANIGANS EDITION (TJS)
---// V1.5 - ULTIMATE FIXES & ENGINE OVERHAUL
+--// RYU HUB - JUJUTSU SHENANIGANS EDITION (TJS) v1.5
+--// ULTIMATE MONOCHROME FIX - 100% STABLE
 --// ==========================================
 
 local CoreGui = game:GetService("CoreGui")
@@ -19,11 +19,14 @@ local LocalPlayer = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
---// GUI CLEANUP
+--// 1. GUI SECURITY & CLEANUP
 local guiParent
 pcall(function()
-    if type(gethui) == "function" then guiParent = gethui()
-    elseif syn and syn.protect_gui then guiParent = CoreGui end
+    if type(gethui) == "function" then
+        guiParent = gethui()
+    elseif syn and syn.protect_gui then
+        guiParent = CoreGui
+    end
 end)
 if not guiParent then guiParent = LocalPlayer:WaitForChild("PlayerGui") end
 
@@ -31,59 +34,52 @@ for _, v in pairs(guiParent:GetChildren()) do
     if v.Name == "RyuHubTJS" then v:Destroy() end 
 end
 
---// GLOBAL CONFIGURATION
-local CONFIG_FILE = "RyuHub_TJS_Settings.json"
+--// 2. CONFIGURATION & SAVE SYSTEM
+local CONFIG_FILE = "RyuHub_TJS_Config.json"
+
 local RyuConfig = {
-    Speed = false, SpeedVal = 50,
+    -- Player
+    SpeedHack = false, SpeedVal = 50,
     Fly = false, FlySpeed = 50, FlyKey = Enum.KeyCode.X,
     JumpHigh = false, JumpPower = 150, JumpSpam = false,
-    Noclip = false, Invisible = false,
+    Noclip = false, Invisible = false, FakeName = "",
     
+    -- Auto
     AutoBlock = false, BlockRange = 15, BlockTime = 500,
     AutoBlackFlash = false, AutoDodge = false, DodgeRange = 20,
-    
     AutoItem = false, TargetItem = "None",
     
+    -- Abilities
     LockOn = false, LockOnKey = Enum.KeyCode.C, LockOnY = 0,
-    Knockback = false, KnockbackVal = 50,
-    DomainBypass = false, DashSpam = false,
+    Knockback = false, KnockbackVal = 50, DomainBypass = false, DashSpam = false,
     
-    AIFarm = false, AIRange = 50, AutoUlt = false, HumanMode = false,
+    -- AI Farm
+    AIFarm = false, AIRange = 15, AutoUlt = false, HumanMode = false,
     S1 = false, S1R = 10, S2 = false, S2R = 10, S3 = false, S3R = 10, S4 = false, S4R = 10,
     
+    -- Target & Money Farm
     TargetPlayer = "None", TargetFarm = false, TargetDist = 3,
     MoneyFarm = false, MFRole = "Farmer", MFVictim = "",
     
-    AutoRejoin = false, MinPlayers = 3, HighPop = true, TargetJoinUser = "", AntiAFK = false,
-    FakeName = "", GuiColor = Color3.fromRGB(255, 255, 255)
+    -- Config
+    AutoRejoin = false, MinPlayers = 3, HighPop = true,
+    TargetJoinUser = "", AntiAFK = false,
+    
+    GuiColor = Color3.fromRGB(255, 255, 255) -- PURE WHITE
 }
 
---// SAVE & LOAD SYSTEM
 local function SaveConfig()
     pcall(function() if writefile then writefile(CONFIG_FILE, HttpService:JSONEncode(RyuConfig)) end end)
 end
-local function LoadConfig()
-    pcall(function()
-        if readfile and isfile and isfile(CONFIG_FILE) then
-            local data = HttpService:JSONDecode(readfile(CONFIG_FILE))
-            for k,v in pairs(data) do RyuConfig[k] = v end
-        end
-    end)
-end
-LoadConfig()
 
-local function ResetConfig()
-    pcall(function()
-        if isfile and isfile(CONFIG_FILE) then delfile(CONFIG_FILE) end
-        for k,v in pairs(RyuConfig) do 
-            if type(v) == "boolean" then RyuConfig[k] = false end
-            if type(v) == "number" then RyuConfig[k] = 10 end
-        end
-        RyuConfig.GuiColor = Color3.fromRGB(255, 255, 255)
-    end)
-end
+pcall(function()
+    if readfile and isfile and isfile(CONFIG_FILE) then
+        local data = HttpService:JSONDecode(readfile(CONFIG_FILE))
+        for k, v in pairs(data) do RyuConfig[k] = v end
+    end
+end)
 
---// KNIT REMOTES RESOLVER
+--// 3. TJS REMOTES (KNIT)
 local remotes = {}
 task.spawn(function()
     local ks = ReplicatedStorage:WaitForChild("Knit", 5)
@@ -94,6 +90,7 @@ task.spawn(function()
             remotes.BlockOff = serv:FindFirstChild("BlockService") and serv.BlockService.RE:FindFirstChild("Deactivated")
             remotes.Chase = serv:FindFirstChild("ItadoriService") and serv.ItadoriService.RE:FindFirstChild("Chase")
             remotes.ItadoriActivated = serv:FindFirstChild("ItadoriService") and serv.ItadoriService.RE:FindFirstChild("Activated")
+            remotes.Divergent = serv:FindFirstChild("DivergentFistService") and serv.DivergentFistService.RE:FindFirstChild("Activated")
             remotes.Teleport = serv:FindFirstChild("AntiCheatService") and serv.AntiCheatService.RE:FindFirstChild("Teleport")
         end
     end
@@ -106,36 +103,14 @@ local function TJSTeleport(cframeObj)
     end)
 end
 
---// AUTO BLACK FLASH HOOK (NAMECALL)
-local oldNamecall
-oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-    local method = getnamecallmethod()
-    local args = {...}
-    if not checkcaller() and method == "FireServer" then
-        if self.Name == "Activated" and self.Parent and self.Parent.Name == "RE" and self.Parent.Parent and self.Parent.Parent.Name == "DivergentFistService" then
-            if RyuConfig.AutoBlackFlash then
-                task.spawn(function()
-                    task.wait(0.5)
-                    if VirtualInputManager then
-                        VirtualInputManager:SendMouseButtonEvent(0,0,0,true,game,0)
-                        task.wait(0.05)
-                        VirtualInputManager:SendMouseButtonEvent(0,0,0,false,game,0)
-                    end
-                end)
-            end
-        end
-    end
-    return oldNamecall(self, ...)
-end)
-
---// THEME (100% Monochrome)
+--// 4. THEME & UI FRAMEWORK (MONOCHROME)
 local Theme = {
     Background = Color3.fromRGB(12, 12, 14), Sidebar = Color3.fromRGB(18, 18, 20),
     SectionBG = Color3.fromRGB(24, 24, 26), Text = Color3.fromRGB(250, 250, 250),
     SubText = Color3.fromRGB(130, 130, 135), CloudLight = Color3.fromRGB(255, 255, 255),
-    CloudDark = Color3.fromRGB(60, 60, 65), Accent = Color3.fromRGB(255, 255, 255),
-    ToggleOff = Color3.fromRGB(35, 35, 38), ToggleOn = Color3.fromRGB(255, 255, 255),
-    Stroke = Color3.fromRGB(45, 45, 50), Warning = Color3.fromRGB(200, 200, 200)
+    CloudDark = Color3.fromRGB(100, 100, 100), Accent = RyuConfig.GuiColor,
+    ToggleOff = Color3.fromRGB(35, 35, 38), ToggleOn = RyuConfig.GuiColor,
+    Stroke = Color3.fromRGB(60, 60, 60), Warning = Color3.fromRGB(200, 200, 200)
 }
 
 local MainSize = UDim2.new(0, math.min(750, camera.ViewportSize.X - 40), 0, math.min(480, camera.ViewportSize.Y - 40))
@@ -146,6 +121,11 @@ RyuHub.Name = "RyuHubTJS"
 RyuHub.ResetOnSpawn = false
 RyuHub.IgnoreGuiInset = true
 RyuHub.Parent = guiParent
+
+local function AddHoverEffect(element, def, hov)
+    element.MouseEnter:Connect(function() pcall(function() TweenService:Create(element, TweenInfo.new(0.2), {BackgroundColor3 = hov}):Play() end) end)
+    element.MouseLeave:Connect(function() pcall(function() TweenService:Create(element, TweenInfo.new(0.2), {BackgroundColor3 = def}):Play() end) end)
+end
 
 local function AddClickPop(element)
     local orig = element.Size
@@ -161,15 +141,17 @@ local function AddClickPop(element)
     end)
 end
 
---// TOGGLE BUTTON (Under Roblox Icon)
+-- FIXED TOP LEFT TOGGLE BUTTON (Under Roblox Logo)
 local ToggleBtn = Instance.new("TextButton")
 ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
-ToggleBtn.Position = UDim2.new(0, 15, 0, 60)
+ToggleBtn.Position = UDim2.new(0, 15, 0, 50) 
 ToggleBtn.BackgroundColor3 = Theme.Sidebar
 ToggleBtn.Text = ""
 ToggleBtn.Parent = RyuHub
 Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
-Instance.new("UIStroke", ToggleBtn).Color = Theme.Accent; Instance.new("UIStroke", ToggleBtn).Thickness = 2; Instance.new("UIStroke", ToggleBtn).Transparency = 0.5
+Instance.new("UIStroke", ToggleBtn).Color = Theme.Accent
+Instance.new("UIStroke", ToggleBtn).Thickness = 2
+Instance.new("UIStroke", ToggleBtn).Transparency = 0.5
 
 local Katana = Instance.new("Frame", ToggleBtn)
 Katana.Size = UDim2.new(1, 0, 1, 0); Katana.BackgroundTransparency = 1; Katana.Rotation = 45
@@ -178,14 +160,14 @@ Blade.Size = UDim2.new(0, 2, 0, 24); Blade.Position = UDim2.new(0.5, -1, 0.5, -1
 local Guard = Instance.new("Frame", Katana)
 Guard.Size = UDim2.new(0, 12, 0, 2); Guard.Position = UDim2.new(0.5, -6, 0.5, 6); Guard.BackgroundColor3 = Theme.CloudDark; Guard.BorderSizePixel = 0
 local Handle = Instance.new("Frame", Katana)
-Handle.Size = UDim2.new(0, 4, 0, 10); Handle.Position = UDim2.new(0.5, -2, 0.5, 8); Handle.BackgroundColor3 = Color3.fromRGB(40, 45, 50); Handle.BorderSizePixel = 0
+Handle.Size = UDim2.new(0, 4, 0, 10); Handle.Position = UDim2.new(0.5, -2, 0.5, 8); Handle.BackgroundColor3 = Color3.fromRGB(80, 80, 80); Handle.BorderSizePixel = 0
 Instance.new("UICorner", Blade).CornerRadius = UDim.new(1, 0)
 Instance.new("UICorner", Guard).CornerRadius = UDim.new(1, 0)
 Instance.new("UICorner", Handle).CornerRadius = UDim.new(0, 1)
 
 AddClickPop(ToggleBtn)
 
---// MAIN FRAME
+-- MAIN WINDOW
 local MainFrame = Instance.new("Frame")
 MainFrame.Size = UDim2.new(0, 0, 0, 0)
 MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
@@ -196,7 +178,14 @@ MainFrame.ClipsDescendants = true
 MainFrame.Active = true
 MainFrame.Parent = RyuHub
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
-Instance.new("UIStroke", MainFrame).Color = Theme.Stroke; Instance.new("UIStroke", MainFrame).Transparency = 0.2; Instance.new("UIStroke", MainFrame).Thickness = 1.5
+
+local mainStroke = Instance.new("UIStroke", MainFrame)
+mainStroke.Color = Theme.Stroke; mainStroke.Transparency = 0.2; mainStroke.Thickness = 1.5
+
+local DragText = Instance.new("TextLabel", MainFrame)
+DragText.Size = UDim2.new(1, 0, 1, 0); DragText.Position = UDim2.new(0, 0, 0, 0); DragText.BackgroundTransparency = 1
+DragText.Text = "DISCORD.GG/RYUHUB"; DragText.Font = Enum.Font.GothamBlack; DragText.TextSize = 50
+DragText.TextColor3 = Theme.Accent; DragText.TextTransparency = 0.95; DragText.ZIndex = 0
 
 ToggleBtn.MouseButton1Click:Connect(function()
     if MainFrame.Visible then
@@ -209,23 +198,30 @@ ToggleBtn.MouseButton1Click:Connect(function()
 end)
 
 local ContentWrapper = Instance.new("Frame", MainFrame)
-ContentWrapper.Size = UDim2.new(1, 0, 1, 0); ContentWrapper.BackgroundTransparency = 1; ContentWrapper.ZIndex = 1
+ContentWrapper.Size = UDim2.new(1, 0, 1, 0); ContentWrapper.Position = UDim2.new(0, 0, 0, 0); ContentWrapper.BackgroundTransparency = 1; ContentWrapper.BorderSizePixel = 0; ContentWrapper.ZIndex = 1
 
 local Topbar = Instance.new("Frame", ContentWrapper)
 Topbar.Size = UDim2.new(1, 0, 0, 60); Topbar.BackgroundTransparency = 1
 local Title = Instance.new("TextLabel", Topbar)
 Title.Size = UDim2.new(0, 300, 1, 0); Title.Position = UDim2.new(0, 20, 0, 0); Title.BackgroundTransparency = 1
-Title.Text = "RYU HUB"; Title.Font = Enum.Font.GothamBlack; Title.TextSize = 22; Title.TextXAlignment = Enum.TextXAlignment.Left; Title.TextColor3 = Theme.Text
+Title.Text = "RYU HUB"; Title.Font = Enum.Font.GothamBlack; Title.TextSize = 22; Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.TextColor3 = Theme.Text
 
 local SubTitle = Instance.new("TextLabel", Topbar)
 SubTitle.Size = UDim2.new(0, 300, 0, 15); SubTitle.Position = UDim2.new(0, 20, 0, 38); SubTitle.BackgroundTransparency = 1
 SubTitle.Text = "Jujutsu Shenanigans"; SubTitle.TextColor3 = Theme.SubText; SubTitle.Font = Enum.Font.Gotham; SubTitle.TextSize = 11; SubTitle.TextXAlignment = Enum.TextXAlignment.Left
 
--- WHITE CLOSE BUTTON
+-- RED CLOSE BUTTON -> NOW WHITE
 local CloseBtn = Instance.new("TextButton", Topbar)
-CloseBtn.Size = UDim2.new(0, 28, 0, 28); CloseBtn.Position = UDim2.new(1, -40, 0, 15); CloseBtn.BackgroundColor3 = Theme.SectionBG
-CloseBtn.Text = "X"; CloseBtn.TextColor3 = Color3.fromRGB(255,255,255); CloseBtn.Font = Enum.Font.GothamBold; CloseBtn.TextSize = 14
+CloseBtn.Size = UDim2.new(0, 28, 0, 28)
+CloseBtn.Position = UDim2.new(1, -40, 0, 15)
+CloseBtn.BackgroundColor3 = Theme.SectionBG
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Theme.Text
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 14
 Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
+Instance.new("UIStroke", CloseBtn).Color = Theme.Stroke
 CloseBtn.MouseButton1Click:Connect(function()
     pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play() end)
     task.delay(0.3, function() MainFrame.Visible = false end)
@@ -244,7 +240,9 @@ Topbar.InputChanged:Connect(function(input)
     end
 end)
 Topbar.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then mDragging = false end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
+        mDragging = false 
+    end
 end)
 
 local Line = Instance.new("Frame", ContentWrapper)
@@ -385,12 +383,12 @@ local function CreateSection(page, titleText)
     return section
 end
 
-local function CreateLabel(section, text, color)
+local function CreateLabel(section, text)
     itemOrderCounter = itemOrderCounter + 1
     local frame = Instance.new("Frame", section)
     frame.LayoutOrder = itemOrderCounter; frame.Size = UDim2.new(0.92, 0, 0, 30); frame.BackgroundTransparency = 1
     local lbl = Instance.new("TextLabel", frame)
-    lbl.Size = UDim2.new(1, 0, 1, 0); lbl.BackgroundTransparency = 1; lbl.Text = text; lbl.TextColor3 = color or Theme.SubText
+    lbl.Size = UDim2.new(1, 0, 1, 0); lbl.BackgroundTransparency = 1; lbl.Text = text; lbl.TextColor3 = Theme.SubText
     lbl.Font = Enum.Font.GothamMedium; lbl.TextSize = 11; lbl.TextXAlignment = Enum.TextXAlignment.Left; lbl.TextWrapped = true
     return lbl
 end
@@ -442,7 +440,6 @@ local function CreateToggle(section, text, descText, defaultState, callback)
         if callback then pcall(function() callback(isOn) end) end
     end
     tBtn.MouseButton1Click:Connect(fireToggle)
-    return {Toggle = fireToggle, Set = function(v) if isOn ~= v then fireToggle() end end}
 end
 
 local function CreateSlider(section, text, min, max, default, callback)
@@ -575,46 +572,47 @@ end
 --// 5. TABS & FEATURES SETUP
 --// ==========================================
 
+-- TAB: COMBAT
 local TabCombat = CreateMainTab("Combat")
 
 local SubPlayer = CreateSubTab(TabCombat, "Player")
 local SecPlayer = CreateSection(SubPlayer, "Movement Mods")
-CreateToggle(SecPlayer, "Speed Hack", "Modifies WalkSpeed directly", RyuConfig.Speed, function(v) RyuConfig.Speed = v end)
+CreateToggle(SecPlayer, "Speed Hack (WalkSpeed)", "Enhances your WalkSpeed", RyuConfig.SpeedHack, function(v) RyuConfig.SpeedHack = v end)
 CreateSlider(SecPlayer, "Speed Value", 16, 150, RyuConfig.SpeedVal, function(v) RyuConfig.SpeedVal = v end)
-CreateToggle(SecPlayer, "Fly", "Fly safely (stiff body)", RyuConfig.Fly, function(v) RyuConfig.Fly = v end)
+CreateToggle(SecPlayer, "Fly (Frozen Body)", "Fly locally without moving limbs", RyuConfig.Fly, function(v) RyuConfig.Fly = v end)
 CreateSlider(SecPlayer, "Fly Speed", 10, 200, RyuConfig.FlySpeed, function(v) RyuConfig.FlySpeed = v end)
 CreateKeybind(SecPlayer, "Fly Keybind", RyuConfig.FlyKey, function(v) RyuConfig.FlyKey = v end)
+
 CreateToggle(SecPlayer, "High Jump", RyuConfig.JumpHigh, function(v) RyuConfig.JumpHigh = v end)
 CreateSlider(SecPlayer, "Jump Power", 50, 300, RyuConfig.JumpPower, function(v) RyuConfig.JumpPower = v end)
 CreateToggle(SecPlayer, "Infinite Jump Spam", RyuConfig.JumpSpam, function(v) RyuConfig.JumpSpam = v end)
 CreateToggle(SecPlayer, "Noclip", "Walk through objects", RyuConfig.Noclip, function(v) RyuConfig.Noclip = v end)
-CreateToggle(SecPlayer, "Invisible (Local)", "Most games patch FE invis.", RyuConfig.Invisible, function(v) RyuConfig.Invisible = v end)
+CreateToggle(SecPlayer, "Invisible (FE Server-Sided)", "Destroys LowerTorso to turn invisible", RyuConfig.Invisible, function(v) RyuConfig.Invisible = v end)
 
 local SubAuto = CreateSubTab(TabCombat, "Auto")
 local SecAutoBlock = CreateSection(SubAuto, "Defensive")
-CreateToggle(SecAutoBlock, "Auto Block (Itadori)", "Counter if enemy uses M1", RyuConfig.AutoBlock, function(v) RyuConfig.AutoBlock = v end)
+CreateToggle(SecAutoBlock, "Auto Block", "Reacts to enemy hit animations", RyuConfig.AutoBlock, function(v) RyuConfig.AutoBlock = v end)
 CreateSlider(SecAutoBlock, "Block React Range", 5, 50, RyuConfig.BlockRange, function(v) RyuConfig.BlockRange = v end)
-CreateSlider(SecAutoBlock, "Block Duration (ms)", 100, 1500, RyuConfig.BlockTime, function(v) RyuConfig.BlockTime = v end)
+CreateSlider(SecAutoBlock, "Block Hold Duration (ms)", 100, 1500, RyuConfig.BlockTime, function(v) RyuConfig.BlockTime = v end)
 CreateToggle(SecAutoBlock, "Auto Dodge (TP Back)", "Dodge backwards on damage", RyuConfig.AutoDodge, function(v) RyuConfig.AutoDodge = v end)
 CreateSlider(SecAutoBlock, "Dodge Distance", 5, 50, RyuConfig.DodgeRange, function(v) RyuConfig.DodgeRange = v end)
 
 local SecAutoHit = CreateSection(SubAuto, "Offensive")
-CreateToggle(SecAutoHit, "Auto Black Flash (Yuji)", "Waits for Divergent Fist", RyuConfig.AutoBlackFlash, function(v) RyuConfig.AutoBlackFlash = v end)
+CreateToggle(SecAutoHit, "Auto Black Flash (Yuji)", "Waits for Divergent Fist/3rd punch", RyuConfig.AutoBlackFlash, function(v) RyuConfig.AutoBlackFlash = v end)
 CreateLabel(SecAutoHit, "Auto Combos: Join discord.gg/ryuhub and send clips of your combos!")
 
 local SecAutoItem = CreateSection(SubAuto, "Auto Item")
-CreateToggle(SecAutoItem, "Enable Auto Item", "Takes spawned items for you", RyuConfig.AutoItem, function(v) RyuConfig.AutoItem = v end)
+CreateToggle(SecAutoItem, "Enable Auto Item", RyuConfig.AutoItem, function(v) RyuConfig.AutoItem = v end)
 local ItemDropdown = CreateDropdown(SecAutoItem, "Target Item", {"None"}, "TargetItem")
+
 task.spawn(function()
-    while task.wait(3) do
+    while task.wait(5) do
         pcall(function()
             local items = {"None"}
-            local itemFolder = Workspace:FindFirstChild("Items")
-            if itemFolder then
-                for _,v in pairs(itemFolder:GetDescendants()) do
-                    if v:IsA("Model") or v:IsA("Tool") or v:IsA("Part") then
-                        if not table.find(items, v.Name) then table.insert(items, v.Name) end
-                    end
+            local itemFolder = Workspace:FindFirstChild("Items") or Workspace
+            for _,v in pairs(itemFolder:GetChildren()) do
+                if v:IsA("Tool") or v.Name:find("Item") or v.Name:find("Object") then
+                    if not table.find(items, v.Name) then table.insert(items, v.Name) end
                 end
             end
             ItemDropdown:Refresh(items)
@@ -624,73 +622,78 @@ end)
 
 local SubAbil = CreateSubTab(TabCombat, "Abilities")
 local SecAbil = CreateSection(SubAbil, "Combat Enhancements")
-CreateToggle(SecAbil, "Lock On Target", "Stays near player, looks at enemy", RyuConfig.LockOn, function(v) 
+
+local lockBtnMobile
+CreateToggle(SecAbil, "Lock On (Stationary Camera)", "Look at target without teleporting", RyuConfig.LockOn, function(v) 
     RyuConfig.LockOn = v 
-    local mobileBtn = RyuHub:FindFirstChild("MobileLockOn")
-    if mobileBtn then mobileBtn.Visible = (v and isMobile) end
+    if isMobile and lockBtnMobile then lockBtnMobile.Visible = v end
 end)
 CreateKeybind(SecAbil, "Lock On Keybind", RyuConfig.LockOnKey, function(v) RyuConfig.LockOnKey = v end)
 CreateSlider(SecAbil, "Lock On Y-Offset", -10, 10, RyuConfig.LockOnY, function(v) RyuConfig.LockOnY = v end)
 
--- Mobile Lock On Button
-local mobileLockBtn = Instance.new("TextButton", RyuHub)
-mobileLockBtn.Name = "MobileLockOn"
-mobileLockBtn.Size = UDim2.new(0, 60, 0, 60)
-mobileLockBtn.Position = UDim2.new(1, -80, 0.5, 0)
-mobileLockBtn.BackgroundColor3 = Theme.Sidebar
-mobileLockBtn.Text = "LOCK"
-mobileLockBtn.TextColor3 = Theme.Accent
-mobileLockBtn.Font = Enum.Font.GothamBold
-Instance.new("UICorner", mobileLockBtn).CornerRadius = UDim.new(1, 0)
-Instance.new("UIStroke", mobileLockBtn).Color = Theme.Stroke
-mobileLockBtn.Visible = (RyuConfig.LockOn and isMobile)
+if isMobile then
+    lockBtnMobile = Instance.new("TextButton", RyuHub)
+    lockBtnMobile.Size = UDim2.new(0, 60, 0, 60)
+    lockBtnMobile.Position = UDim2.new(1, -80, 0.5, 0)
+    lockBtnMobile.BackgroundColor3 = Theme.Sidebar
+    lockBtnMobile.Text = "LOCK"
+    lockBtnMobile.TextColor3 = Theme.Accent
+    lockBtnMobile.Font = Enum.Font.GothamBold
+    lockBtnMobile.Visible = RyuConfig.LockOn
+    Instance.new("UICorner", lockBtnMobile).CornerRadius = UDim.new(1, 0)
+    lockBtnMobile.MouseButton1Click:Connect(function()
+        _G.RyuLockOnActive = not _G.RyuLockOnActive
+        lockBtnMobile.BackgroundColor3 = _G.RyuLockOnActive and Theme.Accent or Theme.Sidebar
+        lockBtnMobile.TextColor3 = _G.RyuLockOnActive and Theme.Background or Theme.Accent
+    end)
+end
 
-local lockOnActive = false
-mobileLockBtn.MouseButton1Click:Connect(function()
-    lockOnActive = not lockOnActive
-    mobileLockBtn.BackgroundColor3 = lockOnActive and Theme.Accent or Theme.Sidebar
-    mobileLockBtn.TextColor3 = lockOnActive and Theme.Background or Theme.Accent
-end)
-
-CreateToggle(SecAbil, "Knockback M1s (Local)", "Velocity push", RyuConfig.Knockback, function(v) RyuConfig.Knockback = v end)
+CreateToggle(SecAbil, "Knockback M1s", "Velocity push", RyuConfig.Knockback, function(v) RyuConfig.Knockback = v end)
 CreateSlider(SecAbil, "Knockback Force", 10, 300, RyuConfig.KnockbackVal, function(v) RyuConfig.KnockbackVal = v end)
 CreateToggle(SecAbil, "Domain Eraser (Local)", "Bypass domains", RyuConfig.DomainBypass, function(v) RyuConfig.DomainBypass = v end)
 CreateToggle(SecAbil, "No Cooldown Dash", "Spam chase remote", RyuConfig.DashSpam, function(v) RyuConfig.DashSpam = v end)
-CreateButton(SecAbil, "Teleport All to Me (Local Bring)", Theme.ToggleOff, function()
+CreateButton(SecAbil, "Teleport All to Me (Physical Bring)", Theme.ToggleOff, function()
     pcall(function()
         local hrp = LocalPlayer.Character.HumanoidRootPart
         for _, p in pairs(Players:GetPlayers()) do
             if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                p.Character.HumanoidRootPart.CFrame = hrp.CFrame * CFrame.new(0,0,-3)
+                local tHrp = p.Character.HumanoidRootPart
+                tHrp.Velocity = (hrp.Position - tHrp.Position).Unit * 300
             end
         end
     end)
 end)
 
+-- TAB: FARM
 local TabFarm = CreateMainTab("Farm")
 
 local SubAIFarm = CreateSubTab(TabFarm, "AI Auto Farm")
 local SecAIFarm = CreateSection(SubAIFarm, "Auto Combat")
-CreateToggle(SecAIFarm, "Enable AI Farm", "Shiftlocks & uses specific remotes", RyuConfig.AIFarm, function(v) RyuConfig.AIFarm = v end)
+CreateToggle(SecAIFarm, "Enable AI Farm", "Uses MoveTo and combats naturally", RyuConfig.AIFarm, function(v) RyuConfig.AIFarm = v end)
 CreateSlider(SecAIFarm, "Chase Range", 10, 500, RyuConfig.AIRange, function(v) RyuConfig.AIRange = v end)
 CreateToggle(SecAIFarm, "Auto Ultimate (G)", "Pops awakening", RyuConfig.AutoUlt, function(v) RyuConfig.AutoUlt = v end)
+CreateToggle(SecAIFarm, "Human Mode", "Strafes & Jumps naturally", RyuConfig.HumanMode, function(v) RyuConfig.HumanMode = v end)
 
 local SecAISkills = CreateSection(SubAIFarm, "Choose Skills")
-local function makeSkillBtn(name, configKey)
+local function makeSkillBtn(name, configKey, rangeKey)
     local btn = CreateButton(SecAISkills, name, RyuConfig[configKey] and Theme.Accent or Theme.ToggleOff, function() end)
     btn.MouseButton1Click:Connect(function()
         RyuConfig[configKey] = not RyuConfig[configKey]
         btn.BackgroundColor3 = RyuConfig[configKey] and Theme.Accent or Theme.ToggleOff
         btn.TextColor3 = RyuConfig[configKey] and Theme.Background or Theme.Text
     end)
+    CreateSlider(SecAISkills, name .. " Range", 5, 100, RyuConfig[rangeKey], function(v) RyuConfig[rangeKey] = v end)
 end
-makeSkillBtn("Skill 1", "S1"); makeSkillBtn("Skill 2", "S2")
-makeSkillBtn("Skill 3", "S3"); makeSkillBtn("Skill 4", "S4")
+makeSkillBtn("Skill 1", "S1", "S1R")
+makeSkillBtn("Skill 2", "S2", "S2R")
+makeSkillBtn("Skill 3", "S3", "S3R")
+makeSkillBtn("Skill 4", "S4", "S4R")
 
 local SubTarget = CreateSubTab(TabFarm, "Target")
 local SecTarget = CreateSection(SubTarget, "Specific Target Follow")
 local PlrDrop = CreateDropdown(SecTarget, "Target Player", {"None"}, "TargetPlayer")
-CreateToggle(SecTarget, "Enable Target Farm", "AntiCheat TP to player", RyuConfig.TargetFarm, function(v) RyuConfig.TargetFarm = v end)
+CreateToggle(SecTarget, "Enable Target Farm", "TPs to player", RyuConfig.TargetFarm, function(v) RyuConfig.TargetFarm = v end)
+CreateSlider(SecTarget, "Distance Behind", 1, 15, RyuConfig.TargetDist, function(v) RyuConfig.TargetDist = v end)
 
 task.spawn(function()
     while task.wait(3) do
@@ -706,7 +709,7 @@ end)
 
 local SubMFarm = CreateSubTab(TabFarm, "Money Farm")
 local SecMFarm = CreateSection(SubMFarm, "Alt Money Farm")
-CreateToggle(SecMFarm, "Enable Money Farm", "Box at Y=500", RyuConfig.MoneyFarm, function(v) RyuConfig.MoneyFarm = v end)
+CreateToggle(SecMFarm, "Enable Money Farm", "Y=500 Box", RyuConfig.MoneyFarm, function(v) RyuConfig.MoneyFarm = v end)
 local RoleBtn
 RoleBtn = CreateButton(SecMFarm, "Role: " .. RyuConfig.MFRole, Theme.ToggleOff, function()
     if RyuConfig.MFRole == "Farmer" then RyuConfig.MFRole = "Victim" else RyuConfig.MFRole = "Farmer" end
@@ -714,12 +717,29 @@ RoleBtn = CreateButton(SecMFarm, "Role: " .. RyuConfig.MFRole, Theme.ToggleOff, 
 end)
 CreateInput(SecMFarm, "Victim: Enter Farmer Name...", function(v) RyuConfig.MFVictim = v end)
 
+local SubFarmConfig = CreateSubTab(TabFarm, "Config")
+local SecServerConfig = CreateSection(SubFarmConfig, "Server & Connections")
+CreateToggle(SecServerConfig, "Auto Rejoin Low Pop", "Rejoins if server dies", RyuConfig.AutoRejoin, function(v) RyuConfig.AutoRejoin = v end)
+CreateSlider(SecServerConfig, "Rejoin if players < X", 1, 10, RyuConfig.MinPlayers, function(v) RyuConfig.MinPlayers = v end)
+CreateToggle(SecServerConfig, "Find 80% Full Lobbys", "Joins active lobbies", RyuConfig.HighPop, function(v) RyuConfig.HighPop = v end)
+CreateInput(SecServerConfig, "Alt Joiner: Enter Main Username", function(v) RyuConfig.TargetJoinUser = v end)
+
+-- TAB: SETTINGS
+local TabSettings = CreateMainTab("Settings")
 local SubSettings = CreateSubTab(TabSettings, "Settings")
-local SecCfg = CreateSection(SubSettings, "System & Config")
-CreateInput(SecCfg, "Fake Name (Visual Only)", function(v) RyuConfig.FakeName = v end)
+
+local SecCosmetics = CreateSection(SubSettings, "Cosmetics")
+CreateInput(SecCosmetics, "Fake Name (Visual)", function(v) RyuConfig.FakeName = v end)
+
+local SecCfg = CreateSection(SubSettings, "System & Protection")
 CreateToggle(SecCfg, "Anti-AFK Protection", "Prevents Roblox Kick", RyuConfig.AntiAFK, function(v) RyuConfig.AntiAFK = v end)
 CreateButton(SecCfg, "Save Settings", Theme.SectionBG, function() SaveConfig() end)
-CreateButton(SecCfg, "Reset All Configs", Theme.Warning, function() ResetConfig() end)
+CreateButton(SecCfg, "Reset Settings", Theme.Warning, function() 
+    pcall(function()
+        if isfile(CONFIG_FILE) then delfile(CONFIG_FILE) end
+        RyuHub:Destroy()
+    end)
+end)
 
 -- init
 pcall(function() 
@@ -727,9 +747,53 @@ pcall(function()
     if Tabs[1].SubTabs[1] and Tabs[1].SubTabs[1].Open then Tabs[1].SubTabs[1].Open() end 
 end)
 
---// 6. RUNTIME ENGINE
+--// 6. TJS RUNTIME EXPLOITATION ENGINE
 local lastHealth = 100
+local flashFired = false
+local boxSpawned = false
+local boxPart = nil
 local bv = nil
+_G.RyuLockOnActive = false
+
+-- Fake Name Loop
+RunService.RenderStepped:Connect(function()
+    pcall(function()
+        local char = LocalPlayer.Character
+        if char then
+            local head = char:FindFirstChild("Head")
+            if head then
+                if RyuConfig.FakeName ~= "" then
+                    for _, v in pairs(head:GetChildren()) do
+                        if v:IsA("BillboardGui") and v.Name ~= "RyuFakeName" then v.Enabled = false end
+                    end
+                    local bg = head:FindFirstChild("RyuFakeName")
+                    if not bg then
+                        bg = Instance.new("BillboardGui", head)
+                        bg.Name = "RyuFakeName"
+                        bg.Size = UDim2.new(0, 200, 0, 50)
+                        bg.StudsOffset = Vector3.new(0, 2.5, 0)
+                        bg.AlwaysOnTop = true
+                        local tl = Instance.new("TextLabel", bg)
+                        tl.Size = UDim2.new(1, 0, 1, 0)
+                        tl.BackgroundTransparency = 1
+                        tl.Text = RyuConfig.FakeName
+                        tl.TextColor3 = Color3.new(1, 1, 1)
+                        tl.TextStrokeTransparency = 0
+                        tl.Font = Enum.Font.GothamBold
+                        tl.TextSize = 14
+                    else
+                        bg:FindFirstChildOfClass("TextLabel").Text = RyuConfig.FakeName
+                    end
+                else
+                    for _, v in pairs(head:GetChildren()) do
+                        if v:IsA("BillboardGui") and v.Name ~= "RyuFakeName" then v.Enabled = true end
+                    end
+                    if head:FindFirstChild("RyuFakeName") then head.RyuFakeName:Destroy() end
+                end
+            end
+        end
+    end)
+end)
 
 -- Domain Eraser
 Workspace.ChildAdded:Connect(function(c)
@@ -748,7 +812,7 @@ Workspace.ChildAdded:Connect(function(c)
     end
 end)
 
--- Anti AFK
+-- Anti AFK Engine
 LocalPlayer.Idled:Connect(function()
     if RyuConfig.AntiAFK then
         pcall(function()
@@ -760,19 +824,15 @@ LocalPlayer.Idled:Connect(function()
     end
 end)
 
--- Jump Request
+-- Jump Request Engine
 UserInputService.JumpRequest:Connect(function()
     pcall(function()
-        if RyuConfig.JumpSpam then
-            local c = LocalPlayer.Character
-            if c and c:FindFirstChild("HumanoidRootPart") then
-                c.HumanoidRootPart.Velocity = Vector3.new(c.HumanoidRootPart.Velocity.X, RyuConfig.JumpPower, c.HumanoidRootPart.Velocity.Z)
-            end
-        elseif RyuConfig.JumpHigh then
-            local c = LocalPlayer.Character
-            if c and c:FindFirstChild("HumanoidRootPart") then
-                c.HumanoidRootPart.Velocity = Vector3.new(c.HumanoidRootPart.Velocity.X, RyuConfig.JumpPower, c.HumanoidRootPart.Velocity.Z)
-            end
+        local c = LocalPlayer.Character
+        local hum = c and c:FindFirstChildOfClass("Humanoid")
+        if RyuConfig.JumpSpam and hum then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        elseif RyuConfig.JumpHigh and c and c:FindFirstChild("HumanoidRootPart") then
+            c.HumanoidRootPart.Velocity = Vector3.new(c.HumanoidRootPart.Velocity.X, RyuConfig.JumpPower, c.HumanoidRootPart.Velocity.Z)
         end
     end)
 end)
@@ -780,7 +840,7 @@ end)
 local lockOnTarget = nil
 UserInputService.InputBegan:Connect(function(i, gp)
     if not gp and i.KeyCode == RyuConfig.LockOnKey then
-        lockOnActive = not lockOnActive
+        _G.RyuLockOnActive = not _G.RyuLockOnActive
         lockOnTarget = nil
     end
     if not gp and i.KeyCode == RyuConfig.FlyKey then
@@ -788,52 +848,46 @@ UserInputService.InputBegan:Connect(function(i, gp)
     end
 end)
 
--- Noclip (Must be Stepped)
-RunService.Stepped:Connect(function()
-    if RyuConfig.Noclip then
-        local char = LocalPlayer.Character
-        if char then
-            for _, p in pairs(char:GetDescendants()) do
-                if p:IsA("BasePart") then p.CanCollide = false end
-            end
-        end
-    end
-end)
-
--- Lock On Camera
+-- Lock On Camera (Stationary, Look at Head)
 RunService.RenderStepped:Connect(function()
     pcall(function()
         local cam = Workspace.CurrentCamera
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if RyuConfig.LockOn and lockOnActive and hrp and cam then
-            if not lockOnTarget or not lockOnTarget.Parent then
+        
+        if RyuConfig.LockOn and _G.RyuLockOnActive and hrp and cam then
+            if not lockOnTarget or not lockOnTarget.Parent or lockOnTarget.Parent:FindFirstChild("Humanoid").Health <= 0 then
                 local near = nil
                 local d = math.huge
                 for _, p in pairs(Players:GetPlayers()) do
                     if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                        local head = p.Character:FindFirstChild("Head") or p.Character.HumanoidRootPart
-                        local mag = (head.Position - hrp.Position).Magnitude
-                        if mag < d then d = mag; near = head end
+                        local ehum = p.Character:FindFirstChild("Humanoid")
+                        if ehum and ehum.Health > 0 then
+                            local head = p.Character:FindFirstChild("Head") or p.Character.HumanoidRootPart
+                            local mag = (head.Position - hrp.Position).Magnitude
+                            if mag < d then 
+                                d = mag 
+                                near = head 
+                            end
+                        end
                     end
                 end
                 lockOnTarget = near
             end
             if lockOnTarget and lockOnTarget.Parent then
-                -- Look at the target head, but keep camera at its original relative position
-                cam.CFrame = CFrame.lookAt(cam.CFrame.Position, lockOnTarget.Position + Vector3.new(0, RyuConfig.LockOnY, 0))
+                local tPos = lockOnTarget.Position + Vector3.new(0, RyuConfig.LockOnY, 0)
+                cam.CFrame = CFrame.lookAt(cam.CFrame.Position, tPos)
             end
+        else
+            lockOnTarget = nil
         end
     end)
 end)
 
-local m1Combo = 0
+-- Main Background Loop (Physics & Combat Logic)
 local blockWait = false
-local aiStuckPos = Vector3.zero
-local aiStuckTick = os.clock()
-local aiTarget = nil
 
-RunService.RenderStepped:Connect(function(dt)
+RunService.Stepped:Connect(function()
     pcall(function()
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -842,45 +896,21 @@ RunService.RenderStepped:Connect(function(dt)
         
         if not char or not hrp or not hum then return end
         
-        -- FAKE NAME
-        if RyuConfig.FakeName ~= "" then
-            local head = char:FindFirstChild("Head")
-            if head then
-                local bg = head:FindFirstChild("RyuFakeNameGui")
-                if not bg then
-                    bg = Instance.new("BillboardGui", head)
-                    bg.Name = "RyuFakeNameGui"
-                    bg.Size = UDim2.new(0, 200, 0, 50)
-                    bg.StudsOffset = Vector3.new(0, 2.5, 0)
-                    bg.AlwaysOnTop = true
-                    local tl = Instance.new("TextLabel", bg)
-                    tl.Name = "TextLabel"; tl.Size = UDim2.new(1, 0, 1, 0); tl.BackgroundTransparency = 1
-                    tl.Text = RyuConfig.FakeName; tl.TextColor3 = Color3.new(1, 1, 1); tl.TextStrokeTransparency = 0
-                    tl.Font = Enum.Font.GothamBold; tl.TextSize = 14
-                else
-                    bg.TextLabel.Text = RyuConfig.FakeName
-                end
-                hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
-            end
-        else
-            local head = char:FindFirstChild("Head")
-            if head and head:FindFirstChild("RyuFakeNameGui") then head.RyuFakeNameGui:Destroy() end
-            hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.Viewer
-        end
-        
-        -- SPEED HACK
-        if RyuConfig.Speed then
+        -- SPEED HACK (WalkSpeed)
+        if RyuConfig.SpeedHack then
             hum.WalkSpeed = RyuConfig.SpeedVal
+        else
+            if hum.WalkSpeed > 30 then hum.WalkSpeed = 16 end
         end
         
-        -- FLY (Stiff body)
+        -- FLY (Frozen Body)
         if RyuConfig.Fly then
             if not bv then
                 bv = Instance.new("BodyVelocity", hrp)
                 bv.MaxForce = Vector3.new(1e9,1e9,1e9)
             end
             hum.PlatformStand = true
-            for _, track in pairs(hum:GetPlayingAnimationTracks()) do track:Stop() end
+            for _, t in pairs(hum:GetPlayingAnimationTracks()) do t:Stop() end
             
             local dir = Vector3.zero
             if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + cam.CFrame.LookVector end
@@ -889,32 +919,58 @@ RunService.RenderStepped:Connect(function(dt)
             if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + cam.CFrame.RightVector end
             if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0,1,0) end
             if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir = dir - Vector3.new(0,1,0) end
-            
             if dir.Magnitude > 0 then bv.Velocity = dir.Unit * RyuConfig.FlySpeed else bv.Velocity = Vector3.zero end
         else
             if bv then bv:Destroy(); bv = nil end
             if hum.PlatformStand then hum.PlatformStand = false end
         end
         
-        -- INVISIBLE (FE Delete LowerTorso logic - Works in R15 but disables walking anims for others)
-        if RyuConfig.Invisible then
-            local lower = char:FindFirstChild("LowerTorso")
-            if lower then lower:Destroy() end -- breaks rig for others
+        -- NOCLIP
+        if RyuConfig.Noclip then
             for _, p in pairs(char:GetDescendants()) do
-                if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then p.Transparency = 1 end
-                if p:IsA("Decal") then p.Transparency = 1 end
+                if p:IsA("BasePart") then p.CanCollide = false end
             end
         end
         
-        -- KNOCKBACK (Local part velocity push)
+        -- INVISIBLE (FE Server-Sided via Desync/LowerTorso)
+        if RyuConfig.Invisible then
+            local lower = char:FindFirstChild("LowerTorso")
+            if lower then lower:Destroy() end -- breaks joints for R15, makes you invisible server side
+        end
+        
+        -- KNOCKBACK
         if RyuConfig.Knockback then
             for _, p in pairs(Players:GetPlayers()) do
                 if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
                     local tHrp = p.Character.HumanoidRootPart
                     if (tHrp.Position - hrp.Position).Magnitude < 5 then
-                        pcall(function() tHrp.Velocity = hrp.CFrame.LookVector * RyuConfig.KnockbackVal end)
+                        tHrp.Velocity = hrp.CFrame.LookVector * RyuConfig.KnockbackVal
                     end
                 end
+            end
+        end
+        
+        -- AUTO BLACK FLASH (Waits for Divergent/3rd M1)
+        if RyuConfig.AutoBlackFlash then
+            local ms = char:FindFirstChild("Moveset")
+            local hasDivergent = ms and ms:FindFirstChild("Divergent Fist")
+            local isThirdPunch = false
+            for _, t in pairs(hum:GetPlayingAnimationTracks()) do
+                if t.Name:lower():find("3") and t.Name:lower():find("punch") then isThirdPunch = true break end
+            end
+            
+            if (hasDivergent or isThirdPunch) and not flashFired then
+                flashFired = true
+                if remotes.Divergent and hasDivergent then remotes.Divergent:FireServer(ms["Divergent Fist"]) end
+                task.delay(0.5, function()
+                    if VirtualInputManager then
+                        VirtualInputManager:SendMouseButtonEvent(0,0,0,true,game,0)
+                        task.wait(0.05)
+                        VirtualInputManager:SendMouseButtonEvent(0,0,0,false,game,0)
+                    end
+                    task.wait(1)
+                    flashFired = false
+                end)
             end
         end
         
@@ -926,7 +982,7 @@ RunService.RenderStepped:Connect(function(dt)
         end
         lastHealth = hum.Health
         
-        -- AUTO BLOCK
+        -- AUTO BLOCK (ITADORI ACTIVATED REMOTE)
         if RyuConfig.AutoBlock and not blockWait then
             local attacking = false
             for _, p in pairs(Players:GetPlayers()) do
@@ -935,7 +991,7 @@ RunService.RenderStepped:Connect(function(dt)
                         local eHum = p.Character:FindFirstChild("Humanoid")
                         if eHum and eHum:FindFirstChild("Animator") then
                             for _, t in pairs(eHum.Animator:GetPlayingAnimationTracks()) do
-                                local n = (t.Animation and t.Animation.AnimationId or t.Name):lower()
+                                local n = t.Name:lower()
                                 if n:find("attack") or n:find("m1") or n:find("punch") then
                                     attacking = true; break
                                 end
@@ -964,14 +1020,11 @@ RunService.RenderStepped:Connect(function(dt)
         
         -- AUTO ITEM
         if RyuConfig.AutoItem and RyuConfig.TargetItem ~= "None" then
-            local items = Workspace:FindFirstChild("Items")
-            if items then
-                local i = items:FindFirstChild(RyuConfig.TargetItem)
-                if i and i:IsA("Model") and i.PrimaryPart then
-                    TJSTeleport(i.PrimaryPart.CFrame)
-                elseif i and i:IsA("BasePart") then
-                    TJSTeleport(i.CFrame)
-                end
+            local itemFolder = Workspace:FindFirstChild("Items") or Workspace
+            local item = itemFolder:FindFirstChild(RyuConfig.TargetItem)
+            if item then
+                if item:IsA("Model") and item.PrimaryPart then TJSTeleport(item.PrimaryPart.CFrame)
+                elseif item:IsA("BasePart") then TJSTeleport(item.CFrame) end
             end
         end
         
@@ -983,113 +1036,123 @@ RunService.RenderStepped:Connect(function(dt)
             end
         end
         
+        -- MONEY FARM
+        if RyuConfig.MoneyFarm then
+            local boxCFrame = CFrame.new(0, 500, 0)
+            if RyuConfig.MFRole == "Farmer" then
+                if hrp.Position.Y < 490 then TJSTeleport(boxCFrame * CFrame.new(0,5,0)) end
+                RyuConfig.AIFarm = true 
+            elseif RyuConfig.MFRole == "Victim" and RyuConfig.MFVictim ~= "" then
+                local fPlr = nil
+                for _, p in pairs(Players:GetPlayers()) do
+                    if p.Name:lower():find(RyuConfig.MFVictim:lower()) or p.DisplayName:lower():find(RyuConfig.MFVictim:lower()) then fPlr = p; break end
+                end
+                if fPlr and fPlr.Character and fPlr.Character:FindFirstChild("HumanoidRootPart") then
+                    local fHrp = fPlr.Character.HumanoidRootPart
+                    if fHrp.Position.Y > 490 then
+                        TJSTeleport(fHrp.CFrame * CFrame.new(0, 0, -2))
+                    end
+                end
+            end
+        else
+            if boxSpawned and boxPart then boxPart:Destroy(); boxSpawned = false end
+        end
+        
     end)
 end)
 
--- AI FARM COROUTINE (Fixes Lag & Spam)
+--// AI FARMING ENGINE (DEDICATED LOOP TO PREVENT CRASHES)
+local m1Combo = 0
+local m1Tick = os.clock()
+
 task.spawn(function()
-    while task.wait(0.5) do
+    while task.wait(0.1) do
         pcall(function()
             if not RyuConfig.AIFarm then return end
+            
             local char = LocalPlayer.Character
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
             local hum = char and char:FindFirstChildOfClass("Humanoid")
             if not char or not hrp or not hum or hum.Health <= 0 then return end
             
-            if not aiTarget or not aiTarget.Parent or not aiTarget:FindFirstChild("HumanoidRootPart") or aiTarget:FindFirstChild("Humanoid").Health <= 0 then
-                local d = math.huge
-                for _, p in pairs(Players:GetPlayers()) do
-                    if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChild("Humanoid").Health > 0 then
-                        local mag = (p.Character.HumanoidRootPart.Position - hrp.Position).Magnitude
-                        if mag < d then d = mag; aiTarget = p.Character end
+            local target = nil
+            local minD = RyuConfig.AIRange
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    local ehum = p.Character:FindFirstChild("Humanoid")
+                    if ehum and ehum.Health > 0 then
+                        local d = (p.Character.HumanoidRootPart.Position - hrp.Position).Magnitude
+                        if d < minD then 
+                            minD = d
+                            target = p.Character 
+                        end
                     end
                 end
-                aiStuckPos = hrp.Position
-                aiStuckTick = os.clock()
             end
             
-            if aiTarget then
-                local tHrp = aiTarget.HumanoidRootPart
+            if target then
+                local tHrp = target.HumanoidRootPart
                 
-                -- Stuck detection
-                if (hrp.Position - aiStuckPos).Magnitude < 20 then
-                    if os.clock() - aiStuckTick > 120 then
-                        aiTarget = nil
-                        TJSTeleport(hrp.CFrame * CFrame.new(0, 50, 0))
-                    end
-                else
-                    aiStuckPos = hrp.Position
-                    aiStuckTick = os.clock()
-                end
-                
-                -- Aggressive Shiftlock Facing
+                -- Aggressive facing (Shiftlock style)
                 hrp.CFrame = CFrame.lookAt(hrp.Position, Vector3.new(tHrp.Position.X, hrp.Position.Y, tHrp.Position.Z))
                 
-                -- Movement
-                local dist = (tHrp.Position - hrp.Position).Magnitude
-                if dist > 4 then
+                if RyuConfig.HumanMode then
                     hum:MoveTo(tHrp.Position)
+                    if math.random(1, 100) > 90 then hum.Jump = true end
                 else
-                    hum:MoveTo(hrp.Position) -- Stop
+                    hum:MoveTo(tHrp.Position)
                 end
                 
-                -- Combat
-                if VirtualInputManager then
-                    VirtualInputManager:SendMouseButtonEvent(0,0,0,true,game,0)
-                    task.wait(0.05)
-                    VirtualInputManager:SendMouseButtonEvent(0,0,0,false,game,0)
-                end
-                m1Combo = m1Combo + 1
-                
-                if m1Combo >= 4 then
-                    m1Combo = 0
-                    if RyuConfig.S1 then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.One, false, game) task.wait(0.05) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.One, false, game) end
-                    if RyuConfig.S2 then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Two, false, game) task.wait(0.05) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Two, false, game) end
-                    if RyuConfig.S3 then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game) task.wait(0.05) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end
-                    if RyuConfig.S4 then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Four, false, game) task.wait(0.05) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Four, false, game) end
-                    if RyuConfig.AutoUlt then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.G, false, game) task.wait(0.05) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.G, false, game) end
+                if minD < 6 then
+                    if os.clock() - m1Tick > 0.4 then
+                        m1Tick = os.clock()
+                        if VirtualInputManager then
+                            VirtualInputManager:SendMouseButtonEvent(0,0,0,true,game,0)
+                            task.wait(0.05)
+                            VirtualInputManager:SendMouseButtonEvent(0,0,0,false,game,0)
+                        end
+                        m1Combo = m1Combo + 1
+                        
+                        if m1Combo >= 4 then
+                            m1Combo = 0
+                            if VirtualInputManager then
+                                if RyuConfig.S1 and minD <= RyuConfig.S1R then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.One, false, game) task.wait(0.05) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.One, false, game) end
+                                if RyuConfig.S2 and minD <= RyuConfig.S2R then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Two, false, game) task.wait(0.05) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Two, false, game) end
+                                if RyuConfig.S3 and minD <= RyuConfig.S3R then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game) task.wait(0.05) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end
+                                if RyuConfig.S4 and minD <= RyuConfig.S4R then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Four, false, game) task.wait(0.05) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Four, false, game) end
+                                if RyuConfig.AutoUlt then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.G, false, game) task.wait(0.05) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.G, false, game) end
+                            end
+                        end
+                    end
                 end
             end
         end)
     end
 end)
 
--- MONEY FARM
-local boxSpawned = false
-local boxPart = nil
+-- auto rejoin logic
 task.spawn(function()
-    while task.wait(0.1) do
-        pcall(function()
-            local char = LocalPlayer.Character
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            if not hrp then return end
-            
-            if RyuConfig.MoneyFarm then
-                local boxCFrame = CFrame.new(0, 500, 0)
-                if not boxSpawned then
-                    boxPart = Instance.new("Part", Workspace)
-                    boxPart.Size = Vector3.new(100, 5, 100); boxPart.Position = boxCFrame.Position
-                    boxPart.Anchored = true; boxPart.Transparency = 0.5; boxSpawned = true
-                end
-                
-                if RyuConfig.MFRole == "Farmer" then
-                    if hrp.Position.Y < 490 then TJSTeleport(boxCFrame * CFrame.new(0,5,0)) end
-                    RyuConfig.AIFarm = true 
-                elseif RyuConfig.MFRole == "Victim" and RyuConfig.MFVictim ~= "" then
-                    local fPlr = nil
-                    for _, p in pairs(Players:GetPlayers()) do
-                        if p.Name:lower():find(RyuConfig.MFVictim:lower()) or p.DisplayName:lower():find(RyuConfig.MFVictim:lower()) then fPlr = p; break end
-                    end
-                    if fPlr and fPlr.Character and fPlr.Character:FindFirstChild("HumanoidRootPart") then
-                        local fHrp = fPlr.Character.HumanoidRootPart
-                        if fHrp.Position.Y > 490 then
-                            TJSTeleport(fHrp.CFrame * CFrame.new(0, 0, -2))
+    while task.wait(5) do
+        if RyuConfig.AutoRejoin then
+            if #Players:GetPlayers() <= RyuConfig.MinPlayers then
+                pcall(function()
+                    local url = "https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100"
+                    local req = game:HttpGet(url)
+                    local data = HttpService:JSONDecode(req)
+                    for _, s in pairs(data.data) do
+                        if s.playing < s.maxPlayers and s.id ~= game.JobId then
+                            local ratio = s.playing / s.maxPlayers
+                            if RyuConfig.HighPop and ratio >= 0.7 and ratio <= 0.9 then
+                                TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer)
+                                break
+                            elseif not RyuConfig.HighPop and s.playing > 2 then
+                                TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer)
+                                break
+                            end
                         end
                     end
-                end
-            else
-                if boxSpawned and boxPart then boxPart:Destroy(); boxSpawned = false end
+                end)
             end
-        end)
+        end
     end
 end)
