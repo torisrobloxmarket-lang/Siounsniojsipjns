@@ -1,7 +1,9 @@
 --// ==========================================
---// RYU INVIS — REPLICATED BUILD
+--// RYU INVIS — JTS RIG-ACCURATE BUILD
 --// Jujutsu Shenanigans
---// Transparency (replicated) + Description wipe
+--// Built against actual ryuglazer rig tree:
+--// R6 + Collide parts + CharacterMesh + Shirt
+--// + Accessory handles + Aura ParticleEmitters
 --// ==========================================
 
 local Players = game:GetService("Players")
@@ -38,22 +40,29 @@ local fs = Instance.new("UIStroke", Frame)
 fs.Color = Color3.fromRGB(60, 60, 60)
 fs.Thickness = 1.5
 
--- Drag
 local dragStart, dragPos
 Frame.InputBegan:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+    if i.UserInputType == Enum.UserInputType.MouseButton1
+    or i.UserInputType == Enum.UserInputType.Touch then
         dragStart = i.Position
         dragPos = Frame.Position
     end
 end)
 UserInputService.InputChanged:Connect(function(i)
-    if dragStart and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+    if dragStart and (
+        i.UserInputType == Enum.UserInputType.MouseMovement
+        or i.UserInputType == Enum.UserInputType.Touch
+    ) then
         local d = i.Position - dragStart
-        Frame.Position = UDim2.new(dragPos.X.Scale, dragPos.X.Offset + d.X, dragPos.Y.Scale, dragPos.Y.Offset + d.Y)
+        Frame.Position = UDim2.new(
+            dragPos.X.Scale, dragPos.X.Offset + d.X,
+            dragPos.Y.Scale, dragPos.Y.Offset + d.Y
+        )
     end
 end)
 UserInputService.InputEnded:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+    if i.UserInputType == Enum.UserInputType.MouseButton1
+    or i.UserInputType == Enum.UserInputType.Touch then
         dragStart = nil
     end
 end)
@@ -101,97 +110,134 @@ Circle.BorderSizePixel = 0
 Instance.new("UICorner", Circle).CornerRadius = UDim.new(1, 0)
 
 --// ==========================================
---// INVIS LOGIC — REPLICATED
---// BasePart.Transparency = 1 replicates to server.
---// LocalTransparencyModifier is client-only — not used here.
---// Keepalive thread reapplies every 0.3s to catch
---// parts added dynamically (JTS spawns accessories mid-game).
---// HumanoidDescription wipe on toggle strips server-side
---// avatar so joining clients also see nothing.
+--// INVIS LOGIC — JTS RIG ACCURATE
+--//
+--// Layer 1: BasePart.Transparency = 1 (replicates)
+--//   Covers: Head, Torso, arms, legs, Collide parts,
+--//   Accessory Handle parts, Aura Part
+--//
+--// Layer 2: Decal.Transparency = 1
+--//   Covers: Head.face, Torso.roblox decal
+--//
+--// Layer 3: Shirt.ShirtTemplate = ""
+--//   Covers: Shirt instance (not a BasePart, needs own wipe)
+--//
+--// Layer 4: CharacterMesh.MeshId = ""
+--//   Covers: all 6 CharacterMesh instances
+--//
+--// Layer 5: ParticleEmitter.Enabled = false
+--//   Covers: Aura.MEwhenIGUH Sparks/BGglow/Aura emitters
+--//
+--// Keepalive at 0.3s catches dynamic accessory spawns.
+--// Restore pulls original values from saved tables.
 --// ==========================================
 
 local invisActive = false
 local invisThread = nil
-local originalTransparency = {}
 
-local function setReplicated(char, hide)
-    for _, part in pairs(char:GetDescendants()) do
-        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-            if hide then
-                if originalTransparency[part] == nil then
-                    originalTransparency[part] = part.Transparency
-                end
-                part.Transparency = 1
-            else
-                if originalTransparency[part] ~= nil then
-                    part.Transparency = originalTransparency[part]
-                    originalTransparency[part] = nil
-                else
-                    part.Transparency = 0
-                end
+-- Storage for originals
+local savedParts = {}       -- [part] = Transparency
+local savedDecals = {}      -- [decal] = Transparency
+local savedShirts = {}      -- [shirt] = ShirtTemplate
+local savedMeshes = {}      -- [mesh] = MeshId
+local savedEmitters = {}    -- [emitter] = Enabled
+
+local function hideChar(char)
+    for _, v in pairs(char:GetDescendants()) do
+
+        -- BasePart: covers body parts, Collide shells, accessory handles, Aura part
+        -- Skip HumanoidRootPart — movement breaks if hidden wrong
+        if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
+            if savedParts[v] == nil then
+                savedParts[v] = v.Transparency
             end
-        end
+            v.Transparency = 1
 
-        -- Decals only — SpecialMesh excluded, no Transparency property
-        if part:IsA("Decal") then
-            if hide then
-                if originalTransparency[part] == nil then
-                    originalTransparency[part] = part.Transparency
-                end
-                part.Transparency = 1
-            else
-                if originalTransparency[part] ~= nil then
-                    part.Transparency = originalTransparency[part]
-                    originalTransparency[part] = nil
-                else
-                    part.Transparency = 0
-                end
+        -- Decal only — Head.face and Torso.roblox
+        elseif v:IsA("Decal") then
+            if savedDecals[v] == nil then
+                savedDecals[v] = v.Transparency
+            end
+            v.Transparency = 1
+
+        -- Shirt instance — ShirtTemplate drives the texture replication
+        elseif v:IsA("Shirt") then
+            if savedShirts[v] == nil then
+                savedShirts[v] = v.ShirtTemplate
+            end
+            v.ShirtTemplate = ""
+
+        -- CharacterMesh — 6 instances on JTS rig, MeshId is the visible surface
+        elseif v:IsA("CharacterMesh") then
+            if savedMeshes[v] == nil then
+                savedMeshes[v] = v.MeshId
+            end
+            v.MeshId = ""
+
+        -- ParticleEmitter — Aura has Sparks, BGglow, Aura emitters
+        elseif v:IsA("ParticleEmitter") then
+            if savedEmitters[v] == nil then
+                savedEmitters[v] = v.Enabled
+            end
+            v.Enabled = false
+        end
+    end
+end
+
+local function showChar(char)
+    for _, v in pairs(char:GetDescendants()) do
+        if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
+            if savedParts[v] ~= nil then
+                v.Transparency = savedParts[v]
+            end
+        elseif v:IsA("Decal") then
+            if savedDecals[v] ~= nil then
+                v.Transparency = savedDecals[v]
+            end
+        elseif v:IsA("Shirt") then
+            if savedShirts[v] ~= nil then
+                v.ShirtTemplate = savedShirts[v]
+            end
+        elseif v:IsA("CharacterMesh") then
+            if savedMeshes[v] ~= nil then
+                v.MeshId = savedMeshes[v]
+            end
+        elseif v:IsA("ParticleEmitter") then
+            if savedEmitters[v] ~= nil then
+                v.Enabled = savedEmitters[v]
             end
         end
     end
 end
 
-local function wipeDescription(char)
-    pcall(function()
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            hum:ApplyDescription(Instance.new("HumanoidDescription"))
-        end
-    end)
-end
-
-local function restoreDescription()
-    pcall(function()
-        local char = LocalPlayer.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            local desc = Players:GetHumanoidDescriptionFromUserId(LocalPlayer.UserId)
-            hum:ApplyDescription(desc)
-        end
-    end)
+local function clearSaved()
+    savedParts = {}
+    savedDecals = {}
+    savedShirts = {}
+    savedMeshes = {}
+    savedEmitters = {}
 end
 
 local function startInvis()
     local char = LocalPlayer.Character
     if not char then return end
 
-    originalTransparency = {}
-    setReplicated(char, true)
-    wipeDescription(char)
+    clearSaved()
+    hideChar(char)
 
-    -- Keepalive: JTS adds accessories dynamically, reapply catches them
+    -- Keepalive: JTS spawns accessories and aura parts dynamically
     invisThread = task.spawn(function()
         while invisActive do
             task.wait(0.3)
             local c = LocalPlayer.Character
             if c and invisActive then
-                setReplicated(c, true)
+                hideChar(c)
             end
         end
     end)
 
     StatusDot.BackgroundColor3 = Color3.fromRGB(80, 200, 80)
-    StatusLabel.Text = "ON — replicated to server"
+    StatusLabel.Text = "ON — all layers hidden"
     StatusLabel.TextColor3 = Color3.fromRGB(80, 200, 80)
 end
 
@@ -204,10 +250,9 @@ local function stopInvis()
 
     local char = LocalPlayer.Character
     if char then
-        setReplicated(char, false)
+        showChar(char)
     end
-    originalTransparency = {}
-    restoreDescription()
+    clearSaved()
 
     StatusDot.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
     StatusLabel.Text = "OFF — toggle to activate"
@@ -216,11 +261,10 @@ end
 
 -- Reapply on respawn
 LocalPlayer.CharacterAdded:Connect(function(char)
-    originalTransparency = {}
+    clearSaved()
     if invisActive then
         task.wait(1.5)
-        setReplicated(char, true)
-        wipeDescription(char)
+        hideChar(char)
     end
 end)
 
@@ -231,11 +275,17 @@ ToggleBtn.MouseButton1Click:Connect(function()
     invisActive = isOn
 
     TweenService:Create(ToggleBtn, TweenInfo.new(0.2), {
-        BackgroundColor3 = isOn and Color3.fromRGB(80, 200, 80) or Color3.fromRGB(45, 45, 45)
+        BackgroundColor3 = isOn
+            and Color3.fromRGB(80, 200, 80)
+            or Color3.fromRGB(45, 45, 45)
     }):Play()
     TweenService:Create(Circle, TweenInfo.new(0.2), {
-        Position = isOn and UDim2.new(1, -22, 0.5, -9) or UDim2.new(0, 4, 0.5, -9),
-        BackgroundColor3 = isOn and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(130, 130, 130)
+        Position = isOn
+            and UDim2.new(1, -22, 0.5, -9)
+            or UDim2.new(0, 4, 0.5, -9),
+        BackgroundColor3 = isOn
+            and Color3.fromRGB(255, 255, 255)
+            or Color3.fromRGB(130, 130, 130)
     }):Play()
 
     if isOn then
