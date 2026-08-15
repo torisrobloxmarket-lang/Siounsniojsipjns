@@ -1,5 +1,5 @@
--- ryu hub - jujutsu shenanigans (tjs) v1.2
--- fixed auto farm, lock on, pure monochrome ui, no toggle drag, proper block remotes
+-- ryu hub - jujutsu shenanigans (tjs) v1.3
+-- fixed ui rendering (no canvasgroups), async loading & pure monochrome
 
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
@@ -16,24 +16,21 @@ local VirtualUser = game:GetService("VirtualUser")
 local LocalPlayer = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
--- gui cleanup
-local guiParent = LocalPlayer:WaitForChild("PlayerGui")
-pcall(function() 
-    if gethui then guiParent = gethui() elseif syn and syn.protect_gui then guiParent = CoreGui end 
+-- gui parent resolver
+local guiParent
+pcall(function()
+    if type(gethui) == "function" then
+        guiParent = gethui()
+    elseif syn and syn.protect_gui then
+        guiParent = CoreGui
+    end
 end)
+if not guiParent then guiParent = LocalPlayer:WaitForChild("PlayerGui") end
 
+-- old gui cleanup
 for _, v in pairs(guiParent:GetChildren()) do 
     if v.Name == "RyuHubTJS" then v:Destroy() end 
 end
-
--- tjs knit remotes cache
-local knitServices = ReplicatedStorage:WaitForChild("Knit", 5) and ReplicatedStorage.Knit:WaitForChild("Services")
-local remotes = {
-    BlockOn = knitServices and knitServices:FindFirstChild("BlockService") and knitServices.BlockService.RE:FindFirstChild("Activated"),
-    BlockOff = knitServices and knitServices:FindFirstChild("BlockService") and knitServices.BlockService.RE:FindFirstChild("Deactivated"),
-    Chase = knitServices and knitServices:FindFirstChild("ItadoriService") and knitServices.ItadoriService.RE:FindFirstChild("Chase"),
-    ItadoriActivated = knitServices and knitServices:FindFirstChild("ItadoriService") and knitServices.ItadoriService.RE:FindFirstChild("Activated")
-}
 
 -- global config
 local CONFIG_FILE = "RyuHub_TJS_Settings.json"
@@ -58,7 +55,9 @@ local RyuConfig = {
     MoneyFarm = false, MFRole = "Farmer", MFVictim = "",
     
     AutoRejoin = false, MinPlayers = 3, HighPop = true,
-    TargetJoinUser = "", AntiAFK = false
+    TargetJoinUser = "", AntiAFK = false,
+    
+    GuiColor = Color3.fromRGB(255, 255, 255)
 }
 
 -- save/load engine
@@ -75,13 +74,13 @@ pcall(function()
     end
 end)
 
--- theme & setup (100% monochrome, no red)
+-- theme setup (monochrome aba style)
 local Theme = {
     Background = Color3.fromRGB(12, 12, 14), Sidebar = Color3.fromRGB(18, 18, 20),
     SectionBG = Color3.fromRGB(24, 24, 26), Text = Color3.fromRGB(250, 250, 250),
     SubText = Color3.fromRGB(130, 130, 135), CloudLight = Color3.fromRGB(255, 255, 255),
-    CloudDark = Color3.fromRGB(60, 60, 65), Accent = Color3.fromRGB(255, 255, 255),
-    ToggleOff = Color3.fromRGB(35, 35, 38), ToggleOn = Color3.fromRGB(255, 255, 255),
+    CloudDark = Color3.fromRGB(60, 60, 65), Accent = RyuConfig.GuiColor,
+    ToggleOff = Color3.fromRGB(35, 35, 38), ToggleOn = RyuConfig.GuiColor,
     Stroke = Color3.fromRGB(45, 45, 50), Warning = Color3.fromRGB(200, 200, 200)
 }
 
@@ -113,10 +112,10 @@ local function AddClickPop(element)
     end)
 end
 
--- FIXED TOP LEFT TOGGLE BUTTON (No dragging)
+-- FIXED TOP LEFT TOGGLE BUTTON
 local ToggleBtn = Instance.new("TextButton")
 ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
-ToggleBtn.Position = UDim2.new(0, 15, 0, 15) -- FIXED STATIC POSITION
+ToggleBtn.Position = UDim2.new(0, 15, 0, 15)
 ToggleBtn.BackgroundColor3 = Theme.Sidebar
 ToggleBtn.Text = ""
 ToggleBtn.Parent = RyuHub
@@ -141,12 +140,14 @@ Instance.new("UICorner", Handle).CornerRadius = UDim.new(0, 1)
 AddClickPop(ToggleBtn)
 
 -- main frame setup
-local MainFrame = Instance.new("CanvasGroup")
+local MainFrame = Instance.new("Frame")
 MainFrame.Size = UDim2.new(0, 0, 0, 0)
 MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
 MainFrame.BackgroundColor3 = Theme.Background
 MainFrame.BorderSizePixel = 0
 MainFrame.Visible = false
+MainFrame.ClipsDescendants = true
+MainFrame.Active = true
 MainFrame.Parent = RyuHub
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
 
@@ -154,7 +155,7 @@ local mainStroke = Instance.new("UIStroke", MainFrame)
 mainStroke.Color = Theme.Stroke; mainStroke.Transparency = 0.2; mainStroke.Thickness = 1.5
 
 -- background discord text
-local DragText = Instance.new("TextLabel", RyuHub)
+local DragText = Instance.new("TextLabel", MainFrame)
 DragText.Size = UDim2.new(1, 0, 1, 0); DragText.Position = UDim2.new(0, 0, 0, 0); DragText.BackgroundTransparency = 1
 DragText.Text = "DISCORD.GG/RYUHUB"; DragText.Font = Enum.Font.GothamBlack; DragText.TextSize = 50
 DragText.TextColor3 = Color3.fromRGB(255, 255, 255); DragText.TextTransparency = 1; DragText.ZIndex = 0
@@ -165,14 +166,14 @@ DragGradient.Color = ColorSequence.new{ColorSequenceKeypoint.new(0, Color3.fromR
 ToggleBtn.MouseButton1Click:Connect(function()
     if MainFrame.Visible then
         pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play() end)
-        coroutine.wrap(function() wait(0.3) MainFrame.Visible = false end)()
+        task.delay(0.3, function() MainFrame.Visible = false end)
     else
         MainFrame.Visible = true
         pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = MainSize, Position = UDim2.new(0.5, -MainSize.X.Offset/2, 0.5, -MainSize.Y.Offset/2)}):Play() end)
     end
 end)
 
-local ContentWrapper = Instance.new("CanvasGroup", MainFrame)
+local ContentWrapper = Instance.new("Frame", MainFrame)
 ContentWrapper.Size = UDim2.new(1, 0, 1, 0); ContentWrapper.Position = UDim2.new(0, 0, 0, 0); ContentWrapper.BackgroundTransparency = 1; ContentWrapper.BorderSizePixel = 0; ContentWrapper.ZIndex = 1
 
 local Topbar = Instance.new("Frame", ContentWrapper)
@@ -185,7 +186,7 @@ Title.TextColor3 = Theme.Text
 local TitleGradient = Instance.new("UIGradient", Title)
 TitleGradient.Color = ColorSequence.new{ColorSequenceKeypoint.new(0, Color3.fromRGB(180, 180, 185)), ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 180, 185))}
 TitleGradient.Offset = Vector2.new(-1, 0)
-coroutine.wrap(function() pcall(function() TweenService:Create(TitleGradient, TweenInfo.new(2.0, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Offset = Vector2.new(1, 0)}):Play() end) end)()
+task.spawn(function() pcall(function() TweenService:Create(TitleGradient, TweenInfo.new(2.0, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Offset = Vector2.new(1, 0)}):Play() end) end)
 
 local SubTitle = Instance.new("TextLabel", Topbar)
 SubTitle.Size = UDim2.new(0, 300, 0, 15); SubTitle.Position = UDim2.new(0, 20, 0, 38); SubTitle.BackgroundTransparency = 1
@@ -195,7 +196,7 @@ local mDragging, mDragStart, mStartPos = false, nil, nil
 Topbar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
         mDragging = true; mDragStart = input.Position; mStartPos = MainFrame.Position 
-        pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.2), {GroupTransparency = 0.85}):Play(); TweenService:Create(DragText, TweenInfo.new(0.2), {TextTransparency = 0.1}):Play() end)
+        pcall(function() TweenService:Create(DragText, TweenInfo.new(0.2), {TextTransparency = 0.1}):Play() end)
     end
 end)
 Topbar.InputChanged:Connect(function(input)
@@ -207,7 +208,7 @@ end)
 Topbar.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
         mDragging = false 
-        pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.2), {GroupTransparency = 0}):Play(); TweenService:Create(DragText, TweenInfo.new(0.2), {TextTransparency = 1}):Play() end)
+        pcall(function() TweenService:Create(DragText, TweenInfo.new(0.2), {TextTransparency = 1}):Play() end)
     end
 end)
 
@@ -234,12 +235,6 @@ local function UpdateSidebarCanvas()
         if t.IsOpen then totalH = totalH + t.SubLayout.AbsoluteContentSize.Y + 6 end
     end
     Sidebar.CanvasSize = UDim2.new(0, 0, 0, totalH)
-end
-
-local function SecureTrigger(button, func)
-    button.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then func() end
-    end)
 end
 
 local function CreateMainTab(name)
@@ -279,7 +274,7 @@ local function CreateMainTab(name)
                 TweenService:Create(arrow, TweenInfo.new(0.25), {TextColor3 = Theme.SubText}):Play()
             end
         end)
-        coroutine.wrap(function() wait(0.26) UpdateSidebarCanvas() end)()
+        task.delay(0.26, UpdateSidebarCanvas)
         UpdateSidebarCanvas()
     end
 
@@ -503,7 +498,7 @@ CreateButton(SecPlayer, "Dance (Visible to everyone)", Theme.ToggleOff, function
 
 local SubAuto = CreateSubTab(TabCombat, "Auto")
 local SecAutoBlock = CreateSection(SubAuto, "Defensive")
-CreateToggle(SecAutoBlock, "Auto Block (Perfect Counter)", "Reacts to enemy animations via ItadoriRemote", RyuConfig.AutoBlock, function(v) RyuConfig.AutoBlock = v end)
+CreateToggle(SecAutoBlock, "Auto Block (Itadori Activated)", "Reacts to enemy animations", RyuConfig.AutoBlock, function(v) RyuConfig.AutoBlock = v end)
 CreateSlider(SecAutoBlock, "Block React Range", 5, 50, RyuConfig.BlockRange, function(v) RyuConfig.BlockRange = v end)
 CreateToggle(SecAutoBlock, "Auto Dodge (TP Back)", "Dodge backwards on damage", RyuConfig.AutoDodge, function(v) RyuConfig.AutoDodge = v end)
 CreateSlider(SecAutoBlock, "Dodge Distance", 5, 50, RyuConfig.DodgeRange, function(v) RyuConfig.DodgeRange = v end)
@@ -514,7 +509,7 @@ CreateLabel(SecAutoHit, "Auto Combos: Join discord.gg/ryuhub and send clips of y
 
 local SubAbil = CreateSubTab(TabCombat, "Abilities")
 local SecAbil = CreateSection(SubAbil, "Combat Enhancements")
-CreateToggle(SecAbil, "Lock On (Nearest Head)", "Auto aim camera precisely at head", RyuConfig.LockOn, function(v) RyuConfig.LockOn = v end)
+CreateToggle(SecAbil, "Lock On (Aim at Head)", "Auto aim camera precisely at head", RyuConfig.LockOn, function(v) RyuConfig.LockOn = v end)
 CreateToggle(SecAbil, "Knockback M1s", "Pushes enemies away", RyuConfig.Knockback, function(v) RyuConfig.Knockback = v end)
 CreateSlider(SecAbil, "Knockback Force", 10, 300, RyuConfig.KnockbackVal, function(v) RyuConfig.KnockbackVal = v end)
 CreateToggle(SecAbil, "Domain Eraser", "Bypass domains (Local)", RyuConfig.DomainBypass, function(v) RyuConfig.DomainBypass = v end)
@@ -592,13 +587,28 @@ pcall(function()
     if Tabs[1].SubTabs[1] and Tabs[1].SubTabs[1].Open then Tabs[1].SubTabs[1].Open() end 
 end)
 
---// 6. TJS RUNTIME EXPLOITATION ENGINE
+--// 6. TJS ASYNC RUNTIME EXPLOITATION ENGINE
 local lastHealth = 100
 local flashFired = false
 local lastFov = 70
 local boxSpawned = false
 local boxPart = nil
+local m1Spamming = false
 local bv = nil
+
+task.spawn(function()
+    -- Load Knit Remotes safely without blocking the UI
+    local ks = ReplicatedStorage:WaitForChild("Knit", 5)
+    if ks then
+        local serv = ks:WaitForChild("Services", 5)
+        if serv then
+            remotes.BlockOn = serv:FindFirstChild("BlockService") and serv.BlockService.RE:FindFirstChild("Activated")
+            remotes.BlockOff = serv:FindFirstChild("BlockService") and serv.BlockService.RE:FindFirstChild("Deactivated")
+            remotes.Chase = serv:FindFirstChild("ItadoriService") and serv.ItadoriService.RE:FindFirstChild("Chase")
+            remotes.ItadoriActivated = serv:FindFirstChild("ItadoriService") and serv.ItadoriService.RE:FindFirstChild("Activated")
+        end
+    end
+end)
 
 -- Domain Eraser
 Workspace.ChildAdded:Connect(function(c)
@@ -646,7 +656,7 @@ UserInputService.JumpRequest:Connect(function()
     end)
 end)
 
--- Lock On Engine (Smoother inside RenderStepped)
+-- Lock On Engine (Smoother inside RenderStepped aiming at HEAD)
 RunService.RenderStepped:Connect(function()
     pcall(function()
         local cam = Workspace.CurrentCamera
@@ -659,10 +669,11 @@ RunService.RenderStepped:Connect(function()
                 if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
                     local ehum = p.Character:FindFirstChild("Humanoid")
                     if ehum and ehum.Health > 0 then
-                        local mag = (p.Character.HumanoidRootPart.Position - hrp.Position).Magnitude
+                        local head = p.Character:FindFirstChild("Head") or p.Character.HumanoidRootPart
+                        local mag = (head.Position - hrp.Position).Magnitude
                         if mag < d then 
                             d = mag 
-                            near = p.Character:FindFirstChild("Head") or p.Character.HumanoidRootPart 
+                            near = head 
                         end
                     end
                 end
@@ -828,7 +839,7 @@ RunService.Stepped:Connect(function()
             
             if RyuConfig.MFRole == "Farmer" then
                 if hrp.Position.Y < 49000 then hrp.CFrame = CFrame.new(0, 50005, 0) end
-                RyuConfig.AIFarm = true -- force ai farm for farmer
+                RyuConfig.AIFarm = true 
             elseif RyuConfig.MFRole == "Victim" and RyuConfig.MFVictim ~= "" then
                 local fPlr = nil
                 for _, p in pairs(Players:GetPlayers()) do
@@ -893,15 +904,21 @@ task.spawn(function()
                 -- Attack & Use Skills
                 if VirtualInputManager and type(VirtualInputManager.SendMouseButtonEvent) == "function" then
                     local cx, cy = camera.ViewportSize.X/2, camera.ViewportSize.Y/2
-                    VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
-                    task.wait(0.05)
-                    VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
-                    
-                    if RyuConfig.S1 and minD <= RyuConfig.S1R then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.One, false, game) task.wait(0.05) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.One, false, game) end
-                    if RyuConfig.S2 and minD <= RyuConfig.S2R then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Two, false, game) task.wait(0.05) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Two, false, game) end
-                    if RyuConfig.S3 and minD <= RyuConfig.S3R then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game) task.wait(0.05) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end
-                    if RyuConfig.S4 and minD <= RyuConfig.S4R then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Four, false, game) task.wait(0.05) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Four, false, game) end
-                    if RyuConfig.AutoUlt then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.G, false, game) task.wait(0.05) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.G, false, game) end
+                    if not m1Spamming then
+                        m1Spamming = true
+                        VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+                        task.wait(0.05)
+                        VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
+                        
+                        if RyuConfig.S1 and minD <= RyuConfig.S1R then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.One, false, game) task.wait(0.05) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.One, false, game) end
+                        if RyuConfig.S2 and minD <= RyuConfig.S2R then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Two, false, game) task.wait(0.05) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Two, false, game) end
+                        if RyuConfig.S3 and minD <= RyuConfig.S3R then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game) task.wait(0.05) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game) end
+                        if RyuConfig.S4 and minD <= RyuConfig.S4R then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Four, false, game) task.wait(0.05) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Four, false, game) end
+                        if RyuConfig.AutoUlt then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.G, false, game) task.wait(0.05) VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.G, false, game) end
+                        
+                        task.wait(0.15)
+                        m1Spamming = false
+                    end
                 end
             end
         end)
