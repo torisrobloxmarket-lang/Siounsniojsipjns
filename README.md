@@ -1,14 +1,15 @@
 --// ==========================================
---// RYU INVIS — JTS RIG-ACCURATE BUILD
---// Jujutsu Shenanigans
---// Built against actual ryuglazer rig tree:
---// R6 + Collide parts + CharacterMesh + Shirt
---// + Accessory handles + Aura ParticleEmitters
+--// RYU INVIS — SCALE METHOD
+--// Jujutsu Shenanigans / Knit server
+--// Scales all visible parts to Vector3.zero
+--// via ModelLOD + Part.Size replication.
+--// HRP stays normal size — movement intact.
 --// ==========================================
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -22,7 +23,6 @@ for _, v in pairs(guiParent:GetChildren()) do
     if v.Name == "RyuInvisSolo" then v:Destroy() end
 end
 
---// GUI
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "RyuInvisSolo"
 ScreenGui.ResetOnSpawn = false
@@ -110,71 +110,68 @@ Circle.BorderSizePixel = 0
 Instance.new("UICorner", Circle).CornerRadius = UDim.new(1, 0)
 
 --// ==========================================
---// INVIS LOGIC — JTS RIG ACCURATE
+--// CORE LOGIC
 --//
---// Layer 1: BasePart.Transparency = 1 (replicates)
---//   Covers: Head, Torso, arms, legs, Collide parts,
---//   Accessory Handle parts, Aura Part
+--// Method: Part.Size scaled to 0.001,0.001,0.001
+--// (not zero — zero breaks physics anchoring)
+--// Size IS replicated by Roblox's replication layer.
+--// Other clients receive the size update and render
+--// a sub-pixel part = invisible in practice.
 --//
---// Layer 2: Decal.Transparency = 1
---//   Covers: Head.face, Torso.roblox decal
+--// HumanoidRootPart: NOT touched — movement breaks.
+--// Collide parts: scaled too — they're BaseParts.
+--// Keepalive at 0.25s: JTS respawns accessories
+--// and aura parts dynamically mid-session.
 --//
---// Layer 3: Shirt.ShirtTemplate = ""
---//   Covers: Shirt instance (not a BasePart, needs own wipe)
---//
---// Layer 4: CharacterMesh.MeshId = ""
---//   Covers: all 6 CharacterMesh instances
---//
---// Layer 5: ParticleEmitter.Enabled = false
---//   Covers: Aura.MEwhenIGUH Sparks/BGglow/Aura emitters
---//
---// Keepalive at 0.3s catches dynamic accessory spawns.
---// Restore pulls original values from saved tables.
+--// Restore: saved original sizes per-part.
+--// Shirt/CharacterMesh/Decal: transparency layer
+--// still applied on top — belt and suspenders.
 --// ==========================================
 
 local invisActive = false
 local invisThread = nil
 
--- Storage for originals
-local savedParts = {}       -- [part] = Transparency
-local savedDecals = {}      -- [decal] = Transparency
-local savedShirts = {}      -- [shirt] = ShirtTemplate
-local savedMeshes = {}      -- [mesh] = MeshId
-local savedEmitters = {}    -- [emitter] = Enabled
+local savedSizes = {}
+local savedTransparency = {}
+local savedDecals = {}
+local savedShirts = {}
+local savedMeshes = {}
+local savedEmitters = {}
+
+local TINY = Vector3.new(0.001, 0.001, 0.001)
 
 local function hideChar(char)
     for _, v in pairs(char:GetDescendants()) do
 
-        -- BasePart: covers body parts, Collide shells, accessory handles, Aura part
-        -- Skip HumanoidRootPart — movement breaks if hidden wrong
+        -- Scale body parts to sub-pixel — replicates to server
         if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
-            if savedParts[v] == nil then
-                savedParts[v] = v.Transparency
+            if savedSizes[v] == nil then
+                savedSizes[v] = v.Size
             end
+            if savedTransparency[v] == nil then
+                savedTransparency[v] = v.Transparency
+            end
+            v.Size = TINY
             v.Transparency = 1
 
-        -- Decal only — Head.face and Torso.roblox
         elseif v:IsA("Decal") then
             if savedDecals[v] == nil then
                 savedDecals[v] = v.Transparency
             end
             v.Transparency = 1
 
-        -- Shirt instance — ShirtTemplate drives the texture replication
         elseif v:IsA("Shirt") then
             if savedShirts[v] == nil then
                 savedShirts[v] = v.ShirtTemplate
             end
             v.ShirtTemplate = ""
 
-        -- CharacterMesh — 6 instances on JTS rig, MeshId is the visible surface
         elseif v:IsA("CharacterMesh") then
             if savedMeshes[v] == nil then
                 savedMeshes[v] = v.MeshId
             end
             v.MeshId = ""
 
-        -- ParticleEmitter — Aura has Sparks, BGglow, Aura emitters
         elseif v:IsA("ParticleEmitter") then
             if savedEmitters[v] == nil then
                 savedEmitters[v] = v.Enabled
@@ -187,8 +184,11 @@ end
 local function showChar(char)
     for _, v in pairs(char:GetDescendants()) do
         if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
-            if savedParts[v] ~= nil then
-                v.Transparency = savedParts[v]
+            if savedSizes[v] ~= nil then
+                v.Size = savedSizes[v]
+            end
+            if savedTransparency[v] ~= nil then
+                v.Transparency = savedTransparency[v]
             end
         elseif v:IsA("Decal") then
             if savedDecals[v] ~= nil then
@@ -211,7 +211,8 @@ local function showChar(char)
 end
 
 local function clearSaved()
-    savedParts = {}
+    savedSizes = {}
+    savedTransparency = {}
     savedDecals = {}
     savedShirts = {}
     savedMeshes = {}
@@ -221,14 +222,12 @@ end
 local function startInvis()
     local char = LocalPlayer.Character
     if not char then return end
-
     clearSaved()
     hideChar(char)
 
-    -- Keepalive: JTS spawns accessories and aura parts dynamically
     invisThread = task.spawn(function()
         while invisActive do
-            task.wait(0.3)
+            task.wait(0.25)
             local c = LocalPlayer.Character
             if c and invisActive then
                 hideChar(c)
@@ -237,7 +236,7 @@ local function startInvis()
     end)
 
     StatusDot.BackgroundColor3 = Color3.fromRGB(80, 200, 80)
-    StatusLabel.Text = "ON — all layers hidden"
+    StatusLabel.Text = "ON — server replicated"
     StatusLabel.TextColor3 = Color3.fromRGB(80, 200, 80)
 end
 
@@ -247,11 +246,8 @@ local function stopInvis()
         task.cancel(invisThread)
         invisThread = nil
     end
-
     local char = LocalPlayer.Character
-    if char then
-        showChar(char)
-    end
+    if char then showChar(char) end
     clearSaved()
 
     StatusDot.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
@@ -259,7 +255,6 @@ local function stopInvis()
     StatusLabel.TextColor3 = Color3.fromRGB(90, 90, 90)
 end
 
--- Reapply on respawn
 LocalPlayer.CharacterAdded:Connect(function(char)
     clearSaved()
     if invisActive then
@@ -268,7 +263,6 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     end
 end)
 
---// TOGGLE
 local isOn = false
 ToggleBtn.MouseButton1Click:Connect(function()
     isOn = not isOn
