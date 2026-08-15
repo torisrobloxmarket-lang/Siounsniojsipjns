@@ -9,6 +9,7 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
@@ -697,7 +698,7 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
--- FE Server-Sided Invis (Root Break + Underground Hold)
+-- FE Server-Sided Invis (C0 Offset Joint Trick + Local Ghost + Megumi Remote)
 local InvisLoop
 local FakeChar
 
@@ -707,16 +708,26 @@ local function ToggleInvis(state)
     
     local root = char:FindFirstChild("HumanoidRootPart")
     local lowerTorso = char:FindFirstChild("LowerTorso") or char:FindFirstChild("Torso")
-    local rootJoint = lowerTorso and (lowerTorso:FindFirstChild("Root") or lowerTorso:FindFirstChild("RootJoint"))
-    local hum = char:FindFirstChildOfClass("Humanoid")
+    local rootJoint = root and root:FindFirstChild("RootJoint") or (lowerTorso and lowerTorso:FindFirstChild("Root"))
     
     if state then
-        if root and lowerTorso and rootJoint and hum and not FakeChar then
+        if root and rootJoint and not Workspace:FindFirstChild("RyuLocalGhost") then
             
-            -- 1. Lokalen durchsichtigen Geist erstellen, damit du dich auf der Oberfläche siehst
+            -- 1. Megumi Remote Fire (Triggert den Server-Schattenstatus)
+            pcall(function()
+                ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("MegumiService"):WaitForChild("RE"):WaitForChild("RightActivated"):FireServer()
+            end)
+            
+            -- 2. TJS Attribute setzen (versteckt UI/Tags)
+            pcall(function() LocalPlayer:SetAttribute("HidePlayer", true) end)
+            pcall(function() char:SetAttribute("HidePlayer", true) end)
+            pcall(function() char:SetAttribute("Hidden", true) end)
+
+            -- 3. Lokalen Geist aufbauen (Damit wir uns oben sehen)
             char.Archivable = true
             FakeChar = char:Clone()
-            FakeChar.Name = "RyuGhost"
+            FakeChar.Name = "RyuLocalGhost"
+            FakeChar.Parent = Workspace
             
             for _, v in pairs(FakeChar:GetDescendants()) do
                 if v:IsA("Script") or v:IsA("LocalScript") then
@@ -725,12 +736,12 @@ local function ToggleInvis(state)
                 if v:IsA("BasePart") then
                     v.Transparency = 0.5
                     v.CanCollide = false
+                    if v.Name == "HumanoidRootPart" then v.Transparency = 1 end
                 elseif v:IsA("Decal") or v:IsA("Texture") then
                     v.Transparency = 0.5
                 end
             end
             
-            -- Geist an den echten Root binden, damit er sich mitbewegt (Da wo deine Hitbox ist)
             local fakeRoot = FakeChar:FindFirstChild("HumanoidRootPart")
             if fakeRoot then
                 fakeRoot.CFrame = root.CFrame
@@ -740,49 +751,55 @@ local function ToggleInvis(state)
                 weld.Parent = fakeRoot
             end
             
-            FakeChar.Parent = workspace
+            -- 4. ECHTER KÖRPER: Wir verschieben die sichtbaren Teile 50 Studs nach unten, OHNE Joints zu zerstören!
+            if not rootJoint:GetAttribute("OriginalC0") then
+                rootJoint:SetAttribute("OriginalC0", rootJoint.C0)
+            end
             
-            -- 2. Kamera auf den echten Kern setzen (da der Torso gleich verschwindet)
-            camera.CameraSubject = root
+            -- Schiebt den sichtbaren Körper (für alle anderen) 50 Studs in den Boden!
+            rootJoint.C0 = rootJoint:GetAttribute("OriginalC0") * CFrame.new(0, -50, 0)
             
-            -- 3. Echten Körper abkoppeln 
-            rootJoint.Part0 = nil
-            
-            for _, v in pairs(char:GetChildren()) do
-                if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
-                    v.CanCollide = false
+            -- Den "echten" (jetzt unterirdischen) Körper für uns lokal unsichtbar machen
+            for _, v in pairs(char:GetDescendants()) do
+                if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" and v.Transparency < 1 then
+                    if not v:GetAttribute("OldTrans") then v:SetAttribute("OldTrans", v.Transparency) end
+                    v.Transparency = 1
+                elseif (v:IsA("Decal") or v:IsA("Texture")) and v.Transparency < 1 then
+                    if not v:GetAttribute("OldTrans") then v:SetAttribute("OldTrans", v.Transparency) end
+                    v.Transparency = 1
                 end
             end
             
-            -- 4. Echten Körper in den Untergrund zwingen (Server sieht das!)
+            -- Render Loop, falls das Spiel den Joint zurücksetzt
             InvisLoop = RunService.RenderStepped:Connect(function()
-                if char and root and lowerTorso then
-                    -- Hält den sichtbaren, echten Körper tief unter dem Boden fest
-                    lowerTorso.CFrame = root.CFrame * CFrame.new(0, -200, 0)
-                    lowerTorso.Velocity = Vector3.new(0, 0, 0)
-                    lowerTorso.RotVelocity = Vector3.new(0, 0, 0)
+                if rootJoint and rootJoint:GetAttribute("OriginalC0") then
+                    rootJoint.C0 = rootJoint:GetAttribute("OriginalC0") * CFrame.new(0, -50, 0)
                 end
             end)
+            
         end
     else
         -- ALLES SAUBER ZURÜCKSETZEN
         if InvisLoop then InvisLoop:Disconnect(); InvisLoop = nil end
+        
+        pcall(function() LocalPlayer:SetAttribute("HidePlayer", nil) end)
+        pcall(function() char:SetAttribute("HidePlayer", nil) end)
+        pcall(function() char:SetAttribute("Hidden", nil) end)
+        
         if FakeChar then FakeChar:Destroy(); FakeChar = nil end
         
-        if rootJoint and root then
-            rootJoint.Part0 = root
-        end
-        if lowerTorso and root then
-            lowerTorso.CFrame = root.CFrame
+        if rootJoint and rootJoint:GetAttribute("OriginalC0") then
+            rootJoint.C0 = rootJoint:GetAttribute("OriginalC0")
+            rootJoint:SetAttribute("OriginalC0", nil)
         end
         
-        for _, v in pairs(char:GetChildren()) do
-            if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
-                v.CanCollide = true
+        -- Echten Körper wieder sichtbar machen
+        for _, v in pairs(char:GetDescendants()) do
+            if v:GetAttribute("OldTrans") then
+                v.Transparency = v:GetAttribute("OldTrans")
+                v:SetAttribute("OldTrans", nil)
             end
         end
-        
-        if hum then camera.CameraSubject = hum end
     end
 end
 
