@@ -9,7 +9,6 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
@@ -698,102 +697,98 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
--- FE Server-Sided Invis (C0 Offset Joint Trick + Local Ghost + Megumi Remote)
+-- FE Server-Sided Invis (Root Joint Break & Floor Drop Trick)
 local InvisLoop
-local FakeChar
-
 local function ToggleInvis(state)
     local char = LocalPlayer.Character
     if not char then return end
     
-    local root = char:FindFirstChild("HumanoidRootPart")
-    local lowerTorso = char:FindFirstChild("LowerTorso") or char:FindFirstChild("Torso")
-    local rootJoint = root and root:FindFirstChild("RootJoint") or (lowerTorso and lowerTorso:FindFirstChild("Root"))
+    local realRoot = char:FindFirstChild("RealRoot") or char:FindFirstChild("HumanoidRootPart")
+    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("LowerTorso")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    
+    if not realRoot or not torso or not hum then return end
     
     if state then
-        if root and rootJoint and not Workspace:FindFirstChild("RyuLocalGhost") then
+        if not char:FindFirstChild("FakeRoot") then
+            -- 1. Echten Root umbenennen, damit wir einen Fake aufbauen können
+            realRoot.Name = "RealRoot"
             
-            -- 1. Megumi Remote Fire (Triggert den Server-Schattenstatus)
-            pcall(function()
-                ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("MegumiService"):WaitForChild("RE"):WaitForChild("RightActivated"):FireServer()
-            end)
+            -- 2. FakeRoot klonen und dem Character zuweisen (Für Kamera & Lokale Bewegung)
+            local fakeRoot = realRoot:Clone()
+            fakeRoot.Name = "HumanoidRootPart"
+            fakeRoot.Transparency = 1
+            fakeRoot.Parent = char
+            char.PrimaryPart = fakeRoot
             
-            -- 2. TJS Attribute setzen (versteckt UI/Tags)
-            pcall(function() LocalPlayer:SetAttribute("HidePlayer", true) end)
-            pcall(function() char:SetAttribute("HidePlayer", true) end)
-            pcall(function() char:SetAttribute("Hidden", true) end)
-
-            -- 3. Lokalen Geist aufbauen (Damit wir uns oben sehen)
-            char.Archivable = true
-            FakeChar = char:Clone()
-            FakeChar.Name = "RyuLocalGhost"
-            FakeChar.Parent = Workspace
-            
-            for _, v in pairs(FakeChar:GetDescendants()) do
-                if v:IsA("Script") or v:IsA("LocalScript") then
-                    v:Destroy()
-                end
-                if v:IsA("BasePart") then
-                    v.Transparency = 0.5
-                    v.CanCollide = false
-                    if v.Name == "HumanoidRootPart" then v.Transparency = 1 end
-                elseif v:IsA("Decal") or v:IsA("Texture") then
-                    v.Transparency = 0.5
-                end
+            -- 3. Zerstöre den echten Joint -> Der Server trennt den Torso ab und lässt ihn fallen!
+            local origJoint = realRoot:FindFirstChild("RootJoint") or torso:FindFirstChild("Root")
+            if origJoint then
+                origJoint:Destroy()
             end
             
-            local fakeRoot = FakeChar:FindFirstChild("HumanoidRootPart")
-            if fakeRoot then
-                fakeRoot.CFrame = root.CFrame
-                local weld = Instance.new("WeldConstraint")
-                weld.Part0 = root
-                weld.Part1 = fakeRoot
-                weld.Parent = fakeRoot
+            -- 4. Lokal verbinden wir Torso an den neuen FakeRoot
+            local fakeJoint = fakeRoot:FindFirstChild("RootJoint") or fakeRoot:FindFirstChild("Root")
+            if not fakeJoint then
+                fakeJoint = Instance.new("Motor6D")
+                fakeJoint.Name = realRoot:FindFirstChild("RootJoint") and "RootJoint" or "Root"
+                fakeJoint.Parent = (fakeJoint.Name == "RootJoint") and fakeRoot or torso
             end
+            fakeJoint.Part0 = fakeRoot
+            fakeJoint.Part1 = torso
             
-            -- 4. ECHTER KÖRPER: Wir verschieben die sichtbaren Teile 50 Studs nach unten, OHNE Joints zu zerstören!
-            if not rootJoint:GetAttribute("OriginalC0") then
-                rootJoint:SetAttribute("OriginalC0", rootJoint.C0)
-            end
+            -- 5. Kamera sicher auf den Humanoid binden
+            Workspace.CurrentCamera.CameraSubject = hum
             
-            -- Schiebt den sichtbaren Körper (für alle anderen) 50 Studs in den Boden!
-            rootJoint.C0 = rootJoint:GetAttribute("OriginalC0") * CFrame.new(0, -50, 0)
-            
-            -- Den "echten" (jetzt unterirdischen) Körper für uns lokal unsichtbar machen
+            -- 6. Lokaler Ghost Effekt
             for _, v in pairs(char:GetDescendants()) do
-                if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" and v.Transparency < 1 then
-                    if not v:GetAttribute("OldTrans") then v:SetAttribute("OldTrans", v.Transparency) end
-                    v.Transparency = 1
+                if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" and v.Name ~= "RealRoot" and v.Transparency < 1 then
+                    v:SetAttribute("OldTrans", v.Transparency)
+                    v.Transparency = 0.5
                 elseif (v:IsA("Decal") or v:IsA("Texture")) and v.Transparency < 1 then
-                    if not v:GetAttribute("OldTrans") then v:SetAttribute("OldTrans", v.Transparency) end
+                    v:SetAttribute("OldTrans", v.Transparency)
                     v.Transparency = 1
                 end
             end
             
-            -- Render Loop, falls das Spiel den Joint zurücksetzt
+            -- 7. Halte den RealRoot unten versteckt fest
             InvisLoop = RunService.RenderStepped:Connect(function()
-                if rootJoint and rootJoint:GetAttribute("OriginalC0") then
-                    rootJoint.C0 = rootJoint:GetAttribute("OriginalC0") * CFrame.new(0, -50, 0)
+                if char and char:FindFirstChild("RealRoot") then
+                    -- Positioniere den echten Root weit unter die Map
+                    char.RealRoot.CFrame = CFrame.new(0, workspace.FallenPartsDestroyHeight + 5, 0)
+                    char.RealRoot.Velocity = Vector3.new(0, 0, 0)
                 end
             end)
-            
         end
     else
         -- ALLES SAUBER ZURÜCKSETZEN
         if InvisLoop then InvisLoop:Disconnect(); InvisLoop = nil end
         
-        pcall(function() LocalPlayer:SetAttribute("HidePlayer", nil) end)
-        pcall(function() char:SetAttribute("HidePlayer", nil) end)
-        pcall(function() char:SetAttribute("Hidden", nil) end)
+        local fakeRoot = char:FindFirstChild("HumanoidRootPart")
         
-        if FakeChar then FakeChar:Destroy(); FakeChar = nil end
-        
-        if rootJoint and rootJoint:GetAttribute("OriginalC0") then
-            rootJoint.C0 = rootJoint:GetAttribute("OriginalC0")
-            rootJoint:SetAttribute("OriginalC0", nil)
+        if fakeRoot and realRoot then
+            realRoot.Name = "HumanoidRootPart"
+            char.PrimaryPart = realRoot
+            
+            -- Lösche den Fake-Joint
+            local fakeJoint = fakeRoot:FindFirstChild("RootJoint") or torso:FindFirstChild("Root")
+            if fakeJoint then fakeJoint:Destroy() end
+            
+            -- Erstelle den echten Joint wieder
+            local newJoint = Instance.new("Motor6D")
+            newJoint.Name = char:FindFirstChild("Torso") and "RootJoint" or "Root"
+            newJoint.Part0 = realRoot
+            newJoint.Part1 = torso
+            newJoint.Parent = char:FindFirstChild("Torso") and realRoot or torso
+            
+            -- Teleportiere RealRoot zurück nach oben zu dir
+            realRoot.CFrame = fakeRoot.CFrame
+            fakeRoot:Destroy()
+            
+            Workspace.CurrentCamera.CameraSubject = hum
         end
         
-        -- Echten Körper wieder sichtbar machen
+        -- Visuals wiederherstellen
         for _, v in pairs(char:GetDescendants()) do
             if v:GetAttribute("OldTrans") then
                 v.Transparency = v:GetAttribute("OldTrans")
