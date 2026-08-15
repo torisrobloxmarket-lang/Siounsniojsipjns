@@ -699,65 +699,87 @@ end)
 
 -- FE Server-Sided Invis (Root Break + Underground Hold)
 local InvisLoop
+local FakeChar
+
 local function ToggleInvis(state)
     local char = LocalPlayer.Character
     if not char then return end
     
     local root = char:FindFirstChild("HumanoidRootPart")
-    local lowerTorso = char:FindFirstChild("LowerTorso")
-    local rootJoint = lowerTorso and lowerTorso:FindFirstChild("Root")
+    local lowerTorso = char:FindFirstChild("LowerTorso") or char:FindFirstChild("Torso")
+    local rootJoint = lowerTorso and (lowerTorso:FindFirstChild("Root") or lowerTorso:FindFirstChild("RootJoint"))
     local hum = char:FindFirstChildOfClass("Humanoid")
     
     if state then
-        if root and lowerTorso and rootJoint and hum and not Workspace:FindFirstChild("RyuLocalGhost") then
+        if root and lowerTorso and rootJoint and hum and not FakeChar then
             
-            -- 1. Kamera fest an den unsichtbaren Kern (Root) klemmen
-            camera.CameraSubject = root
-            
-            -- 2. Lokalen Geist erstellen, damit wir sehen, wo wir wirklich sind
+            -- 1. Lokalen durchsichtigen Geist erstellen, damit du dich auf der Oberfläche siehst
             char.Archivable = true
-            local ghost = char:Clone()
-            ghost.Name = "RyuLocalGhost"
-            ghost.Parent = Workspace
+            FakeChar = char:Clone()
+            FakeChar.Name = "RyuGhost"
             
-            for _, v in pairs(ghost:GetDescendants()) do
+            for _, v in pairs(FakeChar:GetDescendants()) do
+                if v:IsA("Script") or v:IsA("LocalScript") then
+                    v:Destroy()
+                end
                 if v:IsA("BasePart") then
                     v.Transparency = 0.5
                     v.CanCollide = false
-                    v.Anchored = true
-                elseif v:IsA("Script") or v:IsA("LocalScript") then
-                    v:Destroy()
+                elseif v:IsA("Decal") or v:IsA("Texture") then
+                    v.Transparency = 0.5
                 end
             end
             
-            -- 3. Physischen Körper (für andere sichtbar) vom unsichtbaren Kern trennen!
+            -- Geist an den echten Root binden, damit er sich mitbewegt (Da wo deine Hitbox ist)
+            local fakeRoot = FakeChar:FindFirstChild("HumanoidRootPart")
+            if fakeRoot then
+                fakeRoot.CFrame = root.CFrame
+                local weld = Instance.new("WeldConstraint")
+                weld.Part0 = root
+                weld.Part1 = fakeRoot
+                weld.Parent = fakeRoot
+            end
+            
+            FakeChar.Parent = workspace
+            
+            -- 2. Kamera auf den echten Kern setzen (da der Torso gleich verschwindet)
+            camera.CameraSubject = root
+            
+            -- 3. Echten Körper abkoppeln 
             rootJoint.Part0 = nil
             
-            -- 4. Render-Loop: Sichtbaren Körper permanent tief in den Boden zwingen
+            for _, v in pairs(char:GetChildren()) do
+                if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
+                    v.CanCollide = false
+                end
+            end
+            
+            -- 4. Echten Körper in den Untergrund zwingen (Server sieht das!)
             InvisLoop = RunService.RenderStepped:Connect(function()
-                if char and root and lowerTorso and ghost and ghost.PrimaryPart then
-                    -- Für den Server und andere Spieler ist unser Körper tief vergraben
+                if char and root and lowerTorso then
+                    -- Hält den sichtbaren, echten Körper tief unter dem Boden fest
+                    lowerTorso.CFrame = root.CFrame * CFrame.new(0, -200, 0)
                     lowerTorso.Velocity = Vector3.new(0, 0, 0)
-                    lowerTorso.CFrame = root.CFrame * CFrame.new(0, -100, 0)
-                    
-                    -- Unser lokaler Geist bleibt bei unserer echten, unsichtbaren Position oben
-                    ghost:SetPrimaryPartCFrame(root.CFrame)
+                    lowerTorso.RotVelocity = Vector3.new(0, 0, 0)
                 end
             end)
         end
     else
         -- ALLES SAUBER ZURÜCKSETZEN
         if InvisLoop then InvisLoop:Disconnect(); InvisLoop = nil end
-        
-        local ghost = Workspace:FindFirstChild("RyuLocalGhost")
-        if ghost then ghost:Destroy() end
+        if FakeChar then FakeChar:Destroy(); FakeChar = nil end
         
         if rootJoint and root then
             rootJoint.Part0 = root
         end
-        
         if lowerTorso and root then
             lowerTorso.CFrame = root.CFrame
+        end
+        
+        for _, v in pairs(char:GetChildren()) do
+            if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
+                v.CanCollide = true
+            end
         end
         
         if hum then camera.CameraSubject = hum end
