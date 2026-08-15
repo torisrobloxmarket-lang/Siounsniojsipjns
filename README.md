@@ -9,7 +9,6 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
@@ -698,31 +697,93 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
--- FE Server-Sided Invis (Megumi Exploit + Visual Transparency)
+-- FE Server-Sided Invis (Megumi Shadow Sink + TJS Attributes Trick)
+local InvisLoop
 local function ToggleInvis(state)
     local char = LocalPlayer.Character
     if not char then return end
     
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local lowerTorso = char:FindFirstChild("LowerTorso")
+    
     if state then
-        -- Megumi Shadow Sink Remote Fire
-        pcall(function()
-            ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("MegumiService"):WaitForChild("RE"):WaitForChild("RightActivated"):FireServer()
-        end)
+        -- 1. Leaked TJS Attributes setzen, damit der Server uns versteckt
+        pcall(function() LocalPlayer:SetAttribute("HidePlayer", true) end)
+        pcall(function() char:SetAttribute("HidePlayer", true) end)
+        pcall(function() char:SetAttribute("Hidden", true) end)
         
-        -- Local Ghost Effect
-        for _, v in pairs(char:GetDescendants()) do
-            if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" and v.Transparency < 1 then
-                v:SetAttribute("OldTrans", v.Transparency)
-                v.Transparency = 0.8 
-            elseif v:IsA("Decal") or v:IsA("Texture") then
-                v:SetAttribute("OldTrans", v.Transparency)
-                v.Transparency = 1
+        if root and lowerTorso and not char:FindFirstChild("FakeRoot") then
+            -- 2. FakeRoot auf dem Boden für die Kamera und Bewegung
+            local fakeRoot = root:Clone()
+            fakeRoot.Name = "FakeRoot"
+            fakeRoot.Transparency = 1
+            fakeRoot.CanCollide = false
+            fakeRoot.Parent = char
+            
+            for _, v in pairs(fakeRoot:GetChildren()) do
+                if v:IsA("Motor6D") or v:IsA("Weld") or v:IsA("BodyVelocity") or v:IsA("BodyGyro") then
+                    v:Destroy()
+                end
             end
+            
+            -- Verbinde den sichtbaren Körper mit dem FakeRoot
+            local rootJoint = lowerTorso:FindFirstChild("Root")
+            if rootJoint then
+                rootJoint.Part0 = fakeRoot
+            end
+            
+            -- 3. Lokalen Geist-Effekt erstellen
+            for _, v in pairs(char:GetDescendants()) do
+                if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" and v.Name ~= "FakeRoot" and v.Transparency < 1 then
+                    if not v:GetAttribute("OldTrans") then v:SetAttribute("OldTrans", v.Transparency) end
+                    v.Transparency = 0.8
+                elseif (v:IsA("Decal") or v:IsA("Texture")) and v.Transparency < 1 then
+                    if not v:GetAttribute("OldTrans") then v:SetAttribute("OldTrans", v.Transparency) end
+                    v.Transparency = 1
+                end
+            end
+            
+            -- 4. Megumi "Shadow Sink": Den echten Root tief unter die Erde verfrachten!
+            local bp = Instance.new("BodyPosition")
+            bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+            bp.P = 50000
+            bp.Parent = root
+            
+            InvisLoop = RunService.RenderStepped:Connect(function()
+                if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("FakeRoot") then
+                    -- Der Server sieht dich dauerhaft 50 Studs unter der Map im Schatten
+                    bp.Position = char.FakeRoot.Position - Vector3.new(0, 50, 0)
+                    char.HumanoidRootPart.CFrame = char.FakeRoot.CFrame * CFrame.new(0, -50, 0)
+                    char.HumanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+                    char.HumanoidRootPart.RotVelocity = Vector3.new(0, 0, 0)
+                end
+            end)
         end
     else
-        -- Disable Local Ghost Effect
+        -- 1. Attribute zurücksetzen
+        pcall(function() LocalPlayer:SetAttribute("HidePlayer", nil) end)
+        pcall(function() char:SetAttribute("HidePlayer", nil) end)
+        pcall(function() char:SetAttribute("Hidden", nil) end)
+        
+        if InvisLoop then InvisLoop:Disconnect(); InvisLoop = nil end
+        
+        local fakeRoot = char:FindFirstChild("FakeRoot")
+        if fakeRoot and root and lowerTorso then
+            local bp = root:FindFirstChildOfClass("BodyPosition")
+            if bp then bp:Destroy() end
+            
+            local rootJoint = lowerTorso:FindFirstChild("Root")
+            if rootJoint then
+                rootJoint.Part0 = root
+            end
+            
+            root.CFrame = fakeRoot.CFrame
+            fakeRoot:Destroy()
+        end
+        
+        -- 2. Visuals wieder herstellen
         for _, v in pairs(char:GetDescendants()) do
-            if (v:IsA("BasePart") or v:IsA("Decal") or v:IsA("Texture")) and v:GetAttribute("OldTrans") then
+            if v:GetAttribute("OldTrans") then
                 v.Transparency = v:GetAttribute("OldTrans")
                 v:SetAttribute("OldTrans", nil)
             end
