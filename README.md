@@ -691,24 +691,23 @@ UserInputService.JumpRequest:Connect(function()
             hum:ChangeState(Enum.HumanoidStateType.Jumping)
         end
         if MovementState.HighJump then
-            -- Setzt die vertikale Geschwindigkeit sofort, ohne Verzögerung
             root.Velocity = Vector3.new(root.Velocity.X, MovementState.JumpPower, root.Velocity.Z)
         end
     end
 end)
 
--- FE Server-Sided Invis (Fixed Camera & RootJoint Method)
+-- FE Server-Sided Invis (Ghost Local & Root in Sky)
 local InvisLoop
 local function ToggleInvis(state)
     local char = LocalPlayer.Character
     if not char then return end
     
     local root = char:FindFirstChild("HumanoidRootPart")
-    local lowerTorso = char:FindFirstChild("LowerTorso") or char:FindFirstChild("Torso")
+    local hum = char:FindFirstChildOfClass("Humanoid")
     
     if state then
-        if root and lowerTorso and not char:FindFirstChild("FakeRoot") then
-            -- Klonen des Roots für den Client
+        if root and hum and not char:FindFirstChild("FakeRoot") then
+            -- 1. FakeRoot klonen, der für dich auf dem Boden bleibt
             local clone = root:Clone()
             clone.Name = "FakeRoot"
             clone.Transparency = 1
@@ -716,31 +715,67 @@ local function ToggleInvis(state)
             clone.Parent = char
             char.PrimaryPart = clone
             
-            -- Der Trick: Wir heften den sichtbaren Körper an den FakeRoot
-            -- Dadurch bleibt der Körper und die Kamera unten bei dir!
-            local rootJoint = lowerTorso:FindFirstChild("Root")
+            -- 2. RootJoint abkapseln und an den FakeRoot heften. 
+            -- Dadurch bleibt dein sichtbarer Körper (Torso etc.) am FakeRoot!
+            local rootJoint
+            for _, v in pairs(char:GetDescendants()) do
+                if v:IsA("Motor6D") and (v.Name == "RootJoint" or v.Name == "Root") then
+                    rootJoint = v
+                    break
+                end
+            end
             if rootJoint then
                 rootJoint.Part0 = clone
             end
             
+            -- 3. KAMERA FIX: Kamera an den neuen FakeRoot binden, damit sie nicht in den Himmel fliegt
+            if camera then camera.CameraSubject = clone end
+            
+            -- 4. GEIST-EFFEKT: Mach den Körper lokal für DICH transparent
+            for _, v in pairs(char:GetDescendants()) do
+                if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" and v.Name ~= "FakeRoot" and v.Transparency < 1 then
+                    v:SetAttribute("OldTrans", v.Transparency)
+                    v.Transparency = 0.5
+                end
+            end
+            
+            -- 5. SERVER BYPASS: Halte den ECHTEN Root-Part in den Wolken (für andere bist du weg!)
             InvisLoop = RunService.RenderStepped:Connect(function()
-                if char and root and clone then
-                    -- Nur der echte Root (den der Server überwacht) wird in den Himmel gezogen
-                    root.CFrame = clone.CFrame * CFrame.new(0, 9999, 0)
+                if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("FakeRoot") then
+                    char.HumanoidRootPart.CFrame = char.FakeRoot.CFrame * CFrame.new(0, 9999, 0)
                 end
             end)
         end
     else
+        -- ALLES SAUBER ZURÜCKSETZEN
         if InvisLoop then InvisLoop:Disconnect(); InvisLoop = nil end
-        local fake = char:FindFirstChild("FakeRoot")
+        local clone = char:FindFirstChild("FakeRoot")
         
-        if fake and root and lowerTorso then
-            local rootJoint = lowerTorso:FindFirstChild("Root")
+        if clone and root then
+            local rootJoint
+            for _, v in pairs(char:GetDescendants()) do
+                if v:IsA("Motor6D") and (v.Name == "RootJoint" or v.Name == "Root") then
+                    rootJoint = v
+                    break
+                end
+            end
             if rootJoint then
                 rootJoint.Part0 = root
             end
+            
             char.PrimaryPart = root
-            fake:Destroy()
+            root.CFrame = clone.CFrame
+            
+            if hum and camera then camera.CameraSubject = hum end
+            
+            for _, v in pairs(char:GetDescendants()) do
+                if v:IsA("BasePart") and v:GetAttribute("OldTrans") then
+                    v.Transparency = v:GetAttribute("OldTrans")
+                    v:SetAttribute("OldTrans", nil)
+                end
+            end
+            
+            clone:Destroy()
         end
     end
 end
@@ -761,7 +796,7 @@ RunService.RenderStepped:Connect(function()
         end
     end
     
-    -- Erzwungene High Jump Power gegen Anticheat-Resets
+    -- High Jump Fallback
     if MovementState.HighJump then
         hum.UseJumpPower = true
         hum.JumpPower = MovementState.JumpPower
@@ -844,7 +879,7 @@ CreateLabel(SecAutoOff, "Auto Combos: Join discord.gg/ryuhub and send clips of y
 local SecAutoUtils = CreateSection(SubAuto, "Utilities")
 CreateToggle(SecAutoUtils, "Auto Train", false, function() end)
 CreateToggle(SecAutoUtils, "Enable Auto Item", false, function() end)
-CreateDropdown(SecAutoUtils, "Target Item", {"None", "Cursed Finger", "Bat"}, "TargetItem")
+CreateDropdown(SecAutoUtils, "Target Item", {"None", "Cursed Finger", "Bat"}, "TargetItem", function() end)
 
 local SubAbil = CreateSubTab(TabCombat, "Abilities")
 local SecAbil = CreateSection(SubAbil, "Combat Enhancements")
@@ -884,7 +919,7 @@ MakeSkillRow("Skill 4")
 
 local SubTarget = CreateSubTab(TabFarm, "Target")
 local SecTarget = CreateSection(SubTarget, "Specific Target Follow")
-CreateDropdown(SecTarget, "Target Player", {"None", "Dummy1", "Player1"}, "TargetPlayer")
+CreateDropdown(SecTarget, "Target Player", {"None", "Dummy1", "Player1"}, "TargetPlayer", function() end)
 CreateToggle(SecTarget, "Enable Target Farm", false, function() end)
 CreateSlider(SecTarget, "Distance Behind", 1, 15, 3, function() end)
 
