@@ -680,30 +680,35 @@ UserInputService.InputBegan:Connect(function(input, gpe)
     end
 end)
 
--- Inf Jump & High Jump hook
+-- Inf Jump & High Jump force
 UserInputService.JumpRequest:Connect(function()
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     local root = char and char:FindFirstChild("HumanoidRootPart")
+    
     if hum and root then
-        if MovementState.InfJump then
+        if MovementState.InfJump or MovementState.HighJump then
             hum:ChangeState(Enum.HumanoidStateType.Jumping)
         end
         if MovementState.HighJump then
+            -- Setzt die vertikale Geschwindigkeit sofort, ohne Verzögerung
             root.Velocity = Vector3.new(root.Velocity.X, MovementState.JumpPower, root.Velocity.Z)
         end
     end
 end)
 
--- FE Server-Sided Invis (Fake Root Method)
+-- FE Server-Sided Invis (Fixed Camera & RootJoint Method)
 local InvisLoop
 local function ToggleInvis(state)
     local char = LocalPlayer.Character
     if not char then return end
     
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local lowerTorso = char:FindFirstChild("LowerTorso") or char:FindFirstChild("Torso")
+    
     if state then
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if root and not char:FindFirstChild("FakeRoot") then
+        if root and lowerTorso and not char:FindFirstChild("FakeRoot") then
+            -- Klonen des Roots für den Client
             local clone = root:Clone()
             clone.Name = "FakeRoot"
             clone.Transparency = 1
@@ -711,31 +716,36 @@ local function ToggleInvis(state)
             clone.Parent = char
             char.PrimaryPart = clone
             
-            camera.CameraSubject = clone -- Kamera bleibt unten auf dem FakeRoot
+            -- Der Trick: Wir heften den sichtbaren Körper an den FakeRoot
+            -- Dadurch bleibt der Körper und die Kamera unten bei dir!
+            local rootJoint = lowerTorso:FindFirstChild("Root")
+            if rootJoint then
+                rootJoint.Part0 = clone
+            end
             
             InvisLoop = RunService.RenderStepped:Connect(function()
-                if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("FakeRoot") then
-                    -- Zieht den echten Root weit nach oben weg
-                    char.HumanoidRootPart.CFrame = char.FakeRoot.CFrame * CFrame.new(0, 9999, 0)
+                if char and root and clone then
+                    -- Nur der echte Root (den der Server überwacht) wird in den Himmel gezogen
+                    root.CFrame = clone.CFrame * CFrame.new(0, 9999, 0)
                 end
             end)
         end
     else
         if InvisLoop then InvisLoop:Disconnect(); InvisLoop = nil end
         local fake = char:FindFirstChild("FakeRoot")
-        local root = char:FindFirstChild("HumanoidRootPart")
-        local hum = char:FindFirstChildOfClass("Humanoid")
         
-        if fake and root then
-            root.CFrame = fake.CFrame
+        if fake and root and lowerTorso then
+            local rootJoint = lowerTorso:FindFirstChild("Root")
+            if rootJoint then
+                rootJoint.Part0 = root
+            end
             char.PrimaryPart = root
-            if hum then camera.CameraSubject = hum end -- Kamera wieder auf Normalzustand
             fake:Destroy()
         end
     end
 end
 
--- Core Render Loop for Speed, Fly, Noclip
+-- Core Render Loop for Speed, Fly, Noclip & Jump Override
 RunService.RenderStepped:Connect(function()
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -750,13 +760,18 @@ RunService.RenderStepped:Connect(function()
             end
         end
     end
+    
+    -- Erzwungene High Jump Power gegen Anticheat-Resets
+    if MovementState.HighJump then
+        hum.UseJumpPower = true
+        hum.JumpPower = MovementState.JumpPower
+    end
 
     -- Fly logic
     if MovementState.Fly and flyBodyVelocity and flyBodyGyro then
         hum.PlatformStand = true
         local moveDir = Vector3.new(0,0,0)
         
-        -- Admin style movement relative to camera
         if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + camera.CFrame.LookVector end
         if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - camera.CFrame.LookVector end
         if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - camera.CFrame.RightVector end
@@ -767,18 +782,16 @@ RunService.RenderStepped:Connect(function()
         if moveDir.Magnitude > 0 then
             flyBodyVelocity.Velocity = moveDir.Unit * MovementState.FlySpeed
         else
-            -- Instant Stop
             flyBodyVelocity.Velocity = Vector3.new(0,0,0)
         end
         flyBodyGyro.CFrame = camera.CFrame
     else
-        -- Speed logic (only if not flying to avoid conflicts)
+        -- Speed logic
         if MovementState.Speed then
             if hum.MoveDirection.Magnitude > 0 then
                 local flatDir = hum.MoveDirection
                 root.Velocity = Vector3.new(flatDir.X * MovementState.SpeedValue, root.Velocity.Y, flatDir.Z * MovementState.SpeedValue)
             else
-                -- Instant Stop on horizontal plane
                 root.Velocity = Vector3.new(0, root.Velocity.Y, 0)
             end
         end
