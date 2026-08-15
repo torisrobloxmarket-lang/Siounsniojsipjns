@@ -1,1013 +1,393 @@
---ccgvb is a diddy ah blud fr
+--// ============================================================================
+--// MURASAKI 紫 - LITE EDITION (NO LOADSTRINGS / NO WEBHOOKS)
+--// ============================================================================
 
-
-
---webhook bc i wonder if anyone is using ts 
-
-
-local HttpService = game:GetService("HttpService")
-local jobId = game.JobId
-
-local url = "https://discord.com/api/webhooks/1533893535466524833/psUUO_XRlKQYcV76oikt0xdUpg307d4Y4Cx-3UGOEwIJfHTmoShmhK1dy6EJ4m8cYCPc"
-
-local data = {
-    content = "Job ID: " .. jobId
-}
-
-local headers = {
-    ["Content-Type"] = "application/json"
-}
-
-local body = HttpService:JSONEncode(data)
-
-local success, response = pcall(function()
-    return http_request({
-        Url = url,
-        Method = "POST",
-        Headers = headers,
-        Body = body
-    })
-end)
-
-if success then
-    print("✅ Webhook sent!")
-else
-    warn("❌ Failed to send webhook.")
-end
-
-
-
-
-
-
--- script
-
-local knockbackEnabled = false 
-
-
-local knockbackVelocity = Vector3.new(300, 200, 300)
-local maxForce = nil
-local power = 100000
-
-
-local function overrideKnockback(obj)
-	if not knockbackEnabled then return end
-	if obj:IsA("BodyVelocity") and obj.Name == "KnockbackForce" then
-		obj.Velocity = knockbackVelocity
-		obj.MaxForce = maxForce
-		obj.P = power
-		print("Overridden Knockback:", obj:GetFullName())
-	end
-end
-
-
-for _, obj in ipairs(workspace:GetDescendants()) do
-	overrideKnockback(obj)
-end
-
-
-workspace.DescendantAdded:Connect(function(obj)
-	overrideKnockback(obj)
-end)
-
-
-game:GetService("RunService").Heartbeat:Connect(function()
-	if knockbackEnabled then
-		for _, obj in ipairs(workspace:GetDescendants()) do
-			if obj:IsA("BodyVelocity") and obj.Name == "KnockbackForce" then
-				obj.Velocity = knockbackVelocity
-				obj.MaxForce = maxForce
-				obj.P = power
-			end
-		end
-	end
-end)
-
-
-
-
-local hitsphereResizeEnabled = false 
-
-game.workspace.Effects.DescendantAdded:Connect(function(descendant)
-	if hitsphereResizeEnabled and descendant.Name == "Hitsphere" then
-		descendant.Size = Vector3.new(40, 40, 40)
-	end
-end)
-
-
-game:GetService("RunService").Heartbeat:Connect(function()
-	if hitsphereResizeEnabled then
-		for _, obj in ipairs(workspace.Effects:GetDescendants()) do
-			if obj.Name == "Hitsphere" then
-				obj.Size = Vector3.new(40, 40, 40)
-			end
-		end
-	end
-end)
-
-
-
---fly
-
-
-
-
+local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
 local LocalPlayer = Players.LocalPlayer
+local camera = Workspace.CurrentCamera
 
+--// 1. GUI CLEANUP & SETUP
+local guiParent = CoreGui
+pcall(function() 
+    if type(gethui) == "function" then guiParent = gethui() 
+    elseif syn and syn.protect_gui then guiParent = CoreGui 
+    else guiParent = LocalPlayer:WaitForChild("PlayerGui") end 
+end)
 
-local flightEnabled = false
-local flightKeybind = Enum.KeyCode.Y
-
-_G.FlightEnabled = function(val)
-    flightEnabled = val
+for _, v in pairs(guiParent:GetChildren()) do 
+    if v.Name == "MurasakiLite" then v:Destroy() end 
 end
-_G.FlightKeybind = function(newKeycode)
-    flightKeybind = newKeycode
+
+local MurasakiUI = Instance.new("ScreenGui", guiParent)
+MurasakiUI.Name = "MurasakiLite"
+MurasakiUI.ResetOnSpawn = false
+
+local MainFrame = Instance.new("Frame", MurasakiUI)
+MainFrame.Size = UDim2.new(0, 350, 0, 420)
+MainFrame.Position = UDim2.new(0.5, -175, 0.5, -210)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+MainFrame.Active = true
+MainFrame.Draggable = true
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
+Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(150, 0, 255)
+
+local Title = Instance.new("TextLabel", MainFrame)
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.BackgroundTransparency = 1
+Title.Text = "Murasaki 紫 - Lite"
+Title.TextColor3 = Color3.fromRGB(200, 150, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 18
+
+local Container = Instance.new("ScrollingFrame", MainFrame)
+Container.Size = UDim2.new(1, -20, 1, -50)
+Container.Position = UDim2.new(0, 10, 0, 40)
+Container.BackgroundTransparency = 1
+Container.ScrollBarThickness = 4
+local Layout = Instance.new("UIListLayout", Container)
+Layout.Padding = UDim.new(0, 8)
+Layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+
+--// 2. UI HELPER FUNCTIONS
+local function CreateToggle(text, callback)
+    local btn = Instance.new("TextButton", Container)
+    btn.Size = UDim2.new(1, -10, 0, 35)
+    btn.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+    btn.Text = "  [OFF] " .. text
+    btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+    btn.Font = Enum.Font.GothamMedium
+    btn.TextSize = 14
+    btn.TextXAlignment = Enum.TextXAlignment.Left
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    
+    local state = false
+    btn.MouseButton1Click:Connect(function()
+        state = not state
+        btn.Text = (state and "  [ON] " or "  [OFF] ") .. text
+        btn.BackgroundColor3 = state and Color3.fromRGB(100, 50, 200) or Color3.fromRGB(35, 35, 40)
+        pcall(function() callback(state) end)
+    end)
 end
 
+local function CreateTextBox(placeholder, callback)
+    local box = Instance.new("TextBox", Container)
+    box.Size = UDim2.new(1, -10, 0, 35)
+    box.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+    box.PlaceholderText = placeholder
+    box.Text = ""
+    box.TextColor3 = Color3.fromRGB(255, 255, 255)
+    box.Font = Enum.Font.Gotham
+    box.TextSize = 14
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 6)
+    Instance.new("UIStroke", box).Color = Color3.fromRGB(100, 50, 200)
+    
+    box.FocusLost:Connect(function()
+        pcall(function() callback(box.Text) end)
+    end)
+end
+
+--// ==========================================
+--// 3. LOGIC VARIABLES
+--// ==========================================
+local Config = {
+    Knockback = false,
+    Hitsphere = false,
+    Chams = false,
+    Fly = false,
+    AntiBlackHole = false,
+    MoveBlackHole = false,
+    Bring = false,
+    TargetName = ""
+}
+
+--// ==========================================
+--// 4. FEATURES & MODULES
+--// ==========================================
+
+-- A. Knockback Override
+local knockbackVelocity = Vector3.new(300, 200, 300)
+local maxForce = Vector3.new(10000, 10000, 10000)
+local power = 10000
+
+local function overrideKnockback(obj)
+    if not Config.Knockback then return end
+    if obj:IsA("BodyVelocity") and obj.Name == "KnockbackForce" then
+        obj.Velocity = knockbackVelocity
+        obj.MaxForce = maxForce
+        obj.P = power
+    end
+end
+
+Workspace.DescendantAdded:Connect(overrideKnockback)
+RunService.Heartbeat:Connect(function()
+    if Config.Knockback then
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            overrideKnockback(obj)
+        end
+    end
+end)
+
+-- B. Hitbox Expander (Hitsphere)
+RunService.Heartbeat:Connect(function()
+    if Config.Hitsphere then
+        local effects = Workspace:FindFirstChild("Effects")
+        if effects then
+            for _, obj in ipairs(effects:GetDescendants()) do
+                if obj.Name == "Hitsphere" then
+                    obj.Size = Vector3.new(40, 40, 40)
+                end
+            end
+        end
+    end
+end)
+
+-- C. Item Chams
+local chamFolder = Workspace:FindFirstChild("ItemChams") or Instance.new("Folder", Workspace)
+chamFolder.Name = "ItemChams"
+local activeChams = {}
+
+local function clearAllChams()
+    chamFolder:ClearAllChildren()
+    activeChams = {}
+end
+
+RunService.RenderStepped:Connect(function()
+    if not Config.Chams then 
+        if #chamFolder:GetChildren() > 0 then clearAllChams() end
+        return 
+    end
+    
+    local items = Workspace:FindFirstChild("Items")
+    if items then
+        for _, part in ipairs(items:GetDescendants()) do
+            if part:IsA("BasePart") then
+                if not activeChams[part] then
+                    local cham = Instance.new("BoxHandleAdornment")
+                    cham.Name = "Cham"
+                    cham.Adornee = part
+                    cham.AlwaysOnTop = true
+                    cham.ZIndex = 5
+                    cham.Size = part.Size + Vector3.new(0.1, 0.1, 0.1)
+                    cham.Transparency = 0.5
+                    cham.Color3 = Color3.fromRGB(0, 255, 0)
+                    cham.Parent = chamFolder
+                    activeChams[part] = cham
+                end
+            end
+        end
+    end
+end)
+
+-- D. Flight System
 local flying = false
-local bodyVelocity
-local bodyGyro
-local flightConnection
-local humanoidRootPart
-local animationTrack
-local animateConnection
-local flightAnimId = "rbxassetid://79717812541463"
-local flightAnimTime = 6.39
+local bodyVelocity, bodyGyro, flightConnection
 local FLIGHT_SPEED = 60
 local SMOOTHNESS = 0.12
 local currentVelocity = Vector3.zero
 
-
-local function getCharacterRoot()
-	local charactersFolder = Workspace:FindFirstChild("Characters")
-	if not charactersFolder then return end
-
-	for _, char in pairs(charactersFolder:GetChildren()) do
-		local plrName = char:FindFirstChild("Name")
-		if char:IsA("Model") and char.Name == LocalPlayer.Name then
-			return char:FindFirstChild("HumanoidRootPart"), char
-		end
-	end
-end
-
 local function getTargetVelocity()
-	local moveVec = Vector3.zero
-	local camera = workspace.CurrentCamera
-	if UserInputService:IsKeyDown(Enum.KeyCode.W) then
-		moveVec = moveVec + camera.CFrame.LookVector
-	end
-	if UserInputService:IsKeyDown(Enum.KeyCode.S) then
-		moveVec = moveVec - camera.CFrame.LookVector
-	end
-	if UserInputService:IsKeyDown(Enum.KeyCode.A) then
-		moveVec = moveVec - camera.CFrame.RightVector
-	end
-	if UserInputService:IsKeyDown(Enum.KeyCode.D) then
-		moveVec = moveVec + camera.CFrame.RightVector
-	end
-	if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
-		moveVec = moveVec + camera.CFrame.UpVector
-	end
-	if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
-		moveVec = moveVec - camera.CFrame.UpVector
-	end
-	if moveVec.Magnitude > 0 then
-		moveVec = moveVec.Unit * FLIGHT_SPEED
-	end
-	return moveVec
+    local moveVec = Vector3.zero
+    local camCFrame = Workspace.CurrentCamera.CFrame
+    if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveVec = moveVec + camCFrame.LookVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveVec = moveVec - camCFrame.LookVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveVec = moveVec - camCFrame.RightVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveVec = moveVec + camCFrame.RightVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveVec = moveVec + camCFrame.UpVector end
+    if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveVec = moveVec - camCFrame.UpVector end
+    if moveVec.Magnitude > 0 then moveVec = moveVec.Unit * FLIGHT_SPEED end
+    return moveVec
 end
 
-local function playOrFreezeFlightAnimation(humanoid, shouldFreeze)
-	if not animationTrack then
-		local anim = Instance.new("Animation")
-		anim.AnimationId = flightAnimId
-		animationTrack = humanoid:LoadAnimation(anim)
-		animationTrack:Play()
-	end
-	animationTrack.TimePosition = flightAnimTime
-	if shouldFreeze then
-		animationTrack:AdjustSpeed(0)
-	else
-		animationTrack:AdjustSpeed(1)
-	end
-end
+local function toggleFlight()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
 
-local function stopFlightAnimation()
-	if animationTrack then
-		animationTrack:Stop()
-		animationTrack:Destroy()
-		animationTrack = nil
-	end
-end
+    flying = not flying
+    if flying then
+        bodyVelocity = Instance.new("BodyVelocity", root)
+        bodyVelocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
+        bodyVelocity.P = 1e4
+        bodyVelocity.Velocity = Vector3.zero
 
-local function startFlight()
-	if flying then return end
-	local root, character = getCharacterRoot()
-	humanoidRootPart = root
-	if not root or not character then return end
+        bodyGyro = Instance.new("BodyGyro", root)
+        bodyGyro.MaxTorque = Vector3.new(1e5, 1e5, 1e5)
+        bodyGyro.P = 2e4
+        bodyGyro.CFrame = Workspace.CurrentCamera.CFrame
 
-	if bodyVelocity then bodyVelocity:Destroy() end
-	if bodyGyro then bodyGyro:Destroy() end
-
-	bodyVelocity = Instance.new("BodyVelocity")
-	bodyVelocity.MaxForce = Vector3.new(1e5, 1e5, 1e5)
-	bodyVelocity.P = 1e4
-	bodyVelocity.Velocity = Vector3.zero
-	bodyVelocity.Parent = humanoidRootPart
-
-	bodyGyro = Instance.new("BodyGyro")
-	bodyGyro.MaxTorque = Vector3.new(1e5, 1e5, 1e5)
-	bodyGyro.P = 2e4
-	bodyGyro.CFrame = workspace.CurrentCamera.CFrame
-	bodyGyro.Parent = humanoidRootPart
-
-	flying = true
-	currentVelocity = Vector3.zero
-
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if animateConnection then animateConnection:Disconnect() end
-	animateConnection = nil
-	if humanoid then
-		animateConnection = RunService.RenderStepped:Connect(function()
-			if flying and humanoid then
-				if currentVelocity.Magnitude <= 0.05 then
-					playOrFreezeFlightAnimation(humanoid, true)
-				else
-					playOrFreezeFlightAnimation(humanoid, false)
-				end
-			end
-		end)
-	end
-
-	flightConnection = RunService.RenderStepped:Connect(function(dt)
-		local targetVelocity = getTargetVelocity()
-		currentVelocity = currentVelocity:Lerp(targetVelocity, 1 - math.exp(-dt / SMOOTHNESS))
-		if targetVelocity.Magnitude < 0.1 and currentVelocity.Magnitude < 0.5 then
-			currentVelocity = Vector3.zero
-		end
-		bodyVelocity.Velocity = currentVelocity
-		bodyGyro.CFrame = CFrame.new(humanoidRootPart.Position, humanoidRootPart.Position + workspace.CurrentCamera.CFrame.LookVector)
-	end)
-end
-
-local function stopFlight()
-	if not flying then return end
-	flying = false
-	if flightConnection then flightConnection:Disconnect() flightConnection = nil end
-	if animateConnection then animateConnection:Disconnect() animateConnection = nil end
-	if bodyVelocity then bodyVelocity:Destroy() bodyVelocity = nil end
-	if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
-	stopFlightAnimation()
-	currentVelocity = Vector3.zero
+        currentVelocity = Vector3.zero
+        flightConnection = RunService.RenderStepped:Connect(function(dt)
+            local targetVel = getTargetVelocity()
+            currentVelocity = currentVelocity:Lerp(targetVel, 1 - math.exp(-dt / SMOOTHNESS))
+            bodyVelocity.Velocity = currentVelocity
+            bodyGyro.CFrame = CFrame.new(root.Position, root.Position + Workspace.CurrentCamera.CFrame.LookVector)
+        end)
+    else
+        if flightConnection then flightConnection:Disconnect() flightConnection = nil end
+        if bodyVelocity then bodyVelocity:Destroy() bodyVelocity = nil end
+        if bodyGyro then bodyGyro:Destroy() bodyGyro = nil end
+    end
 end
 
 UserInputService.InputBegan:Connect(function(input, processed)
-	if processed then return end
-	if input.KeyCode == flightKeybind and flightEnabled then
-		if not flying then
-			startFlight()
-		else
-			stopFlight()
-		end
-	end
+    if processed then return end
+    if input.KeyCode == Enum.KeyCode.Y and Config.Fly then
+        toggleFlight()
+    end
 end)
 
+-- E. Target Bring (Teleport behind Target)
+local teleportLooping = false
+local teleportTarget = nil
 
-
---  black hole move 
-
-
-local player = game:GetService("Players").LocalPlayer
-local camera = workspace.CurrentCamera
-local desiredFOV = 70
-local l_Speed = 50
-
-local blackholeEnabled = false 
-
-camera.FieldOfView = desiredFOV
-
-camera:GetPropertyChangedSignal("FieldOfView"):Connect(function()
-	if camera.FieldOfView ~= desiredFOV then
-		camera.FieldOfView = desiredFOV
-	end
-end)
-
-player.CameraMaxZoomDistance = 100
-
-local function blackhole()
-	local Players = game:GetService("Players")
-	local player = Players.LocalPlayer
-	local character = player.Character or player.CharacterAdded:Wait()
-	local hrp = character:WaitForChild("HumanoidRootPart")
-
-	hrp.DescendantAdded:Connect(function(descendant)
-		if descendant:IsA("BodyPosition") then
-			warn("BodyPosition detected and destroyed in HumanoidRootPart hierarchy")
-			task.defer(function()
-				if descendant and descendant.Parent then
-					descendant:Destroy()
-				end
-			end)
-		end
-	end)
-
-	local RunService = game:GetService("RunService")
-	local UserInputService = game:GetService("UserInputService")
-
-	local root = character:WaitForChild("HumanoidRootPart")
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-
-	local flying = false
-	local flyConnection
-	local bodyGyro
-	local bodyVelocity
-	
-
-	local moveDirection = Vector3.zero
-	local moveKeys = {
-		W = Vector3.new(0, 0, -1),
-		A = Vector3.new(-1, 0, 0),
-		S = Vector3.new(0, 0, 1),
-		D = Vector3.new(1, 0, 0),
-	}
-
-	UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed then return end
-		local dir = moveKeys[input.KeyCode.Name]
-		if dir then
-			moveDirection += dir
-		end
-	end)
-
-	UserInputService.InputEnded:Connect(function(input, gameProcessed)
-		local dir = moveKeys[input.KeyCode.Name]
-		if dir then
-			moveDirection -= dir
-		end
-	end)
-
-	function StartFlying()
-		if flying then return end
-		flying = true
-
-		humanoid.PlatformStand = true
-
-		bodyGyro = Instance.new("BodyGyro")
-		bodyGyro.P = 9e4
-		bodyGyro.maxTorque = Vector3.new(9e9, 9e9, 9e9)
-		bodyGyro.CFrame = root.CFrame
-		bodyGyro.Parent = root
-
-		bodyVelocity = Instance.new("BodyVelocity")
-		bodyVelocity.velocity = Vector3.new(0, 0.1, 0)
-		bodyVelocity.maxForce = Vector3.new(9e9, 9e9, 9e9)
-		bodyVelocity.Parent = root
-
-		moveDirection = Vector3.zero 
-
-		
-		for key, vec in pairs(moveKeys) do
-			if UserInputService:IsKeyDown(Enum.KeyCode[key]) then
-				moveDirection += vec
-			end
-		end
-
-		
-
-		flyConnection = RunService.RenderStepped:Connect(function()
-			local cam = workspace.CurrentCamera
-			local direction = cam.CFrame:VectorToWorldSpace(moveDirection.Unit * l_Speed)
-			bodyVelocity.Velocity = moveDirection.Magnitude > 0 and direction or Vector3.zero
-			bodyGyro.CFrame = cam.CFrame
-		end)
-	end
-
-	function StopFlying()
-		if not flying then return end
-		flying = false
-
-		humanoid.PlatformStand = false
-
-		if flyConnection then
-			flyConnection:Disconnect()
-			flyConnection = nil
-		end
-		if bodyGyro then
-			bodyGyro:Destroy()
-			bodyGyro = nil
-		end
-		if bodyVelocity then
-			bodyVelocity:Destroy()
-			bodyVelocity = nil
-		end
-
-		moveDirection = Vector3.zero
-	end
-
-	StartFlying()
-end
-
-local UserInputService = game:GetService("UserInputService")
-local fillBar = player:WaitForChild("PlayerGui"):WaitForChild("Main"):WaitForChild("Ultimate"):WaitForChild("Bar"):WaitForChild("Fill")
-
-local canRun = false
-local debounce = false
-local REQUIRED_FILL = 0.9
-
-local function updateCanRun()
-	canRun = fillBar.Size.X.Scale >= REQUIRED_FILL
-end
-
-fillBar:GetPropertyChangedSignal("Size"):Connect(updateCanRun)
-updateCanRun()
-
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if not gameProcessed and input.KeyCode == Enum.KeyCode.G and canRun and not debounce then
-		if not blackholeEnabled then return end 
-
-		local character = player.Character or player.CharacterAdded:Wait()
-		local moveset = character:FindFirstChild("Moveset")
-		local garuda = moveset and moveset:FindFirstChild("Garuda Rebound")
-
-		if garuda then
-			debounce = true
-			blackhole()
-			canRun = false
-			task.delay(1, function()
-				debounce = false
-			end)
-		end
-	end
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if input.KeyCode == Enum.KeyCode.One and Config.Bring then
+        if not teleportLooping then
+            -- Find Target by Name
+            teleportTarget = nil
+            for _, plr in pairs(Players:GetPlayers()) do
+                if string.lower(plr.Name):find(string.lower(Config.TargetName)) or string.lower(plr.DisplayName):find(string.lower(Config.TargetName)) then
+                    teleportTarget = plr
+                    break
+                end
+            end
+            
+            if teleportTarget then
+                teleportLooping = true
+                task.delay(3, function() teleportLooping = false end)
+            end
+        end
+    end
 end)
 
 task.spawn(function()
-	while true do
-		updateCanRun()
-		task.wait(0.2)
-	end
+    while true do
+        if teleportLooping and teleportTarget and teleportTarget.Character and teleportTarget.Character:FindFirstChild("HumanoidRootPart") then
+            local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if myHRP then
+                myHRP.CFrame = teleportTarget.Character.HumanoidRootPart.CFrame * CFrame.new(0, 1, -3)
+            end
+        end
+        task.wait(0.1)
+    end
 end)
 
-
---anti black hole 
-
-
-
-getgenv().speed = 200
-getgenv().blackHoleAntiSuckEnabled = false  
-
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local Workspace = game:GetService("Workspace")
-
-local player = Players.LocalPlayer
-local root = nil
-local humanoid = nil
-local char = nil
-
-local blackHole = nil
-local distanceCheckConnection = nil
-local antiSuckLoop = nil
-
+-- F. Anti Black Hole
 local antiSuck = Instance.new("BodyVelocity")
 antiSuck.Name = "AntiSuck"
 antiSuck.MaxForce = Vector3.new(1e5, 0, 1e5)
 antiSuck.P = 1250
 antiSuck.Velocity = Vector3.zero
-antiSuck.Parent = nil
 
-local function cleanup()
-	if antiSuckLoop then
-		antiSuckLoop:Disconnect()
-		antiSuckLoop = nil
-	end
-	if antiSuck.Parent then
-		antiSuck.Parent = nil
-	end
-end
-
-local function startDistanceCheck()
-	if distanceCheckConnection then return end
-
-	distanceCheckConnection = RunService.RenderStepped:Connect(function()
-		if not getgenv().blackHoleAntiSuckEnabled then
-			cleanup()
-			return
-		end
-
-		if not blackHole or not blackHole:IsDescendantOf(Workspace) then
-			cleanup()
-			if distanceCheckConnection then
-				distanceCheckConnection:Disconnect()
-				distanceCheckConnection = nil
-			end
-			blackHole = nil
-			return
-		end
-
-		if not root or not humanoid then return end
-
-		local distance = (root.Position - blackHole.Position).Magnitude
-		if distance < 50 then
-			if not antiSuckLoop then
-				antiSuck.Parent = root
-				antiSuckLoop = RunService.RenderStepped:Connect(function()
-					if not getgenv().blackHoleAntiSuckEnabled then
-						cleanup()
-						return
-					end
-
-					local moveDir = humanoid.MoveDirection
-					local desiredSpeed = humanoid.WalkSpeed + 30
-					local desiredVelocity = moveDir * desiredSpeed
-
-					local actualVelocity = root.AssemblyLinearVelocity
-					local horizontalActual = Vector3.new(actualVelocity.X, 0, actualVelocity.Z)
-					local externalInfluence = horizontalActual - desiredVelocity
-
-					antiSuck.Velocity = antiSuck.Velocity:Lerp(-externalInfluence, 0.25)
-				end)
-			end
-		else
-			cleanup()
-		end
-	end)
-end
-
-local function onBlackHoleAdded(desc)
-	if not getgenv().blackHoleAntiSuckEnabled then return end
-
-	if desc.Name == "BlackHole" then
-		blackHole = desc
-		startDistanceCheck()
-
-		blackHole.AncestryChanged:Connect(function(_, parent)
-			if not parent then
-				cleanup()
-				if distanceCheckConnection then
-					distanceCheckConnection:Disconnect()
-					distanceCheckConnection = nil
-				end
-			end
-		end)
-	end
-end
-
-local function onCharacterAdded(newChar)
-	char = newChar
-	root = char:WaitForChild("HumanoidRootPart")
-	humanoid = char:WaitForChild("Humanoid")
-
-	if getgenv().blackHoleAntiSuckEnabled and blackHole and (root.Position - blackHole.Position).Magnitude < 50 then
-		antiSuck.Parent = root
-	end
-end
-
-player.CharacterAdded:Connect(onCharacterAdded)
-if player.Character then
-	onCharacterAdded(player.Character)
-end
-
-Workspace.DescendantAdded:Connect(onBlackHoleAdded)
-
-local existing = Workspace:FindFirstChild("BlackHole", true)
-if existing then
-	onBlackHoleAdded(existing)
-end
-
-
-
---items chams
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-
-local player = Players.LocalPlayer
-local folder = workspace:WaitForChild("Items")
-
-local chamFolder = Instance.new("Folder")
-chamFolder.Name = "Chams"
-chamFolder.Parent = workspace
-
-local activeChams = {}
-local chamsEnabled = false -- 🟢 Toggle this to true or false anywhere
-
-local function createFakePart(originalPart)
-	local fake = Instance.new("Part")
-	fake.Name = "FakePart_" .. originalPart:GetDebugId()
-	fake.Size = originalPart.Size * 2
-	fake.CFrame = originalPart.CFrame
-	fake.Anchored = true
-	fake.CanCollide = false
-	fake.Transparency = 1
-	fake.Parent = chamFolder
-	return fake
-end
-
-local function makeCham(part)
-	if activeChams[part] then return end
-
-	local fakePart = createFakePart(part)
-
-	local cham = Instance.new("BoxHandleAdornment")
-	cham.Name = "Cham_" .. part:GetDebugId()
-	cham.Adornee = fakePart
-	cham.AlwaysOnTop = true
-	cham.ZIndex = 5
-	cham.Size = fakePart.Size
-	cham.Transparency = 0.2
-	cham.Color3 = Color3.fromRGB(0, 180, 0)
-	cham.Parent = chamFolder
-
-	activeChams[part] = { fakePart = fakePart, cham = cham }
-end
-
-local function removeCham(part)
-	local data = activeChams[part]
-	if data then
-		if data.cham then data.cham:Destroy() end
-		if data.fakePart then data.fakePart:Destroy() end
-		activeChams[part] = nil
-	end
-end
-
-local function clearAllChams()
-	for part in pairs(activeChams) do
-		removeCham(part)
-	end
-end
-
-local function refreshChams()
-	clearAllChams()
-	if not chamsEnabled then return end
-
-	for _, obj in ipairs(folder:GetDescendants()) do
-		if obj:IsA("BasePart") then
-			makeCham(obj)
-		end
-	end
-end
-
--- Update loop
 RunService.RenderStepped:Connect(function()
-	if chamsEnabled then
-		for part, data in pairs(activeChams) do
-			if part and part.Parent and data.fakePart and data.cham then
-				data.fakePart.CFrame = part.CFrame
-			else
-				removeCham(part)
-			end
-		end
-	else
-		clearAllChams()
-	end
-end)
-
--- Watch for new parts
-folder.DescendantAdded:Connect(function(obj)
-	if chamsEnabled and obj:IsA("BasePart") then
-		makeCham(obj)
-	end
-end)
-
--- Watch for removed parts
-folder.DescendantRemoving:Connect(function(obj)
-	if obj:IsA("BasePart") then
-		removeCham(obj)
-	end
-end)
-
--- 🔁 Optional: re-check chams state every second
-RunService.Stepped:Connect(function()
-	refreshChams()
-end)
-
-
-
-
-
-
-
-local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
-local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
-local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
-
-local Window = Fluent:CreateWindow({
-    Title = "Murasaki 紫",
-    SubTitle = "by ccgvb (whos  that cool guy)",
-    TabWidth = 160,
-    Size = UDim2.fromOffset(580, 460),
-    Acrylic = true, -- The blur may be detectable, setting this to false disables blur entirely
-    Theme = "Amethyst",
-    MinimizeKey = Enum.KeyCode.LeftControl -- Used when theres no MinimizeKeybind
-})
-
---Fluent provides Lucide Icons https://lucide.dev/icons/ for the tabs, icons are optional
-local Tabs = {
-    Main = Window:AddTab({ Title = "Troll", Icon = "skull" }),
-    Settings = Window:AddTab({ Title = "Settings", Icon = "cog" })
-}
-
-local Options = Fluent.Options
-
-do
-    Fluent:Notify({
-        Title = "Greetings",
-        Content = "idk",
-        SubContent = "idk either", -- Optional
-        Duration = 3 -- Set to nil to make the notification not disappear
-    })
-
-
-
-
-local Section = Tabs.Main:AddSection("idk")
-
-    local Toggle = Tabs.Main:AddToggle("MyToggle2", {Title = "Knockback", Default = false })
-
-    Toggle:OnChanged(function()
-      knockbackEnabled = Options.MyToggle2.Value
-    end)
-
+    local blackHole = Workspace:FindFirstChild("BlackHole", true)
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
     
-
-
-
-
-        local Slider = Tabs.Main:AddSlider("Slider", {
-        Title = "Power",
-        Description = "How powerful the knockback is",
-        Default = 1000,
-        Min = 0,
-        Max = 10000,
-        Rounding = 20,
-        Callback = function(Value)
-           power = Value
+    if Config.AntiBlackHole and blackHole and root and hum then
+        local distance = (root.Position - blackHole.Position).Magnitude
+        if distance < 50 then
+            antiSuck.Parent = root
+            local desiredVelocity = hum.MoveDirection * (hum.WalkSpeed + 30)
+            local actualVelocity = root.AssemblyLinearVelocity
+            local horizontalActual = Vector3.new(actualVelocity.X, 0, actualVelocity.Z)
+            local externalInfluence = horizontalActual - desiredVelocity
+            antiSuck.Velocity = antiSuck.Velocity:Lerp(-externalInfluence, 0.25)
+        else
+            antiSuck.Parent = nil
         end
-    })
-
-    Slider:OnChanged(function(Value)
-        print("Slider changed:", Value)
-    end)
-    
-    local Slider = Tabs.Main:AddSlider("Slider", {
-        Title = "Max Force",
-        Description = "The amount of power allowed, should be the same as the power or higher for the power to  take  effect.",
-        Default = 10000,
-        Min = 5,
-        Max = 10000,
-        Rounding = 20,
-        Callback = function(Value)
-           maxForce  = Vector3.new(Value, Value, Value)
-        end
-    })
-
-    Slider:OnChanged(function(Value)
-        print("Slider changed:", Value)
-    end)
-
-
-local Section = Tabs.Main:AddSection("OP/Fun")
-
-  
-    local Toggle2 = Tabs.Main:AddToggle("MyToggle1", {Title = "Hitbox Expander\n(Front dash, Todo 1st move, Cursed Strikes air)", Default = false })
-
-    Toggle2:OnChanged(function()
-      hitsphereResizeEnabled =  Options.MyToggle1.Value
-    end)
-
-   
-
-Window:Dialog({
-    Title = "Compatibility",
-    Content = "if you have any bugs use swift executor.",
-    Buttons = {
-        { 
-            Title = "alr lil man",
-            Callback = function()
-                print("Confirmed the dialog.")
-            end 
-        }, {
-            Title = "shut up flip you",
-            Callback = function()
-                print("Cancelled the dialog.")
-            end 
-        }
-    }
-})
-Tabs.Main:AddParagraph({
-    Title = "How to use bring..",
-    Content = "1. Pick a player with the dropdown below\n2.Turn on Bring and hitbox extend\n3. use swiftkick aka Todo's 1st move"
-})
-
-
-
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-
-local LocalPlayer = Players.LocalPlayer
-local teleportTarget = nil
-local teleportLooping = false
-local enableKeyTrigger = false 
-
-
-local Dropdown = Tabs.Main:AddDropdown("Dropdown", {
-	Title = "Bring Player",
-	Values = {},
-	Multi = false,
-	Default = 1,
-})
-
-local function updateDropdown()
-	local names = {}
-	for _, plr in pairs(Players:GetPlayers()) do
-		if plr ~= LocalPlayer then
-			table.insert(names, plr.Name)
-		end
-	end
-	Dropdown:SetValues(names)
-end
-
-updateDropdown()
-Players.PlayerAdded:Connect(updateDropdown)
-Players.PlayerRemoving:Connect(updateDropdown)
-
-Dropdown:OnChanged(function(selectedName)
-	print("Selected target:", selectedName)
-	teleportTarget = Players:FindFirstChild(selectedName)
-end)
-
-
-task.spawn(function()
-	while true do
-		if teleportLooping and teleportTarget and teleportTarget.Character and teleportTarget.Character:FindFirstChild("HumanoidRootPart") then
-			local targetHRP = teleportTarget.Character.HumanoidRootPart
-			local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-			if myHRP then
-				myHRP.CFrame = targetHRP.CFrame + Vector3.new(0, 1, -3)
-			end
-		end
-		task.wait(0.1)
-	end
-end)
-
-
-local Toggle3 = Tabs.Main:AddToggle("MyToggle", {Title = "Bring", Default = false})
-
-Toggle3:OnChanged(function(state)
-	enableKeyTrigger = state
-	print("Key press 1 detection:", state and "ENABLED" or "DISABLED")
-end)
-
-
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
-	if input.KeyCode == Enum.KeyCode.One and enableKeyTrigger then
-		if not teleportLooping then
-			teleportLooping = true
-			print("Teleport loop: ON")
-			task.delay(3, function()
-				teleportLooping = false
-				print("Teleport loop: OFF")
-			end)
-		end
-	end
-end)
-
-
-
- local Toggle4 = Tabs.Main:AddToggle("FlightToggle", {Title = "Flight", Default = false })
-
-Toggle4:OnChanged(function()
-    flightEnabled = Options.FlightToggle.Value
-end)
-
-
-
-
-
-
-        local Slider = Tabs.Main:AddSlider("Slider", {
-        Title = "Flight Speed",
-        Description = "sigma  speed",
-        Default = 60,
-        Min = 0,
-        Max = 500,
-        Rounding = 5,
-        Callback = function(Value)
-           
-        end
-    })
-
-    Slider:OnChanged(function(Value)
-       FLIGHT_SPEED = Value
-    end)
-
-
-local Keybind = Tabs.Main:AddKeybind("Keybind", {
-    Title = "Flight Keybind",
-    Description = "Change your flight toggle key",
-    Mode = "Toggle",  
-    Default = "Y", 
-
-    Callback = function(Value)
-        print("Keybind clicked!", Value)
-    end,
-
-    ChangedCallback = function(New)
-        print("Flight keybind changed to:", New)
-        _G.FlightKeybind(New) 
+    else
+        antiSuck.Parent = nil
     end
-})
-
-
-
- local Toggle6 = Tabs.Main:AddToggle("MyToggle6", {Title = "Move During Black Hole", Default = false })
-
-Toggle6:OnChanged(function()
-   blackholeEnabled = Options.MyToggle6.Value
 end)
 
+-- G. Move During Black Hole (Garuda Rebound)
+local blackholeFlying = false
+local bhFlyConnection, bhGyro, bhVelocity
+local bhSpeed = 50
 
+local function bhStartFlying()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not root or not hum or blackholeFlying then return end
 
+    blackholeFlying = true
+    hum.PlatformStand = true
 
-    local Slider67 = Tabs.Main:AddSlider("Slider67", {
-        Title = "Speed",
-        Description = "how fast u move during the black hole",
-        Default = 50,
-        Min = 0,
-        Max = 500,
-        Rounding = 5,
-        Callback = function(Value)
-         
-        end
-    })
+    bhGyro = Instance.new("BodyGyro", root)
+    bhGyro.P = 9e4; bhGyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
+    
+    bhVelocity = Instance.new("BodyVelocity", root)
+    bhVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
 
-   Slider67:OnChanged(function(Value)
-       l_Speed = Value
+    bhFlyConnection = RunService.RenderStepped:Connect(function()
+        local moveDirection = Vector3.zero
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDirection = moveDirection + Vector3.new(0, 0, -1) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDirection = moveDirection + Vector3.new(0, 0, 1) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDirection = moveDirection + Vector3.new(-1, 0, 0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDirection = moveDirection + Vector3.new(1, 0, 0) end
+
+        local cam = Workspace.CurrentCamera
+        local direction = cam.CFrame:VectorToWorldSpace(moveDirection.Unit * bhSpeed)
+        bhVelocity.Velocity = moveDirection.Magnitude > 0 and direction or Vector3.zero
+        bhGyro.CFrame = cam.CFrame
     end)
-	
-
- local Toggle7 = Tabs.Main:AddToggle("MyToggle7", {Title = "Anti Black Hole", Default = false })
-
-Toggle7:OnChanged(function()
-   getgenv().blackHoleAntiSuckEnabled = Options.MyToggle7.Value
-end)
-
-	
-local Toggle8 = Tabs.Main:AddToggle("MyToggle8", {Title = "Item chams", Default = false })
-
-Toggle8:OnChanged(function()
-    chamsEnabled = Options.MyToggle8.Value
-end)
-
-
-	
-
 end
 
+local function bhStopFlying()
+    if not blackholeFlying then return end
+    blackholeFlying = false
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then hum.PlatformStand = false end
 
+    if bhFlyConnection then bhFlyConnection:Disconnect() bhFlyConnection = nil end
+    if bhGyro then bhGyro:Destroy() end
+    if bhVelocity then bhVelocity:Destroy() end
+end
 
+UserInputService.InputBegan:Connect(function(input, processed)
+    if not processed and input.KeyCode == Enum.KeyCode.G and Config.MoveBlackHole then
+        local char = LocalPlayer.Character
+        local moveset = char and char:FindFirstChild("Moveset")
+        if moveset and moveset:FindFirstChild("Garuda Rebound") then
+            -- Clean original BodyPosition applied by the game
+            task.delay(0.1, function()
+                local root = char:FindFirstChild("HumanoidRootPart")
+                if root then
+                    for _, v in pairs(root:GetChildren()) do
+                        if v:IsA("BodyPosition") then v:Destroy() end
+                    end
+                end
+            end)
+            
+            bhStartFlying()
+            task.delay(1.5, function() bhStopFlying() end)
+        end
+    end
+end)
 
+--// ==========================================
+--// 5. ATTACH TO UI
+--// ==========================================
+CreateToggle("Super Knockback (All Moves)", function(state) Config.Knockback = state end)
+CreateToggle("Hitbox Expander (40x40x40)", function(state) Config.Hitsphere = state end)
+CreateTextBox("Enter Bring Target Name...", function(text) Config.TargetName = text end)
+CreateToggle("Enable Bring (Press 1 with Todo)", function(state) Config.Bring = state end)
+CreateToggle("Flight (Press Y to toggle)", function(state) Config.Fly = state end)
+CreateToggle("Move during Black Hole", function(state) Config.MoveBlackHole = state end)
+CreateToggle("Anti Black Hole (Ignore Pull)", function(state) Config.AntiBlackHole = state end)
+CreateToggle("Item Chams (ESP)", function(state) Config.Chams = state end)
 
--- Addons:
--- SaveManager (Allows you to have a configuration system)
--- InterfaceManager (Allows you to have a interface managment system)
-
--- Hand the library over to our managers
-SaveManager:SetLibrary(Fluent)
-InterfaceManager:SetLibrary(Fluent)
-
--- Ignore keys that are used by ThemeManager.
--- (we dont want configs to save themes, do we?)
-SaveManager:IgnoreThemeSettings()
-
--- You can add indexes of elements the save manager should ignore
-SaveManager:SetIgnoreIndexes({})
-
--- use case for doing it this way:
--- a script hub could have themes in a global folder
--- and game configs in a separate folder per game
-InterfaceManager:SetFolder("FluentScriptHub")
-SaveManager:SetFolder("FluentScriptHub/specific-game")
-
-InterfaceManager:BuildInterfaceSection(Tabs.Settings)
-SaveManager:BuildConfigSection(Tabs.Settings)
-
-
-Window:SelectTab(1)
-
-Fluent:Notify({
-    Title = "Fluent",
-    Content = "The script has been loaded.",
-    Duration = 8
-})
-
--- You can use the SaveManager:LoadAutoloadConfig() to load a config
--- which has been marked to be one that auto loads!
-SaveManager:LoadAutoloadConfig()
+-- Resize Container based on contents
+task.delay(0.5, function()
+    Container.CanvasSize = UDim2.new(0, 0, 0, Layout.AbsoluteContentSize.Y + 20)
+end)
