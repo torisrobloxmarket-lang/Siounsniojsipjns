@@ -1005,11 +1005,9 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
---// ==========================================
---// FE INVIS v2 — Physics Desync
---// Delta/Electron compatible. No Knit dependency.
---// No buffer API required.
---// ==========================================
+--// FE Invis v3 — Network Ownership Desync
+--// No out-of-bounds CFrame. No Knit. Delta/Electron safe.
+--// Forces server replication gap via humanoid state spam + assembly desync.
 local invisThread = nil
 local invisActive = false
 
@@ -1023,43 +1021,61 @@ local function ToggleInvis(state)
         invisActive = true
 
         invisThread = task.spawn(function()
-            local originalCFrame = root.CFrame
-
-            -- Anchor to prevent physics engine correcting position mid-desync
-            root.Anchored = true
-            task.wait()
-
-            -- Push root to 1e38 — out of bounds, forces server replication loss
-            -- Delta-safe: no buffer API, no remote names
-            local function makeDesyncCFrame()
-                return CFrame.new(Vector3.new(1e38, 1e38, 1e38))
+            -- Step 1: Rapid humanoid state cycling
+            -- Forces server to drop character replication priority.
+            -- Server deprioritises a character that keeps changing state
+            -- because it batches the updates — we exploit that batch gap.
+            local states = {
+                Enum.HumanoidStateType.Physics,
+                Enum.HumanoidStateType.FallingDown,
+                Enum.HumanoidStateType.Running,
+                Enum.HumanoidStateType.Physics,
+            }
+            for i = 1, 8 do
+                pcall(function()
+                    hum:ChangeState(states[(i % #states) + 1])
+                end)
+                task.wait(0.05)
             end
 
-            for i = 1, 3 do
-                pcall(function() root.CFrame = makeDesyncCFrame() end)
-                task.wait(0.03)
+            -- Step 2: Rapid CFrame micro-jitter at current position
+            -- Keeps us inside valid bounds (no teleport rejection)
+            -- but sends enough replication noise to desync other clients
+            local baseCF = root.CFrame
+            for i = 1, 12 do
+                pcall(function()
+                    local jitter = Vector3.new(
+                        math.random(-1000, 1000) * 0.0001,
+                        math.random(-1000, 1000) * 0.0001,
+                        math.random(-1000, 1000) * 0.0001
+                    )
+                    root.CFrame = CFrame.new(baseCF.Position + jitter) * (baseCF - baseCF.Position)
+                end)
+                task.wait(0.02)
             end
+            root.CFrame = baseCF
 
-            -- Return locally — server still broadcasts ghost position
-            root.Anchored = false
-            root.CFrame = originalCFrame
+            -- Step 3: Switch to Physics state and hold
+            -- In Physics state the server stops correcting our position
+            -- and other clients receive no authoritative updates
+            pcall(function()
+                hum:ChangeState(Enum.HumanoidStateType.Physics)
+                hum.PlatformStand = true
+            end)
 
-            -- Keepalive: re-fire before server replication catch-up window (~5-6s)
+            -- Step 4: Keepalive — re-assert Physics state every 3s
+            -- Prevents server from pulling us back to Running/Idle
             while invisActive do
-                task.wait(4)
+                task.wait(3)
                 if not invisActive then break end
-
-                local currentCFrame = root.CFrame
-                root.Anchored = true
-                task.wait()
-
-                for i = 1, 2 do
-                    pcall(function() root.CFrame = makeDesyncCFrame() end)
-                    task.wait(0.03)
-                end
-
-                root.Anchored = false
-                root.CFrame = currentCFrame
+                pcall(function()
+                    hum:ChangeState(Enum.HumanoidStateType.Physics)
+                    -- Micro-jitter refresh to keep replication noise active
+                    local cf = root.CFrame
+                    root.CFrame = cf * CFrame.new(0, 0.001, 0)
+                    task.wait(0.05)
+                    root.CFrame = cf
+                end)
             end
         end)
 
@@ -1071,13 +1087,15 @@ local function ToggleInvis(state)
             invisThread = nil
         end
 
-        -- Nudge forces a replication update packet — resync all clients
+        -- Clean exit: restore humanoid state so movement works again
         pcall(function()
-            root.Anchored = false
-            local respawnCFrame = root.CFrame
-            root.CFrame = respawnCFrame * CFrame.new(0, 0.1, 0)
+            hum.PlatformStand = false
+            hum:ChangeState(Enum.HumanoidStateType.Running)
+            -- Single position confirm packet to resync all clients
+            local cf = root.CFrame
+            root.CFrame = cf * CFrame.new(0, 0.1, 0)
             task.wait(0.05)
-            root.CFrame = respawnCFrame
+            root.CFrame = cf
         end)
     end
 end
