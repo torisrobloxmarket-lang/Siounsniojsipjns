@@ -1,6 +1,6 @@
 --// ==========================================
---// RYU HUB - TOWER OF HELL SUITE v6.0
---// MONOCHROME - GLOBAL SKINS - PLATFORM FARM
+--// RYU HUB - TOWER OF HELL SUITE v6.1
+--// MONOCHROME - CLOSEST FINISH & SKIN FIX
 --// ==========================================
 
 local CoreGui = game:GetService("CoreGui")
@@ -44,7 +44,7 @@ local CFG = {
     infiniteJump    = false,
     antiVoid        = false,
     antiVoidY       = -50,
-    godmode         = true, -- PERMANENT ON BY DEFAULT
+    godmode         = true, 
     spin            = false,
     spinSpeed       = 35,
     playerEsp       = false,
@@ -246,7 +246,6 @@ local SubTitle = Instance.new("TextLabel", Topbar)
 SubTitle.Size = UDim2.new(0, 300, 0, 15); SubTitle.Position = UDim2.new(0, 20, 0, 38); SubTitle.BackgroundTransparency = 1
 SubTitle.Text = "Tower of Hell Suite"; SubTitle.TextColor3 = Theme.SubText; SubTitle.Font = Enum.Font.Gotham; SubTitle.TextSize = 11; SubTitle.TextXAlignment = Enum.TextXAlignment.Left
 
--- CLOSE BUTTON
 local CloseBtn = Instance.new("TextButton", Topbar)
 CloseBtn.Size = UDim2.new(0, 28, 0, 28)
 CloseBtn.Position = UDim2.new(1, -40, 0, 15)
@@ -305,13 +304,18 @@ local function UpdateSidebarCanvas()
 end
 
 local function CreateMainTab(name)
-    local tabObj = { Btn = nil, SubContainer = nil, SubLayout = nil, IsOpen = false, SubTabs = {} }
+    local tabObj = { Btn = nil, Arrow = nil, SubContainer = nil, SubLayout = nil, IsOpen = false, SubTabs = {} }
     
     local tabBtn = Instance.new("TextButton", Sidebar)
     tabBtn.Size = UDim2.new(1, 0, 0, 36); tabBtn.BackgroundColor3 = Theme.Sidebar; tabBtn.Text = "  " .. string.upper(name)
     tabBtn.TextColor3 = Theme.SubText; tabBtn.Font = Enum.Font.GothamBlack; tabBtn.TextSize = 13; tabBtn.TextXAlignment = Enum.TextXAlignment.Left
     Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 8)
     tabObj.Btn = tabBtn
+
+    local arrow = Instance.new("TextLabel", tabBtn)
+    arrow.Size = UDim2.new(0, 20, 1, 0); arrow.Position = UDim2.new(1, -25, 0, 0); arrow.BackgroundTransparency = 1; arrow.Text = "v"
+    arrow.TextColor3 = Theme.SubText; arrow.Font = Enum.Font.GothamBold; arrow.TextSize = 12
+    tabObj.Arrow = arrow
 
     local subContainer = Instance.new("Frame", Sidebar)
     subContainer.Size = UDim2.new(1, 0, 0, 0); subContainer.BackgroundTransparency = 1; subContainer.ClipsDescendants = true
@@ -516,7 +520,6 @@ local function CreateDropdown(section, headerText, itemsList, targetConfigKey, c
         end
         task.defer(function() scroll.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10) end)
     end
-    listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() scroll.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10) end)
     populate(itemsList)
     return { Refresh = populate }
 end
@@ -533,25 +536,9 @@ local function CreateInput(section, placeholder, callback)
 end
 
 --// ==========================================
---// TOWER OF HELL LOGIC (ENGINE)
+--// TOWER OF HELL LOGIC (CLOSEST FINISH + SKINS)
 --// ==========================================
 
--- GODMODE (PERMANENT)
-local godConn
-local function setGodmode(on)
-    CFG.godmode = on
-    if godConn then godConn:Disconnect() godConn = nil end
-    if on then
-        godConn = RunService.Heartbeat:Connect(function()
-            pcall(function()
-                if hum then hum.Health = hum.MaxHealth end
-            end)
-        end)
-    end
-end
-setGodmode(true)
-
--- NOCLIP
 RunService.Stepped:Connect(function()
     if not CFG.noclip or not char then return end
     pcall(function()
@@ -561,10 +548,8 @@ RunService.Stepped:Connect(function()
     end)
 end)
 
--- FLY
 local flyConn, flyBV
 local flyKeys = {f=false,b=false,l=false,r=false,up=false,down=false}
-
 local function setFly(on)
     CFG.fly = on
     pcall(function()
@@ -576,7 +561,7 @@ local function setFly(on)
         end
         hum.PlatformStand = true
         flyBV = Instance.new("BodyVelocity", root)
-        flyBV.MaxForce = Vector3.new(1e9,1e9,1e9)
+        flyBV.MaxForce = Vector3.new(1e5,1e5,1e5)
         flyBV.Velocity = Vector3.zero
         flyConn = RunService.Heartbeat:Connect(function()
             if not CFG.fly or not root then return end
@@ -588,8 +573,6 @@ local function setFly(on)
             if flyKeys.l then dir = dir - cf.RightVector end
             if flyKeys.up then dir = dir + Vector3.new(0,1,0) end
             if flyKeys.down then dir = dir - Vector3.new(0,1,0) end
-            
-            for _, track in pairs(hum:GetPlayingAnimationTracks()) do track:Stop() end
             flyBV.Velocity = dir.Magnitude > 0 and dir.Unit * CFG.flySpeed or Vector3.zero
         end)
     end)
@@ -615,7 +598,6 @@ UserInputService.InputEnded:Connect(function(i)
     if k == Enum.KeyCode.LeftControl then flyKeys.down = false end
 end)
 
--- DASH
 local dashReady = true
 local function doDash()
     pcall(function()
@@ -632,7 +614,6 @@ UserInputService.InputBegan:Connect(function(i, gp)
     if not gp and i.KeyCode == Enum.KeyCode.Q then doDash() end
 end)
 
--- SPEED & JUMP
 local function setSpeed(on)
     CFG.speedBoost = on
     pcall(function() if hum then hum.WalkSpeed = on and CFG.speedVal or 16 end end)
@@ -651,15 +632,10 @@ UserInputService.JumpRequest:Connect(function()
     end)
 end)
 
--- INVISIBLE (Desync LowerTorso)
 local function setInvisible(on)
     CFG.invisible = on
     pcall(function()
         if not char then return end
-        if on then
-            local lower = char:FindFirstChild("LowerTorso")
-            if lower then lower:Destroy() end 
-        end
         for _, p in ipairs(char:GetDescendants()) do
             if p:IsA("BasePart") or p:IsA("Decal") then
                 if p.Name ~= "HumanoidRootPart" then
@@ -670,7 +646,6 @@ local function setInvisible(on)
     end)
 end
 
--- ANTI-VOID
 local antiVoidConn
 local function setAntiVoid(on)
     CFG.antiVoid = on
@@ -686,7 +661,6 @@ local function setAntiVoid(on)
     end)
 end
 
--- SPIN
 local spinConn
 local function setSpin(on)
     CFG.spin = on
@@ -700,20 +674,45 @@ local function setSpin(on)
     end)
 end
 
--- AUTO FARM (PLATFORM TP)
-local autoFarmPlatform
-local function tpToPlatform()
+-- AUTO WIN (CLOSEST FINISH)
+local function tpToClosestFinish()
     pcall(function()
         if not root then return end
-        if not autoFarmPlatform then
-            autoFarmPlatform = Instance.new("Part")
-            autoFarmPlatform.Size = Vector3.new(100, 5, 100)
-            autoFarmPlatform.Position = root.Position + Vector3.new(0, 320, 0)
-            autoFarmPlatform.Anchored = true
-            autoFarmPlatform.Transparency = 1
-            autoFarmPlatform.Parent = Workspace
+        local finishesFolder = Workspace:FindFirstChild("finishes", true) or Workspace:FindFirstChild("Finishes", true)
+        local targetPart = nil
+        local minDistance = math.huge
+        
+        if finishesFolder then
+            for _, child in ipairs(finishesFolder:GetChildren()) do
+                if child:IsA("BasePart") then
+                    local dist = (child.Position - root.Position).Magnitude
+                    if dist < minDistance then
+                        minDistance = dist
+                        targetPart = child
+                    end
+                end
+            end
         end
-        TJSTeleport(CFrame.new(autoFarmPlatform.Position + Vector3.new(0, 5, 0)))
+        
+        if not targetPart then
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj:IsA("BasePart") and (obj.Name:lower() == "finish" or obj.Name:lower() == "endzone") then
+                    local dist = (obj.Position - root.Position).Magnitude
+                    if dist < minDistance then
+                        minDistance = dist
+                        targetPart = obj
+                    end
+                end
+            end
+        end
+        
+        if targetPart then
+            root.CFrame = targetPart.CFrame + Vector3.new(0, 3, 0)
+        else
+            root.CFrame = root.CFrame + Vector3.new(0, 500, 0)
+        end
+        
+        if hum then hum:ChangeState(Enum.HumanoidStateType.Physics) task.wait(0.6) hum:ChangeState(Enum.HumanoidStateType.GettingUp) end
     end)
 end
 
@@ -721,8 +720,8 @@ task.spawn(function()
     while task.wait(1) do
         pcall(function()
             if CFG.autoWin then
-                tpToPlatform()
-                SendNotification("Platform Farm", "Teleported to platform!", 2)
+                tpToClosestFinish()
+                SendNotification("Auto Win", "Teleported to closest finish!", 2)
                 task.wait(CFG.autoWinInterval * 60)
             end
         end)
@@ -770,34 +769,35 @@ local function setFreecam(on)
 end
 
 --// ==========================================
---// TABS & UI SETUP
+--// BUILD TABS & SECTIONS
 --// ==========================================
 
 local TabBoost = CreateMainTab("Boost")
 
-local SubMove = CreateSubTab(TabBoost, "Movement")
-local SecMove = CreateSection(SubMove, "Speed & Jump")
+local SubMove = CreateSubTab(TabBoost, "Speed & Jump")
+local SecMove = CreateSection(SubMove, "Movement Adjustments")
 CreateToggle(SecMove, "Speed Boost", false, function(s) setSpeed(s) end)
 CreateSlider(SecMove, "Speed Value", 16, 200, 48, function(v) CFG.speedVal = v if CFG.speedBoost then pcall(function() hum.WalkSpeed = v end) end end)
 CreateToggle(SecMove, "Super Jump", false, function(s) setJump(s) end)
 CreateSlider(SecMove, "Jump Value", 50, 400, 150, function(v) CFG.jumpVal = v if CFG.superJump then pcall(function() hum.JumpPower = v end) end end)
-CreateToggle(SecMove, "Infinite Jump", false, function(s) CFG.infiniteJump = s end)
 CreateToggle(SecMove, "Fly", false, function(s) setFly(s) end)
 CreateSlider(SecMove, "Fly Speed", 10, 200, 60, function(v) CFG.flySpeed = v end)
+CreateToggle(SecMove, "Infinite Jump", false, function(s) CFG.infiniteJump = s end)
 CreateButton(SecMove, "Dash (Q)", Theme.SectionBG, function() doDash() end)
 
 local SubProt = CreateSubTab(TabBoost, "Safety & Passives")
 local SecProt = CreateSection(SubProt, "Protections")
 CreateToggle(SecProt, "God Mode", "Permanent health refill", true, function(s) setGodmode(s) end)
 CreateToggle(SecProt, "Noclip", true, function(s) CFG.noclip = s end)
-CreateToggle(SecProt, "Invisible (Local transparency)", false, function(s) setInvisible(s) end)
+CreateToggle(SecProt, "Invisible (Local visibility)", false, function(s) setInvisible(s) end)
 CreateToggle(SecProt, "Anti-Void", false, function(s) setAntiVoid(s) end)
 
-local TabFarm = CreateMainTab("Farm")
-local SubAutoWin = CreateSubTab(TabFarm, "Auto Win")
-local SecAutoWin = CreateSection(SubAutoWin, "Platform Farm Automations")
-CreateToggle(SecAutoWin, "Platform Auto Farm", "Teleports 320 studs up", false, function(s) CFG.autoWin = s end)
+local TabFarm = CreateMainTab("Auto Win")
+local SubAutoWin = CreateSubTab(TabFarm, "Automation")
+local SecAutoWin = CreateSection(SubAutoWin, "Win Settings")
+CreateToggle(SecAutoWin, "Auto Win (Closest Finish)", false, function(s) CFG.autoWin = s end)
 CreateSlider(SecAutoWin, "Interval (Minutes)", 1, 10, 2, function(v) CFG.autoWinInterval = v end)
+CreateButton(SecAutoWin, "Teleport to Finish Now", Theme.SectionBG, function() tpToClosestFinish() end)
 CreateButton(SecAutoWin, "Rejoin Low Server", Theme.SectionBG, function() doServerRejoin() end)
 
 local TabVisuals = CreateMainTab("Visuals")
@@ -813,11 +813,13 @@ local TabCheck = CreateMainTab("Checkpoints")
 local SubChk = CreateSubTab(TabCheck, "Savepoints")
 local SecChk = CreateSection(SubChk, "Checkpoint System")
 
+local SaveLog = CreateLabel(SecChk, "Ready to save.")
 CreateButton(SecChk, "Save Checkpoint (C)", Theme.SectionBG, function()
     pcall(function()
         if root then
             savedCheckpoints[activeCheckpointSlot] = root.CFrame
-            SendNotification("Saved!", "Checkpoint slot " .. activeCheckpointSlot .. " saved.", 1.5)
+            SaveLog.Text = "Saved at slot " .. activeCheckpointSlot .. "!"
+            task.delay(2, function() SaveLog.Text = "Ready to save." end)
         end
     end)
 end)
@@ -838,7 +840,8 @@ UserInputService.InputBegan:Connect(function(input, gp)
         if input.KeyCode == Enum.KeyCode.C then
             if root then
                 savedCheckpoints[activeCheckpointSlot] = root.CFrame
-                SendNotification("Saved!", "Slot " .. activeCheckpointSlot .. " updated.", 1.5)
+                SaveLog.Text = "Saved at slot " .. activeCheckpointSlot .. "!"
+                task.delay(2, function() SaveLog.Text = "Ready to save." end)
             end
         elseif input.KeyCode == Enum.KeyCode.V then
             if savedCheckpoints[activeCheckpointSlot] and root then
@@ -853,13 +856,31 @@ local SubTrl = CreateSubTab(TabTroll, "Copy & Name")
 local SecTrl = CreateSection(SubTrl, "Troll Suite")
 
 local function applySkinByUsername(name)
-    pcall(function()
+    task.spawn(function()
         local userId
         local s, _ = pcall(function() userId = Players:GetUserIdFromNameAsync(name) end)
         if s and userId then
             local s2, desc = pcall(function() return Players:GetHumanoidDescriptionFromUserId(userId) end)
-            if s2 and desc and hum then
-                hum:ApplyDescriptionReset(desc)
+            if s2 and desc and hum and char then
+                
+                -- Fallback for LocalScript restriction
+                pcall(function()
+                    local shirt = char:FindFirstChildOfClass("Shirt") or Instance.new("Shirt", char)
+                    shirt.ShirtTemplate = desc.Shirt > 0 and "rbxassetid://" .. desc.Shirt or ""
+                    
+                    local pants = char:FindFirstChildOfClass("Pants") or Instance.new("Pants", char)
+                    pants.PantsTemplate = desc.Pants > 0 and "rbxassetid://" .. desc.Pants or ""
+                    
+                    local head = char:FindFirstChild("Head")
+                    if head then
+                        local face = head:FindFirstChildOfClass("Decal")
+                        if face and desc.Face > 0 then face.Texture = "rbxassetid://" .. desc.Face end
+                    end
+                end)
+                
+                -- Attempt official Application
+                pcall(function() hum:ApplyDescription(desc) end)
+                
                 if not table.find(skinHistory, name) then
                     table.insert(skinHistory, 1, name)
                     if #skinHistory > 5 then table.remove(skinHistory, 6) end
@@ -934,7 +955,13 @@ CreateToggle(SecSet, "Anti-AFK Protection", false, function(v)
 end)
 
 CreateLabel(SecSet, "Join Discord.gg/ryuhub to suggest more functions, scripts and more!")
-CreateButton(SecSet, "Reset UI / Clean", Theme.SectionBG, function() pcall(function() ResetConfig(); RyuHub:Destroy() end) end)
+
+CreateButton(SecSet, "Reset Settings", Theme.Warning, function() 
+    pcall(function()
+        if isfile(CONFIG_FILE) then delfile(CONFIG_FILE) end
+        RyuHub:Destroy()
+    end)
+end)
 
 --// INITIALIZE FIRST TAB
 pcall(function() 
@@ -988,4 +1015,4 @@ RunService.RenderStepped:Connect(function()
     end)
 end)
 
-print("[Ryu Hub] v6.0 correctly initialized!")
+print("[Ryu Hub] ToH Suite v6.1 Initialized.")
