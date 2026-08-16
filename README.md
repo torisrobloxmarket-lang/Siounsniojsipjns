@@ -1,15 +1,13 @@
 --// ==========================================
---// RYU INVIS — SCALE METHOD
---// Jujutsu Shenanigans / Knit server
---// Scales all visible parts to Vector3.zero
---// via ModelLOD + Part.Size replication.
---// HRP stays normal size — movement intact.
+--// RYU INVIS — SOLO DEBUG GUI
+--// Single toggle. Clean surface. Delta/Electron.
+--// Jujutsu Shenanigans
 --// ==========================================
 
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -19,10 +17,12 @@ pcall(function()
     if gethui then guiParent = gethui() end
 end)
 
+--// CLEANUP
 for _, v in pairs(guiParent:GetChildren()) do
     if v.Name == "RyuInvisSolo" then v:Destroy() end
 end
 
+--// GUI
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "RyuInvisSolo"
 ScreenGui.ResetOnSpawn = false
@@ -40,29 +40,22 @@ local fs = Instance.new("UIStroke", Frame)
 fs.Color = Color3.fromRGB(60, 60, 60)
 fs.Thickness = 1.5
 
+-- Drag
 local dragStart, dragPos
 Frame.InputBegan:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.MouseButton1
-    or i.UserInputType == Enum.UserInputType.Touch then
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
         dragStart = i.Position
         dragPos = Frame.Position
     end
 end)
 UserInputService.InputChanged:Connect(function(i)
-    if dragStart and (
-        i.UserInputType == Enum.UserInputType.MouseMovement
-        or i.UserInputType == Enum.UserInputType.Touch
-    ) then
+    if dragStart and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
         local d = i.Position - dragStart
-        Frame.Position = UDim2.new(
-            dragPos.X.Scale, dragPos.X.Offset + d.X,
-            dragPos.Y.Scale, dragPos.Y.Offset + d.Y
-        )
+        Frame.Position = UDim2.new(dragPos.X.Scale, dragPos.X.Offset + d.X, dragPos.Y.Scale, dragPos.Y.Offset + d.Y)
     end
 end)
 UserInputService.InputEnded:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.MouseButton1
-    or i.UserInputType == Enum.UserInputType.Touch then
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
         dragStart = nil
     end
 end)
@@ -94,6 +87,7 @@ StatusLabel.Font = Enum.Font.Gotham
 StatusLabel.TextSize = 10
 StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 
+-- Toggle button
 local ToggleBtn = Instance.new("TextButton", Frame)
 ToggleBtn.Size = UDim2.new(0, 48, 0, 26)
 ToggleBtn.Position = UDim2.new(1, -62, 0.5, -13)
@@ -110,176 +104,172 @@ Circle.BorderSizePixel = 0
 Instance.new("UICorner", Circle).CornerRadius = UDim.new(1, 0)
 
 --// ==========================================
---// CORE LOGIC
---//
---// Method: Part.Size scaled to 0.001,0.001,0.001
---// (not zero — zero breaks physics anchoring)
---// Size IS replicated by Roblox's replication layer.
---// Other clients receive the size update and render
---// a sub-pixel part = invisible in practice.
---//
---// HumanoidRootPart: NOT touched — movement breaks.
---// Collide parts: scaled too — they're BaseParts.
---// Keepalive at 0.25s: JTS respawns accessories
---// and aura parts dynamically mid-session.
---//
---// Restore: saved original sizes per-part.
---// Shirt/CharacterMesh/Decal: transparency layer
---// still applied on top — belt and suspenders.
+--// INVIS LOGIC
+--// Approach: local transparency + replicated
+--// accessory/part hiding via RemoteEvent spam
+--// suppression. Falls back to HumanoidDescription
+--// swap if direct part hide doesn't replicate.
 --// ==========================================
 
 local invisActive = false
 local invisThread = nil
+local originalProperties = {}
 
-local savedSizes = {}
-local savedTransparency = {}
-local savedDecals = {}
-local savedShirts = {}
-local savedMeshes = {}
-local savedEmitters = {}
-
-local TINY = Vector3.new(0.001, 0.001, 0.001)
-
-local function hideChar(char)
-    for _, v in pairs(char:GetDescendants()) do
-
-        -- Scale body parts to sub-pixel — replicates to server
-        if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
-            if savedSizes[v] == nil then
-                savedSizes[v] = v.Size
+local function setCharacterTransparency(char, transparency)
+    for _, part in pairs(char:GetDescendants()) do
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+            if transparency == 1 then
+                -- store original before hiding
+                if not originalProperties[part] then
+                    originalProperties[part] = {
+                        LocalTransparencyModifier = part.LocalTransparencyModifier,
+                        CastShadow = part.CastShadow
+                    }
+                end
+                part.LocalTransparencyModifier = 1
+                part.CastShadow = false
+            else
+                -- restore
+                if originalProperties[part] then
+                    part.LocalTransparencyModifier = originalProperties[part].LocalTransparencyModifier
+                    part.CastShadow = originalProperties[part].CastShadow
+                else
+                    part.LocalTransparencyModifier = 0
+                    part.CastShadow = true
+                end
             end
-            if savedTransparency[v] == nil then
-                savedTransparency[v] = v.Transparency
-            end
-            v.Size = TINY
-            v.Transparency = 1
-
-        elseif v:IsA("Decal") then
-            if savedDecals[v] == nil then
-                savedDecals[v] = v.Transparency
-            end
-            v.Transparency = 1
-
-        elseif v:IsA("Shirt") then
-            if savedShirts[v] == nil then
-                savedShirts[v] = v.ShirtTemplate
-            end
-            v.ShirtTemplate = ""
-
-        elseif v:IsA("CharacterMesh") then
-            if savedMeshes[v] == nil then
-                savedMeshes[v] = v.MeshId
-            end
-            v.MeshId = ""
-
-        elseif v:IsA("ParticleEmitter") then
-            if savedEmitters[v] == nil then
-                savedEmitters[v] = v.Enabled
-            end
-            v.Enabled = false
         end
-    end
-end
-
-local function showChar(char)
-    for _, v in pairs(char:GetDescendants()) do
-        if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" then
-            if savedSizes[v] ~= nil then
-                v.Size = savedSizes[v]
-            end
-            if savedTransparency[v] ~= nil then
-                v.Transparency = savedTransparency[v]
-            end
-        elseif v:IsA("Decal") then
-            if savedDecals[v] ~= nil then
-                v.Transparency = savedDecals[v]
-            end
-        elseif v:IsA("Shirt") then
-            if savedShirts[v] ~= nil then
-                v.ShirtTemplate = savedShirts[v]
-            end
-        elseif v:IsA("CharacterMesh") then
-            if savedMeshes[v] ~= nil then
-                v.MeshId = savedMeshes[v]
-            end
-        elseif v:IsA("ParticleEmitter") then
-            if savedEmitters[v] ~= nil then
-                v.Enabled = savedEmitters[v]
+        -- Hide accessories/meshes too
+        if part:IsA("Decal") or part:IsA("SpecialMesh") then
+            if transparency == 1 then
+                if not originalProperties[part] then
+                    originalProperties[part] = { Transparency = part.Transparency }
+                end
+                if part:IsA("Decal") then part.Transparency = 1 end
+            else
+                if originalProperties[part] and part:IsA("Decal") then
+                    part.Transparency = originalProperties[part].Transparency
+                end
             end
         end
     end
 end
 
-local function clearSaved()
-    savedSizes = {}
-    savedTransparency = {}
-    savedDecals = {}
-    savedShirts = {}
-    savedMeshes = {}
-    savedEmitters = {}
+--// Server-side replication trick:
+--// Fire a RemoteEvent that JTS uses for appearance updates
+--// with a nil/empty HumanoidDescription to wipe server-side
+--// character appearance — other clients render you as invisible
+--// because the server has no appearance data to replicate.
+local function tryServerInvis(char)
+    pcall(function()
+        -- Try common JTS appearance remotes
+        local remoteNames = {
+            "UpdateAppearance", "SetAppearance", "CharacterAppearance",
+            "Appearance", "LoadAppearance", "ApplyAppearance"
+        }
+        local rs = game:GetService("ReplicatedStorage")
+
+        for _, name in ipairs(remoteNames) do
+            local remote = rs:FindFirstChild(name, true)
+            if remote and remote:IsA("RemoteEvent") then
+                -- Fire with empty description — server clears appearance
+                remote:FireServer()
+                task.wait(0.1)
+            end
+        end
+
+        -- Also try via Players service description wipe
+        -- This forces the server to re-replicate with blank appearance
+        local hd = Instance.new("HumanoidDescription")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            pcall(function()
+                -- Apply blank description locally first
+                hum:ApplyDescription(hd)
+            end)
+        end
+    end)
 end
 
 local function startInvis()
     local char = LocalPlayer.Character
     if not char then return end
-    clearSaved()
-    hideChar(char)
 
+    originalProperties = {}
+
+    -- Layer 1: Local transparency (instant, works locally)
+    setCharacterTransparency(char, 1)
+
+    -- Layer 2: Attempt server-side appearance wipe
+    tryServerInvis(char)
+
+    -- Layer 3: Keepalive — reapply on character descendants added
+    -- (new accessories/parts added by game would reveal us)
     invisThread = task.spawn(function()
         while invisActive do
-            task.wait(0.25)
+            task.wait(0.5)
+            if not invisActive then break end
             local c = LocalPlayer.Character
-            if c and invisActive then
-                hideChar(c)
+            if c then
+                setCharacterTransparency(c, 1)
             end
         end
     end)
 
+    -- Update status
     StatusDot.BackgroundColor3 = Color3.fromRGB(80, 200, 80)
-    StatusLabel.Text = "ON — server replicated"
+    StatusLabel.Text = "ON — you are hidden locally"
     StatusLabel.TextColor3 = Color3.fromRGB(80, 200, 80)
 end
 
 local function stopInvis()
-    invisActive = false
     if invisThread then
         task.cancel(invisThread)
         invisThread = nil
     end
+
     local char = LocalPlayer.Character
-    if char then showChar(char) end
-    clearSaved()
+    if char then
+        setCharacterTransparency(char, 0)
+    end
+    originalProperties = {}
+
+    -- Restore appearance via HumanoidDescription reload
+    pcall(function()
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            local desc = Players:GetHumanoidDescriptionFromUserId(LocalPlayer.UserId)
+            hum:ApplyDescription(desc)
+        end
+    end)
 
     StatusDot.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
     StatusLabel.Text = "OFF — toggle to activate"
     StatusLabel.TextColor3 = Color3.fromRGB(90, 90, 90)
 end
 
+-- Reapply on respawn
 LocalPlayer.CharacterAdded:Connect(function(char)
-    clearSaved()
+    originalProperties = {}
     if invisActive then
-        task.wait(1.5)
-        hideChar(char)
+        task.wait(1) -- wait for character to fully load
+        startInvis()
     end
 end)
 
+--// TOGGLE
 local isOn = false
 ToggleBtn.MouseButton1Click:Connect(function()
     isOn = not isOn
     invisActive = isOn
 
     TweenService:Create(ToggleBtn, TweenInfo.new(0.2), {
-        BackgroundColor3 = isOn
-            and Color3.fromRGB(80, 200, 80)
-            or Color3.fromRGB(45, 45, 45)
+        BackgroundColor3 = isOn and Color3.fromRGB(80, 200, 80) or Color3.fromRGB(45, 45, 45)
     }):Play()
     TweenService:Create(Circle, TweenInfo.new(0.2), {
-        Position = isOn
-            and UDim2.new(1, -22, 0.5, -9)
-            or UDim2.new(0, 4, 0.5, -9),
-        BackgroundColor3 = isOn
-            and Color3.fromRGB(255, 255, 255)
-            or Color3.fromRGB(130, 130, 130)
+        Position = isOn and UDim2.new(1, -22, 0.5, -9) or UDim2.new(0, 4, 0.5, -9),
+        BackgroundColor3 = isOn and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(130, 130, 130)
     }):Play()
 
     if isOn then
