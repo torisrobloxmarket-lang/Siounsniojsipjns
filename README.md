@@ -1,6 +1,6 @@
 --// ==========================================
---// RYU HUB - TOWER OF HELL EDITION (TJS)
---// MONOCHROME UI + FULL TOH SUITE v3
+--// RYU HUB - TOWER OF HELL EDITION (TJS) v4.1
+--// FULL SUITE + ADVANCED FEATURES & TROLLS
 --// ==========================================
 
 local CoreGui = game:GetService("CoreGui")
@@ -28,12 +28,29 @@ end
 bindChar(char)
 lp.CharacterAdded:Connect(bindChar)
 
---// ── TOWER OF HELL CONFIG ────────────────────────────────────────────────────
+--// ── CONFIGURATION & SETTINGS ────────────────────────────────────────────────
 local CFG = {
-    noclip        = true,
+    -- New requested features
+    flySpeed        = 50,
+    invincible      = false,
+    floatSpeed      = 50,
+    floatAscend     = 50,
+    floatDescend    = 50,
+    noclip          = true,
+    invisible       = false,
+    infiniteJump    = false,
+    fallProtect     = false,
+    jumpEsp         = false,
+    playerEsp       = false,
+    autoFarm        = false,
+    autoFarmInterval= 1, -- minutes
+    customJump      = 50,
+    freecam         = false,
+    freecamSpeed    = 1,
+    
+    -- Original / Troll features
     godmode       = false,
     fly           = false,
-    flySpeed      = 60,
     dashSpeed     = 120,
     dashCooldown  = 0.6,
     elevStep      = 60,
@@ -42,11 +59,9 @@ local CFG = {
     farmStep      = 10,
     speedMult     = 3,
     jumpMult      = 3,
-    invisible     = false,
     antiVoid      = false,
     antiVoidY     = -50,
     flingForce    = 9e4,
-    infiniteJump  = false,
     lowGravity    = false,
     defaultGrav   = 196.2,
     lowGravVal    = 40,
@@ -56,7 +71,7 @@ local CFG = {
     reachMult     = 10,
     defaultSpeed  = 16,
     defaultJump   = 50,
-    -- Troll
+    
     trollFollow       = false,
     trollChat         = false,
     trollCamLock      = false,
@@ -75,6 +90,10 @@ local CFG = {
 }
 
 local selectedTarget = nil
+local savedCheckpoint = nil
+local checkpointGhost = nil
+local checkpointLabel = nil
+local espHolders = {}
 
 --// 1. GUI CLEANUP & INJECTION
 local guiParent
@@ -123,7 +142,7 @@ local function AddClickPop(element)
     end)
 end
 
--- FIXED TOP LEFT TOGGLE BUTTON (Under Roblox Logo)
+-- FIXED TOP LEFT TOGGLE BUTTON
 local ToggleBtn = Instance.new("TextButton")
 ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
 ToggleBtn.Position = UDim2.new(0, 15, 0, 60)
@@ -366,6 +385,46 @@ local function CreateToggle(section, text, descText, defaultState, callback)
     end)
 end
 
+local function CreateSlider(section, text, min, max, default, callback)
+    itemOrderCounter = itemOrderCounter + 1
+    local frame = Instance.new("Frame", section)
+    frame.LayoutOrder = itemOrderCounter; frame.Size = UDim2.new(0.92, 0, 0, 50); frame.BackgroundTransparency = 1
+    
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(1, -40, 0, 18); label.BackgroundTransparency = 1; label.Text = text; label.TextColor3 = Theme.SubText
+    label.Font = Enum.Font.GothamMedium; label.TextSize = 13; label.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local valLabel = Instance.new("TextLabel", frame)
+    valLabel.Size = UDim2.new(0, 40, 0, 18); valLabel.Position = UDim2.new(1, -40, 0, 0); valLabel.BackgroundTransparency = 1; valLabel.Text = tostring(default)
+    valLabel.TextColor3 = Theme.Accent; valLabel.Font = Enum.Font.GothamBold; valLabel.TextSize = 13; valLabel.TextXAlignment = Enum.TextXAlignment.Right
+    
+    local sliderBg = Instance.new("Frame", frame)
+    sliderBg.Size = UDim2.new(1, 0, 0, 4); sliderBg.Position = UDim2.new(0, 0, 0, 32); sliderBg.BackgroundColor3 = Theme.ToggleOff
+    Instance.new("UICorner", sliderBg).CornerRadius = UDim.new(1, 0)
+    
+    local sliderFill = Instance.new("Frame", sliderBg)
+    local percentage = math.clamp((default - min) / (max - min), 0, 1)
+    sliderFill.Size = UDim2.new(percentage, 0, 1, 0); sliderFill.BackgroundColor3 = Theme.Accent
+    Instance.new("UICorner", sliderFill).CornerRadius = UDim.new(1, 0)
+    
+    local knob = Instance.new("TextButton", sliderFill)
+    knob.Size = UDim2.new(0, 14, 0, 14); knob.Position = UDim2.new(1, -7, 0.5, -7); knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255); knob.Text = ""
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+    
+    local dragging = false
+    knob.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = true end end)
+    UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local relative = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
+            local value = math.floor(min + (max - min) * relative * 10) / 10
+            valLabel.Text = tostring(value)
+            sliderFill.Size = UDim2.new(relative, 0, 1, 0)
+            if callback then pcall(function() callback(value) end) end
+        end
+    end)
+end
+
 local function CreateButton(section, text, color, callback)
     if type(color) == "function" then callback = color; color = Theme.SectionBG end
     itemOrderCounter = itemOrderCounter + 1
@@ -380,7 +439,7 @@ local function CreateButton(section, text, color, callback)
 end
 
 --// ==========================================
---// TOWER OF HELL LOGIC INTEGRATION
+--// INTEGRATED TOWER OF HELL ENGINE
 --// ==========================================
 
 -- NOCLIP
@@ -391,10 +450,11 @@ RunService.Stepped:Connect(function()
     end
 end)
 
--- GODMODE
+-- GODMODE / INVINCIBILITY
 local godConn
 local function setGodmode(on)
     CFG.godmode = on
+    CFG.invincible = on
     if godConn then godConn:Disconnect() godConn = nil end
     if on then
         godConn = RunService.Heartbeat:Connect(function()
@@ -403,7 +463,7 @@ local function setGodmode(on)
     end
 end
 
--- FLY
+-- FLY WITH ADJUSTABLE SPEED
 local flyConn
 local flyBV, flyBA
 local flyKeys = {f=false,b=false,l=false,r=false,up=false,down=false}
@@ -474,10 +534,6 @@ local function doDash(direction)
     task.delay(0.18, function() if bv and bv.Parent then bv:Destroy() end end)
     task.delay(CFG.dashCooldown, function() dashReady = true end)
 end
-UserInputService.InputBegan:Connect(function(i,gp)
-    if gp then return end
-    if i.KeyCode == Enum.KeyCode.Q then doDash() end
-end)
 
 local function doElevator()
     if not root then return end
@@ -574,7 +630,7 @@ local function setSpinBot(on)
     if not on then return end
     spinConn = RunService.Heartbeat:Connect(function()
         if not root then return end
-        root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(CFG.spinSpeed), 0)
+        root.CFrame = root.CFrame * CFG.Angles(0, math.rad(CFG.spinSpeed), 0)
     end)
 end
 
@@ -605,179 +661,106 @@ local function setHitbox(on)
     end
 end
 
---// TROLL FUNCTIONS
-local function getTRoot()
-    if not selectedTarget then return nil end
-    local t = Players:FindFirstChild(selectedTarget)
-    if not t or not t.Character then return nil end
-    return t.Character:FindFirstChild("HumanoidRootPart")
-end
-
-local followConn
-local function setFollow(on)
-    CFG.trollFollow = on
-    if followConn then followConn:Disconnect() followConn = nil end
-    if not on then return end
-    followConn = RunService.Heartbeat:Connect(function()
-        local tr = getTRoot()
-        if not tr or not root then return end
-        root.CFrame = tr.CFrame * CFrame.new(0, 0, 4)
-    end)
-end
-
-local chatSpamConn
-local spamMessages = { "ez", "tohtop", "speedrun god", "why so slow", "not even trying" }
-local spamIdx = 1
-local function setChatSpam(on)
-    CFG.trollChatSpam = on
-    if chatSpamConn then task.cancel(chatSpamConn) chatSpamConn = nil end
-    if not on then return end
-    chatSpamConn = task.spawn(function()
-        while CFG.trollChatSpam do
-            if char and char:FindFirstChild("Head") then
-                Chat:Chat(char.Head, spamMessages[spamIdx], Enum.ChatColor.White)
-                spamIdx = (spamIdx % #spamMessages) + 1
-            end
-            task.wait(3)
-        end
-    end)
-end
-
-local function sendFakeAdmin()
-    if char and char:FindFirstChild("Head") then
-        Chat:Chat(char.Head, "⚠ [ADMIN] Exploit warning logged for session.", Enum.ChatColor.Red)
-    end
-end
-
-local fakeErrorGui
-local function showFakeError(on)
-    CFG.trollFakeError = on
-    if fakeErrorGui then fakeErrorGui:Destroy() fakeErrorGui = nil end
-    if not on then return end
-    fakeErrorGui = Instance.new("ScreenGui", lp.PlayerGui)
-    local bg = Instance.new("Frame", fakeErrorGui)
-    bg.Size = UDim2.new(1,0,1,0); bg.BackgroundColor3 = Color3.fromRGB(0,0,180); bg.BorderSizePixel = 0; bg.ZIndex = 100
-    local l = Instance.new("TextLabel", bg)
-    l.Size = UDim2.new(0.9,0,0,100); l.Position = UDim2.new(0.05,0,0.1,0); l.BackgroundTransparency = 1; l.Text = ":(\nYour PC ran into a problem."
-    l.TextColor3 = Color3.fromRGB(255,255,255); l.Font = Enum.Font.Code; l.TextSize = 36; l.TextXAlignment = Enum.TextXAlignment.Left; l.ZIndex = 101
-    task.delay(5, function() if fakeErrorGui then fakeErrorGui:Destroy() end end)
-end
-
-local function setGhostMode(on)
-    CFG.trollGhostMode = on
-    setInvisible(on)
-end
-
-local function fakeFloorRemove()
-    local tr = getTRoot()
-    if not tr then return end
-    local pos = tr.Position
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and not obj:IsDescendantOf(char) then
-            if (obj.Position - pos).Magnitude < 15 and obj.Position.Y < pos.Y then
-                obj.CanCollide = false
-            end
-        end
-    end
-end
-
-local copycatConn
-local function setCopycat(on)
-    CFG.trollCopycat = on
-    if copycatConn then copycatConn:Disconnect() copycatConn = nil end
-    if not on then return end
-    copycatConn = RunService.Heartbeat:Connect(function()
-        local tr = getTRoot()
-        if not tr or not root then return end
-        root.CFrame = tr.CFrame
-    end)
-end
-
-local camLockConn
-local function setCamLock(on)
-    CFG.trollCamLock = on
-    if camLockConn then camLockConn:Disconnect() camLockConn = nil end
-    if not on then camera.CameraType = Enum.CameraType.Custom return end
-    camera.CameraType = Enum.CameraType.Scriptable
-    camLockConn = RunService.RenderStepped:Connect(function()
-        local tr = getTRoot()
-        if not tr or not root then return end
-        camera.CFrame = CFrame.new(root.Position, tr.Position)
-    end)
-end
-
-local function setSizeGrow(on)
-    CFG.trollSizeGrow = on
-    if not on then return end
-    task.spawn(function()
-        for i = 1, 15 do
-            if not CFG.trollSizeGrow then break end
-            if char then for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") then p.Size = p.Size * 1.05 end end end
-            task.wait(0.1)
-        end
-    end)
-end
-
-local function setSizeShrink(on)
-    CFG.trollSizeShrink = on
-    if not on then return end
-    task.spawn(function()
-        for i = 1, 15 do
-            if not CFG.trollSizeShrink then break end
-            if char then for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") then p.Size = p.Size * 0.95 end end end
-            task.wait(0.1)
-        end
-    end)
-end
-
-local function setGiantHead(on)
-    CFG.trollHeadSize = on
-    if not char then return end
-    local head = char:FindFirstChild("Head")
-    if head then head.Size = on and Vector3.new(4,4,4) or Vector3.new(2,1,1) end
-end
-
-local bobbleConn, bobbleT = nil, 0
-local function setBobble(on)
-    CFG.trollBobble = on
-    if bobbleConn then bobbleConn:Disconnect() bobbleConn = nil end
-    if not on then return end
-    bobbleConn = RunService.RenderStepped:Connect(function(dt)
-        bobbleT = bobbleT + dt * 8
-        if not char then return end
-        local neck = char:FindFirstChild("Neck", true)
-        if neck and neck:IsA("Motor6D") then
-            neck.C0 = neck.C0 * CFrame.Angles(math.sin(bobbleT)*0.4, 0, math.cos(bobbleT)*0.2)
-        end
-    end)
-end
-
-local function doScreenShake()
-    local t = 0
-    local conn
-    conn = RunService.RenderStepped:Connect(function(dt)
-        t = t + dt
-        if t > 3 then conn:Disconnect() return end
-        camera.CFrame = camera.CFrame * CFrame.new(math.random()*0.4-0.2, math.random()*0.4-0.2, 0)
-    end)
-end
-
-local function doYeetSelf()
+-- CHECKPOINT SYSTEM (C = Set, V = TP)
+local function setCheckpoint()
     if not root then return end
-    root.Velocity = Vector3.new(0, 350, 0)
+    savedCheckpoint = root.CFrame
+    if checkpointGhost then checkpointGhost:Destroy() end
+    checkpointGhost = char:Clone()
+    checkpointGhost.Name = "CheckpointGhost"
+    for _, p in ipairs(checkpointGhost:GetDescendants()) do
+        if p:IsA("BasePart") then p.Transparency = 0.5 p.Color = Color3.fromRGB(0,255,100) p.CanCollide = false end
+    end
+    checkpointGhost.Parent = Workspace
+    checkpointGhost:SetPrimaryPartCFrame(savedCheckpoint)
 end
 
-local discoConn
-local function setDisco(on)
-    if discoConn then discoConn:Disconnect() discoConn = nil end
-    if not on then return end
-    discoConn = RunService.Heartbeat:Connect(function()
-        if not char then return end
-        for _, p in ipairs(char:GetDescendants()) do
-            if p:IsA("BasePart") then p.BrickColor = BrickColor.Random() end
+local function tpToCheckpoint()
+    if savedCheckpoint and root then
+        root.CFrame = savedCheckpoint
+    end
+end
+
+local function clearCheckpoint()
+    savedCheckpoint = nil
+    if checkpointGhost then checkpointGhost:Destroy() checkpointGhost = nil end
+end
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.C then
+        setCheckpoint()
+    elseif input.KeyCode == Enum.KeyCode.V then
+        tpToCheckpoint()
+    end
+end)
+
+-- FREECAM
+local freecamConn
+local freecamPos = Vector3.zero
+local function setFreecam(on)
+    CFG.freecam = on
+    if freecamConn then freecamConn:Disconnect() freecamConn = nil end
+    if on then
+        freecamPos = camera.CFrame.Position
+        camera.CameraType = Enum.CameraType.Scriptable
+        freecamConn = RunService.RenderStepped:Connect(function(dt)
+            local speed = CFG.freecamSpeed * 50 * dt
+            local cf = camera.CFrame
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then freecamPos = freecamPos + cf.LookVector * speed end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then freecamPos = freecamPos - cf.LookVector * speed end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then freecamPos = freecamPos - cf.RightVector * speed end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then freecamPos = freecamPos + cf.RightVector * speed end
+            if UserInputService:IsKeyDown(Enum.KeyCode.E) then freecamPos = freecamPos + Vector3.new(0, 1, 0) * speed end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Q) then freecamPos = freecamPos - Vector3.new(0, 1, 0) * speed end
+            camera.CFrame = CFrame.new(freecamPos, freecamPos + cf.LookVector)
+        end)
+    else
+        camera.CameraType = Enum.CameraType.Custom
+    end
+end
+
+-- AUTO FARM (Cycles tower finishes)
+task.spawn(function()
+    while task.wait(1) do
+        if CFG.autoFarm then
+            tpToWin()
+            task.wait(CFG.autoFarmInterval * 60)
+        end
+    end
+end)
+
+-- FALL PROTECT & FALL ESP
+RunService.RenderStepped:Connect(function()
+    pcall(function()
+        if not char or not root or not hum then return end
+        
+        -- Fall protect
+        if CFG.fallProtect and hum:GetState() == Enum.HumanoidStateType.Freefall then
+            if root.Position.Y < (savedCheckpoint and savedCheckpoint.Position.Y or 0) then
+                if savedCheckpoint then root.CFrame = savedCheckpoint end
+            end
+        end
+        
+        -- Jump / Fall ESP highlighting
+        if CFG.jumpEsp and (hum:GetState() == Enum.HumanoidStateType.Freefall or hum:GetState() == Enum.HumanoidStateType.Jumping) then
+            for _, p in pairs(char:GetDescendants()) do
+                if p:IsA("BasePart") then p.Color = Color3.fromRGB(255, 100, 255) end
+            end
+        end
+        
+        -- Player ESP
+        if CFG.playerEsp then
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= lp and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    local h = p.Character:FindFirstChild("Highlight") or Instance.new("Highlight", p.Character)
+                    h.FillColor = Color3.fromRGB(255, 255, 255)
+                end
+            end
         end
     end)
-end
+end)
+
 
 --// ==========================================
 --// BUILD TABS & SECTIONS
@@ -790,9 +773,11 @@ local SubMove = CreateSubTab(TabCombat, "Movement")
 local SecMove = CreateSection(SubMove, "Speed & Boosts")
 CreateToggle(SecMove, "Speed Boost (x3)", false, function(s) setSpeed(s) end)
 CreateToggle(SecMove, "Super Jump (x3)", false, function(s) setJump(s) end)
+CreateSlider(SecMove, "Custom Jump Height", 0, 500, 50, function(v) CFG.customJump = v if hum then hum.JumpPower = v end end)
 CreateToggle(SecMove, "Infinite Jump", false, function(s) CFG.infiniteJump = s end)
 CreateToggle(SecMove, "Low Gravity", false, function(s) setLowGrav(s) end)
 CreateToggle(SecMove, "Fly", false, function(s) setFly(s) end)
+CreateSlider(SecMove, "Fly Speed", 1, 200, 60, function(v) CFG.flySpeed = v end)
 CreateButton(SecMove, "Dash (Q)", Theme.SectionBG, function() doDash() end)
 
 -- SubTab: Teleport / Tower
@@ -802,15 +787,32 @@ CreateButton(SecTp, "Elevator (+60 Studs)", Theme.SectionBG, function() doElevat
 CreateButton(SecTp, "TP +100 Studs Step", Theme.SectionBG, function() tpStep() end)
 CreateButton(SecTp, "TP to Win Zone", Theme.SectionBG, function() tpToWin() end)
 CreateButton(SecTp, "Auto Climb Tower", Theme.SectionBG, function() autofarm() end)
+CreateToggle(SecTp, "Auto Farm (Cycle Finishes)", false, function(s) CFG.autoFarm = s end)
+CreateSlider(SecTp, "Auto Farm Interval (Min)", 0, 8, 1, function(v) CFG.autoFarmInterval = v end)
 
--- TAB: FARM (Protections & Combat Helpers)
+-- SubTab: Checkpoints
+local SubChk = CreateSubTab(TabCombat, "Checkpoints")
+local SecChk = CreateSection(SubChk, "Checkpoint System")
+CreateButton(SecChk, "Set Checkpoint (Key: C)", Theme.SectionBG, function() setCheckpoint() end)
+CreateButton(SecChk, "Teleport to Checkpoint (Key: V)", Theme.SectionBG, function() tpToCheckpoint() end)
+CreateButton(SecChk, "Clear Checkpoint", Theme.SectionBG, function() clearCheckpoint() end)
+
+-- SubTab: Freecam
+local SubCam = CreateSubTab(TabCombat, "Freecam")
+local SecCam = CreateSection(SubCam, "Free Camera Engine")
+CreateToggle(SecCam, "Enable Freecam (WASD + Q/E)", false, function(s) setFreecam(s) end)
+CreateSlider(SecCam, "Freecam Speed", 1, 10, 1, function(v) CFG.freecamSpeed = v end)
+
+-- TAB: FARM (Protections)
 local TabFarm = CreateMainTab("Farm")
 local SubProt = CreateSubTab(TabFarm, "Protections")
 local SecProt = CreateSection(SubProt, "Safety Suites")
 CreateToggle(SecProt, "Noclip", true, function(s) CFG.noclip = s end)
 CreateToggle(SecProt, "Godmode", false, function(s) setGodmode(s) end)
+CreateToggle(SecProt, "Invincibility (Lava/Killparts)", false, function(s) setGodmode(s) end)
 CreateToggle(SecProt, "Invisible", false, function(s) setInvisible(s) end)
 CreateToggle(SecProt, "Anti-Void", false, function(s) setAntiVoid(s) end)
+CreateToggle(SecProt, "Fall Protect", false, function(s) CFG.fallProtect = s end)
 CreateToggle(SecProt, "Hitbox Expander", false, function(s) setHitbox(s) end)
 
 -- TAB: VISUALS
@@ -819,6 +821,8 @@ local SubVis = CreateSubTab(TabVisuals, "Client Mods")
 local SecVis = CreateSection(SubVis, "Client Visuals")
 CreateToggle(SecVis, "Freeze Character", false, function(s) setFreeze(s) end)
 CreateToggle(SecVis, "Spin Bot", false, function(s) setSpinBot(s) end)
+CreateToggle(SecVis, "Jump / Fall ESP", false, function(s) CFG.jumpEsp = s end)
+CreateToggle(SecVis, "Player ESP", false, function(s) CFG.playerEsp = s end)
 
 -- TAB: SETTINGS & TROLL
 local TabSettings = CreateMainTab("Settings")
@@ -855,6 +859,17 @@ CreateButton(SecTrollActions, "Fake Floor Remove", Theme.SectionBG, function() f
 
 local SubSys = CreateSubTab(TabSettings, "System")
 local SecSys = CreateSection(SubSys, "Utilities")
+CreateInput(SecSys, "Impersonate Player (Username)", function(name)
+    pcall(function()
+        local targetPlr = Players:FindFirstChild(name)
+        if targetPlr and targetPlr.Character and char then
+            local desc = targetPlr.Character:FindFirstChildOfClass("HumanoidDescription")
+            if desc and hum then
+                hum:ApplyDescriptionReset(desc)
+            end
+        end
+    end)
+end)
 CreateToggle(SecSys, "Anti-AFK Protection", false, function(v)
     if v then
         LocalPlayer.Idled:Connect(function()
@@ -873,4 +888,4 @@ pcall(function()
     if Tabs[1] and Tabs[1].SubTabs[1] and Tabs[1].SubTabs[1].Open then Tabs[1].SubTabs[1].Open() end 
 end)
 
-print("[Ryu Hub] Tower of Hell Suite fully integrated into Monochrome Overlay.")
+print("[Ryu Hub] Tower of Hell Suite fully loaded with custom features.")
