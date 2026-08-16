@@ -1,6 +1,6 @@
 --// ==========================================
---// RYU HUB - TOWER OF HELL SUITE v6.1
---// MONOCHROME - CLOSEST FINISH & SKIN FIX
+--// RYU HUB - TOWER OF HELL SUITE v6.2
+--// MONOCHROME - GLOBAL SKINS & AUTO WIN FIXED
 --// ==========================================
 
 local CoreGui = game:GetService("CoreGui")
@@ -246,6 +246,7 @@ local SubTitle = Instance.new("TextLabel", Topbar)
 SubTitle.Size = UDim2.new(0, 300, 0, 15); SubTitle.Position = UDim2.new(0, 20, 0, 38); SubTitle.BackgroundTransparency = 1
 SubTitle.Text = "Tower of Hell Suite"; SubTitle.TextColor3 = Theme.SubText; SubTitle.Font = Enum.Font.Gotham; SubTitle.TextSize = 11; SubTitle.TextXAlignment = Enum.TextXAlignment.Left
 
+-- CLOSE BUTTON
 local CloseBtn = Instance.new("TextButton", Topbar)
 CloseBtn.Size = UDim2.new(0, 28, 0, 28)
 CloseBtn.Position = UDim2.new(1, -40, 0, 15)
@@ -274,6 +275,7 @@ Topbar.InputChanged:Connect(function(input)
     if mDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
         local delta = input.Position - mDragStart
         MainFrame.Position = UDim2.new(mStartPos.X.Scale, mStartPos.X.Offset + delta.X, mStartPos.Y.Scale, mStartPos.Y.Offset + delta.Y)
+        DiscordWatermark.Position = UDim2.new(0.5, -150, 0.5, MainFrame.Position.Y.Offset - 35)
     end
 end)
 Topbar.InputEnded:Connect(function(input)
@@ -427,15 +429,14 @@ local function CreateToggle(section, text, descText, defaultState, callback)
     circle.BackgroundColor3 = defaultState and Theme.Background or Color3.fromRGB(150, 150, 150)
     Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
     
-    local isOn = defaultState or false
     tBtn.MouseButton1Click:Connect(function()
-        isOn = not isOn
+        defaultState = not defaultState
         pcall(function()
-            TweenService:Create(tBtn, TweenInfo.new(0.2), {BackgroundColor3 = isOn and Theme.ToggleOn or Theme.ToggleOff}):Play()
-            TweenService:Create(circle, TweenInfo.new(0.2), {Position = isOn and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8), BackgroundColor3 = isOn and Theme.Background or Color3.fromRGB(150, 150, 150)}):Play()
-            label.TextColor3 = isOn and Theme.Text or Theme.SubText
+            TweenService:Create(tBtn, TweenInfo.new(0.2), {BackgroundColor3 = defaultState and Theme.ToggleOn or Theme.ToggleOff}):Play()
+            TweenService:Create(circle, TweenInfo.new(0.2), {Position = defaultState and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8), BackgroundColor3 = defaultState and Theme.Background or Color3.fromRGB(150, 150, 150)}):Play()
+            label.TextColor3 = defaultState and Theme.Text or Theme.SubText
         end)
-        if callback then pcall(function() callback(isOn) end) end
+        if callback then pcall(function() callback(defaultState) end) end
     end)
 end
 
@@ -520,6 +521,7 @@ local function CreateDropdown(section, headerText, itemsList, targetConfigKey, c
         end
         task.defer(function() scroll.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10) end)
     end
+    listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() scroll.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10) end)
     populate(itemsList)
     return { Refresh = populate }
 end
@@ -536,18 +538,10 @@ local function CreateInput(section, placeholder, callback)
 end
 
 --// ==========================================
---// TOWER OF HELL LOGIC (CLOSEST FINISH + SKINS)
+--// SYSTEM LOGIC (AUTO WIN, SKINS, PHYSICS)
 --// ==========================================
 
-RunService.Stepped:Connect(function()
-    if not CFG.noclip or not char then return end
-    pcall(function()
-        for _, p in ipairs(char:GetDescendants()) do
-            if p:IsA("BasePart") then p.CanCollide = false end
-        end
-    end)
-end)
-
+-- FLY / SPEED / JUMP / DASH
 local flyConn, flyBV
 local flyKeys = {f=false,b=false,l=false,r=false,up=false,down=false}
 local function setFly(on)
@@ -587,6 +581,16 @@ UserInputService.InputBegan:Connect(function(i, gp)
     if k == Enum.KeyCode.D then flyKeys.r = true end
     if k == Enum.KeyCode.Space then flyKeys.up = true end
     if k == Enum.KeyCode.LeftControl then flyKeys.down = true end
+    if k == Enum.KeyCode.Q then
+        pcall(function()
+            if not root then return end
+            local dir = (camera.CFrame.LookVector * Vector3.new(1,0,1)).Unit
+            local bv = Instance.new("BodyVelocity", root)
+            bv.MaxForce = Vector3.new(1e5, 0, 1e5)
+            bv.Velocity = dir * CFG.dashSpeed
+            task.delay(0.18, function() if bv and bv.Parent then bv:Destroy() end end)
+        end)
+    end
 end)
 UserInputService.InputEnded:Connect(function(i)
     local k = i.KeyCode
@@ -598,32 +602,6 @@ UserInputService.InputEnded:Connect(function(i)
     if k == Enum.KeyCode.LeftControl then flyKeys.down = false end
 end)
 
-local dashReady = true
-local function doDash()
-    pcall(function()
-        if not root or not hum then return end
-        local dir = (camera.CFrame.LookVector * Vector3.new(1,0,1)).Unit
-        local bv = Instance.new("BodyVelocity", root)
-        bv.MaxForce = Vector3.new(1e5, 0, 1e5)
-        bv.Velocity = dir * CFG.dashSpeed
-        task.delay(0.18, function() if bv and bv.Parent then bv:Destroy() end end)
-    end)
-end
-
-UserInputService.InputBegan:Connect(function(i, gp)
-    if not gp and i.KeyCode == Enum.KeyCode.Q then doDash() end
-end)
-
-local function setSpeed(on)
-    CFG.speedBoost = on
-    pcall(function() if hum then hum.WalkSpeed = on and CFG.speedVal or 16 end end)
-end
-
-local function setJump(on)
-    CFG.superJump = on
-    pcall(function() if hum then hum.JumpPower = on and CFG.jumpVal or 50 end end)
-end
-
 UserInputService.JumpRequest:Connect(function()
     pcall(function()
         if CFG.infiniteJump and hum then
@@ -632,49 +610,7 @@ UserInputService.JumpRequest:Connect(function()
     end)
 end)
 
-local function setInvisible(on)
-    CFG.invisible = on
-    pcall(function()
-        if not char then return end
-        for _, p in ipairs(char:GetDescendants()) do
-            if p:IsA("BasePart") or p:IsA("Decal") then
-                if p.Name ~= "HumanoidRootPart" then
-                    p.Transparency = on and 0.3 or 0
-                end
-            end
-        end
-    end)
-end
-
-local antiVoidConn
-local function setAntiVoid(on)
-    CFG.antiVoid = on
-    if antiVoidConn then antiVoidConn:Disconnect() antiVoidConn = nil end
-    if not on then return end
-    antiVoidConn = RunService.Heartbeat:Connect(function()
-        pcall(function()
-            if not root then return end
-            if root.Position.Y < CFG.antiVoidY then
-                root.CFrame = CFrame.new(root.Position.X, CFG.antiVoidY + 25, root.Position.Z)
-            end
-        end)
-    end)
-end
-
-local spinConn
-local function setSpin(on)
-    CFG.spin = on
-    if spinConn then spinConn:Disconnect() spinConn = nil end
-    if not on then return end
-    spinConn = RunService.Heartbeat:Connect(function()
-        pcall(function()
-            if not root then return end
-            root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(CFG.spinSpeed), 0)
-        end)
-    end)
-end
-
--- AUTO WIN (CLOSEST FINISH)
+-- AUTO WIN (CLOSEST FINISH VIA FOLDER)
 local function tpToClosestFinish()
     pcall(function()
         if not root then return end
@@ -682,34 +618,22 @@ local function tpToClosestFinish()
         local targetPart = nil
         local minDistance = math.huge
         
-        if finishesFolder then
-            for _, child in ipairs(finishesFolder:GetChildren()) do
-                if child:IsA("BasePart") then
-                    local dist = (child.Position - root.Position).Magnitude
-                    if dist < minDistance then
-                        minDistance = dist
-                        targetPart = child
-                    end
-                end
-            end
-        end
-        
-        if not targetPart then
-            for _, obj in ipairs(workspace:GetDescendants()) do
-                if obj:IsA("BasePart") and (obj.Name:lower() == "finish" or obj.Name:lower() == "endzone") then
-                    local dist = (obj.Position - root.Position).Magnitude
-                    if dist < minDistance then
-                        minDistance = dist
-                        targetPart = obj
-                    end
+        local searchArea = finishesFolder and finishesFolder:GetDescendants() or Workspace:GetDescendants()
+        for _, child in ipairs(searchArea) do
+            if child:IsA("BasePart") and (child.Name:lower() == "finish" or child.Name:lower() == "endzone") then
+                local dist = (child.Position - root.Position).Magnitude
+                if dist < minDistance then
+                    minDistance = dist
+                    targetPart = child
                 end
             end
         end
         
         if targetPart then
-            root.CFrame = targetPart.CFrame + Vector3.new(0, 3, 0)
+            root.CFrame = targetPart.CFrame * CFrame.new(0, 3, 0)
+            SendNotification("Auto Win", "Teleported to nearest finish!", 2)
         else
-            root.CFrame = root.CFrame + Vector3.new(0, 500, 0)
+            SendNotification("Auto Win", "No finish found!", 2)
         end
         
         if hum then hum:ChangeState(Enum.HumanoidStateType.Physics) task.wait(0.6) hum:ChangeState(Enum.HumanoidStateType.GettingUp) end
@@ -721,7 +645,6 @@ task.spawn(function()
         pcall(function()
             if CFG.autoWin then
                 tpToClosestFinish()
-                SendNotification("Auto Win", "Teleported to closest finish!", 2)
                 task.wait(CFG.autoWinInterval * 60)
             end
         end)
@@ -739,6 +662,130 @@ local function doServerRejoin()
         end
     end)
 end
+
+-- MAIN BACKGROUND LOOP (Speed, Spin, Invis, Noclip)
+RunService.Stepped:Connect(function()
+    pcall(function()
+        if not char or not root or not hum then return end
+        
+        if CFG.noclip then
+            for _, p in ipairs(char:GetDescendants()) do
+                if p:IsA("BasePart") then p.CanCollide = false end
+            end
+        end
+        
+        if CFG.speedBoost then hum.WalkSpeed = CFG.speedVal else if hum.WalkSpeed > 30 then hum.WalkSpeed = 16 end end
+        if CFG.superJump then hum.JumpPower = CFG.jumpVal else if hum.JumpPower > 60 then hum.JumpPower = 50 end end
+        
+        if CFG.spin then
+            root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(CFG.spinSpeed), 0)
+        end
+        
+        if CFG.invisible then
+            for _, p in ipairs(char:GetDescendants()) do
+                if p:IsA("BasePart") or p:IsA("Decal") then
+                    if p.Name ~= "HumanoidRootPart" then p.Transparency = 0.3 end
+                end
+            end
+        end
+    end)
+end)
+
+-- GLOBAL SKIN CHANGER (BYPASSING APPLYDESCRIPTION BLOCK)
+local function applyGlobalSkin(username)
+    task.spawn(function()
+        local userId
+        local s1, _ = pcall(function() userId = Players:GetUserIdFromNameAsync(username) end)
+        if s1 and userId then
+            local dummy
+            local s2, _ = pcall(function() dummy = Players:CreateHumanoidModelFromUserId(userId) end)
+            
+            if s2 and dummy and char then
+                -- Clear current accessories & clothes
+                for _, v in pairs(char:GetChildren()) do
+                    if v:IsA("Accessory") or v:IsA("Shirt") or v:IsA("Pants") or v:IsA("ShirtGraphic") or v:IsA("CharacterMesh") or v:IsA("BodyColors") then
+                        v:Destroy()
+                    end
+                end
+                
+                -- Copy from dummy
+                for _, v in pairs(dummy:GetChildren()) do
+                    if v:IsA("Accessory") or v:IsA("Shirt") or v:IsA("Pants") or v:IsA("ShirtGraphic") or v:IsA("CharacterMesh") or v:IsA("BodyColors") then
+                        v:Clone().Parent = char
+                    end
+                end
+                
+                -- Copy face
+                local dHead = dummy:FindFirstChild("Head")
+                local mHead = char:FindFirstChild("Head")
+                if dHead and mHead then
+                    local dFace = dHead:FindFirstChildOfClass("Decal")
+                    local mFace = mHead:FindFirstChildOfClass("Decal")
+                    if dFace then
+                        if mFace then mFace.Texture = dFace.Texture else dFace:Clone().Parent = mHead end
+                    end
+                end
+                
+                dummy:Destroy()
+                
+                if not table.find(skinHistory, username) then
+                    table.insert(skinHistory, 1, username)
+                    if #skinHistory > 5 then table.remove(skinHistory, 6) end
+                end
+                SendNotification("Success", "Loaded global skin: " .. username, 2)
+            else
+                SendNotification("Error", "Could not load character model!", 2)
+            end
+        else
+            SendNotification("Error", "Player does not exist!", 2)
+        end
+    end)
+end
+
+-- Visual Name Changer & ESP
+RunService.RenderStepped:Connect(function()
+    pcall(function()
+        if CFG.playerEsp then
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= lp and p.Character then
+                    local h = p.Character:FindFirstChild("Highlight") or Instance.new("Highlight", p.Character)
+                    h.FillColor = Color3.fromRGB(255, 255, 255)
+                end
+            end
+        else
+            for _, p in pairs(Players:GetPlayers()) do
+                if p.Character then
+                    local h = p.Character:FindFirstChild("Highlight")
+                    if h then h:Destroy() end
+                end
+            end
+        end
+        
+        if CFG.fakeName ~= "" and char and char:FindFirstChild("Head") then
+            local head = char.Head
+            local bg = head:FindFirstChild("RyuFakeName")
+            if not bg then
+                bg = Instance.new("BillboardGui", head)
+                bg.Name = "RyuFakeName"; bg.Size = UDim2.new(0, 200, 0, 50); bg.StudsOffset = Vector3.new(0, 2.5, 0); bg.AlwaysOnTop = true
+                local tl = Instance.new("TextLabel", bg)
+                tl.Size = UDim2.new(1,0,1,0); tl.BackgroundTransparency = 1; tl.TextStrokeTransparency = 0; tl.Font = Enum.Font.GothamBold; tl.TextSize = 14
+            end
+            local lbl = bg:FindFirstChildOfClass("TextLabel")
+            if lbl then
+                lbl.Text = CFG.fakeName
+                if CFG.FakeNameColor == "Rainbow" then lbl.TextColor3 = Color3.fromHSV((tick()%5)/5, 1, 1)
+                elseif CFG.FakeNameColor == "Red" then lbl.TextColor3 = Color3.fromRGB(255, 50, 50)
+                elseif CFG.FakeNameColor == "Blue" then lbl.TextColor3 = Color3.fromRGB(50, 100, 255)
+                elseif CFG.FakeNameColor == "Green" then lbl.TextColor3 = Color3.fromRGB(50, 255, 50)
+                elseif CFG.FakeNameColor == "Yellow" then lbl.TextColor3 = Color3.fromRGB(255, 255, 50)
+                elseif CFG.FakeNameColor == "Neon Blue" then lbl.TextColor3 = Color3.fromRGB(0, 255, 255)
+                else lbl.TextColor3 = Color3.fromRGB(255, 255, 255) end
+            end
+        else
+            if char and char:FindFirstChild("Head") and char.Head:FindFirstChild("RyuFakeName") then char.Head.RyuFakeName:Destroy() end
+        end
+    end)
+end)
 
 -- FREECAM
 local freecamConn, freecamPos = nil, Vector3.zero
@@ -769,11 +816,10 @@ local function setFreecam(on)
 end
 
 --// ==========================================
---// BUILD TABS & SECTIONS
+--// TABS & SECTIONS UI
 --// ==========================================
 
 local TabBoost = CreateMainTab("Boost")
-
 local SubMove = CreateSubTab(TabBoost, "Speed & Jump")
 local SecMove = CreateSection(SubMove, "Movement Adjustments")
 CreateToggle(SecMove, "Speed Boost", false, function(s) setSpeed(s) end)
@@ -787,9 +833,9 @@ CreateButton(SecMove, "Dash (Q)", Theme.SectionBG, function() doDash() end)
 
 local SubProt = CreateSubTab(TabBoost, "Safety & Passives")
 local SecProt = CreateSection(SubProt, "Protections")
-CreateToggle(SecProt, "God Mode", "Permanent health refill", true, function(s) setGodmode(s) end)
+CreateToggle(SecProt, "God Mode", "Permanent health refill", true, function(s) CFG.godmode = s end)
 CreateToggle(SecProt, "Noclip", true, function(s) CFG.noclip = s end)
-CreateToggle(SecProt, "Invisible (Local visibility)", false, function(s) setInvisible(s) end)
+CreateToggle(SecProt, "Invisible (Local transparency)", false, function(s) setInvisible(s) end)
 CreateToggle(SecProt, "Anti-Void", false, function(s) setAntiVoid(s) end)
 
 local TabFarm = CreateMainTab("Auto Win")
@@ -812,8 +858,8 @@ CreateSlider(SecVis, "Freecam Speed", 1, 10, 1, function(v) CFG.freecamSpeed = v
 local TabCheck = CreateMainTab("Checkpoints")
 local SubChk = CreateSubTab(TabCheck, "Savepoints")
 local SecChk = CreateSection(SubChk, "Checkpoint System")
-
 local SaveLog = CreateLabel(SecChk, "Ready to save.")
+
 CreateButton(SecChk, "Save Checkpoint (C)", Theme.SectionBG, function()
     pcall(function()
         if root then
@@ -855,49 +901,7 @@ local TabTroll = CreateMainTab("Troll")
 local SubTrl = CreateSubTab(TabTroll, "Copy & Name")
 local SecTrl = CreateSection(SubTrl, "Troll Suite")
 
-local function applySkinByUsername(name)
-    task.spawn(function()
-        local userId
-        local s, _ = pcall(function() userId = Players:GetUserIdFromNameAsync(name) end)
-        if s and userId then
-            local s2, desc = pcall(function() return Players:GetHumanoidDescriptionFromUserId(userId) end)
-            if s2 and desc and hum and char then
-                
-                -- Fallback for LocalScript restriction
-                pcall(function()
-                    local shirt = char:FindFirstChildOfClass("Shirt") or Instance.new("Shirt", char)
-                    shirt.ShirtTemplate = desc.Shirt > 0 and "rbxassetid://" .. desc.Shirt or ""
-                    
-                    local pants = char:FindFirstChildOfClass("Pants") or Instance.new("Pants", char)
-                    pants.PantsTemplate = desc.Pants > 0 and "rbxassetid://" .. desc.Pants or ""
-                    
-                    local head = char:FindFirstChild("Head")
-                    if head then
-                        local face = head:FindFirstChildOfClass("Decal")
-                        if face and desc.Face > 0 then face.Texture = "rbxassetid://" .. desc.Face end
-                    end
-                end)
-                
-                -- Attempt official Application
-                pcall(function() hum:ApplyDescription(desc) end)
-                
-                if not table.find(skinHistory, name) then
-                    table.insert(skinHistory, 1, name)
-                    if #skinHistory > 5 then table.remove(skinHistory, 6) end
-                end
-                SendNotification("Success", "Applied skin of " .. name, 2)
-            else
-                SendNotification("Error", "Could not load description!", 2)
-            end
-        else
-            SendNotification("Error", "Player does not exist!", 2)
-        end
-    end)
-end
-
-CreateInput(SecTrl, "Copy Skin (Global Username)...", function(name)
-    applySkinByUsername(name)
-end)
+CreateInput(SecTrl, "Global Copy Skin (Username)...", function(name) applyGlobalSkin(name) end)
 
 local SecHistory = CreateSection(SubTrl, "Skin History (Last 5)")
 local historyContainer = Instance.new("Frame", SecHistory)
@@ -920,21 +924,15 @@ local function refreshSkinHistory()
             btn.Font = Enum.Font.GothamMedium
             btn.TextSize = 11
             Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-            btn.MouseButton1Click:Connect(function()
-                applySkinByUsername(username)
-            end)
+            btn.MouseButton1Click:Connect(function() applyGlobalSkin(username) end)
         end
     end)
 end
 
-task.spawn(function()
-    while task.wait(2) do refreshSkinHistory() end
-end)
+task.spawn(function() while task.wait(2) do refreshSkinHistory() end end)
 
-CreateInput(SecTrl, "Name Changer (Visual Name)...", function(v) CFG.fakeName = v end)
-CreateDropdown(SecTrl, "Name Color", {"White", "Red", "Blue", "Green", "Yellow", "Rainbow", "Neon Blue"}, "FakeNameColor", function(v)
-    CFG.FakeNameColor = v
-end)
+CreateInput(SecTrl, "Name Changer (Visual)...", function(v) CFG.fakeName = v end)
+CreateDropdown(SecTrl, "Name Color", {"White", "Red", "Blue", "Green", "Yellow", "Rainbow", "Neon Blue"}, "FakeNameColor", function(v) CFG.FakeNameColor = v end)
 
 local TabSettings = CreateMainTab("Settings")
 local SubSet = CreateSubTab(TabSettings, "Settings")
@@ -955,13 +953,7 @@ CreateToggle(SecSet, "Anti-AFK Protection", false, function(v)
 end)
 
 CreateLabel(SecSet, "Join Discord.gg/ryuhub to suggest more functions, scripts and more!")
-
-CreateButton(SecSet, "Reset Settings", Theme.Warning, function() 
-    pcall(function()
-        if isfile(CONFIG_FILE) then delfile(CONFIG_FILE) end
-        RyuHub:Destroy()
-    end)
-end)
+CreateButton(SecSet, "Reset Settings / Clean UI", Theme.Warning, function() pcall(function() ResetConfig() RyuHub:Destroy() end) end)
 
 --// INITIALIZE FIRST TAB
 pcall(function() 
@@ -969,50 +961,4 @@ pcall(function()
     if Tabs[1] and Tabs[1].SubTabs[1] and Tabs[1].SubTabs[1].Open then Tabs[1].SubTabs[1].Open() end 
 end)
 
--- Background Systems (ESP, Fake Name, etc)
-RunService.RenderStepped:Connect(function()
-    pcall(function()
-        if CFG.playerEsp then
-            for _, p in pairs(Players:GetPlayers()) do
-                if p ~= lp and p.Character then
-                    local h = p.Character:FindFirstChild("Highlight") or Instance.new("Highlight", p.Character)
-                    h.FillColor = Color3.fromRGB(255, 255, 255)
-                end
-            end
-        else
-            for _, p in pairs(Players:GetPlayers()) do
-                if p.Character then
-                    local h = p.Character:FindFirstChild("Highlight")
-                    if h then h:Destroy() end
-                end
-            end
-        end
-        
-        -- Fake Name Color Logic
-        if CFG.fakeName ~= "" and char and char:FindFirstChild("Head") then
-            local head = char.Head
-            local bg = head:FindFirstChild("RyuFakeName")
-            if not bg then
-                bg = Instance.new("BillboardGui", head)
-                bg.Name = "RyuFakeName"; bg.Size = UDim2.new(0, 200, 0, 50); bg.StudsOffset = Vector3.new(0, 2.5, 0); bg.AlwaysOnTop = true
-                local tl = Instance.new("TextLabel", bg)
-                tl.Size = UDim2.new(1,0,1,0); tl.BackgroundTransparency = 1; tl.TextStrokeTransparency = 0; tl.Font = Enum.Font.GothamBold; tl.TextSize = 14
-            end
-            local lbl = bg:FindFirstChildOfClass("TextLabel")
-            if lbl then
-                lbl.Text = CFG.fakeName
-                if CFG.FakeNameColor == "Rainbow" then lbl.TextColor3 = Color3.fromHSV((tick()%5)/5, 1, 1)
-                elseif CFG.FakeNameColor == "Red" then lbl.TextColor3 = Color3.fromRGB(255, 50, 50)
-                elseif CFG.FakeNameColor == "Blue" then lbl.TextColor3 = Color3.fromRGB(50, 100, 255)
-                elseif CFG.FakeNameColor == "Green" then lbl.TextColor3 = Color3.fromRGB(50, 255, 50)
-                elseif CFG.FakeNameColor == "Yellow" then lbl.TextColor3 = Color3.fromRGB(255, 255, 50)
-                elseif CFG.FakeNameColor == "Neon Blue" then lbl.TextColor3 = Color3.fromRGB(0, 255, 255)
-                else lbl.TextColor3 = Color3.fromRGB(255, 255, 255) end
-            end
-        else
-            if char and char:FindFirstChild("Head") and char.Head:FindFirstChild("RyuFakeName") then char.Head.RyuFakeName:Destroy() end
-        end
-    end)
-end)
-
-print("[Ryu Hub] ToH Suite v6.1 Initialized.")
+print("[Ryu Hub] ToH Suite v6.2 Initialized.")
