@@ -1,6 +1,6 @@
 --// ==========================================
---// RYU HUB - TOWER OF HELL SUITE v5.1
---// MONOCHROME - AUTO WIN FIX & SKIN HISTORY
+--// RYU HUB - TOWER OF HELL SUITE v5.2
+--// MONOCHROME - ERROR FIX & STABLE ENGINE
 --// ==========================================
 
 local CoreGui = game:GetService("CoreGui")
@@ -48,7 +48,7 @@ local CFG = {
     spinSpeed       = 35,
     playerEsp       = false,
     autoWin         = false,
-    autoWinInterval = 2, -- minutes
+    autoWinInterval = 2,
     freecam         = false,
     freecamSpeed    = 1,
     antiAfk         = false,
@@ -69,7 +69,8 @@ pcall(function()
         guiParent = CoreGui
     end
 end)
-if not guiParent then guiParent = LocalPlayer:WaitForChild("PlayerGui") end
+if not guiParent then pcall(function() guiParent = LocalPlayer:WaitForChild("PlayerGui") end) end
+if not guiParent then guiParent = CoreGui end
 
 for _, v in pairs(guiParent:GetChildren()) do 
     if v.Name == "RyuHubToH" or v.Name == "RyuNotifications" then v:Destroy() end 
@@ -122,9 +123,11 @@ local function SendNotification(title, text, duration)
     
     task.spawn(function()
         task.wait(duration)
-        TweenService:Create(f, TweenInfo.new(0.3), {BackgroundTransparency = 1, Size = UDim2.new(1,0,0,0)}):Play()
-        task.wait(0.3)
-        f:Destroy()
+        pcall(function()
+            TweenService:Create(f, TweenInfo.new(0.3), {BackgroundTransparency = 1, Size = UDim2.new(1,0,0,0)}):Play()
+            task.wait(0.3)
+            f:Destroy()
+        end)
     end)
 end
 
@@ -532,7 +535,7 @@ local function setFly(on)
         if flyKeys.l then dir = dir - cf.RightVector end
         if flyKeys.up then dir = dir + Vector3.new(0,1,0) end
         if flyKeys.down then dir = dir - Vector3.new(0,1,0) end
-        flyBV.Velocity = dir.Magnitude > 0 and dir.Unit * CFG.flySpeed else Vector3.zero end
+        flyBV.Velocity = dir.Magnitude > 0 and dir.Unit * CFG.flySpeed or Vector3.zero
     end)
 end
 
@@ -647,7 +650,6 @@ local function tpToFinishes()
     if targetPart then
         root.CFrame = targetPart.CFrame + Vector3.new(0, 3, 0)
     else
-        -- Fallback search by name
         for _, obj in ipairs(workspace:GetDescendants()) do
             if obj:IsA("BasePart") and (obj.Name:lower() == "finish" or obj.Name:lower() == "endzone") then
                 targetPart = obj
@@ -735,7 +737,6 @@ local SubVis = CreateSubTab(TabVisuals, "Client Mods")
 local SecVis = CreateSection(SubVis, "Visual Enhancements")
 CreateToggle(SecVis, "Spin Bot", false, function(s) setSpin(s) end)
 CreateSlider(SecVis, "Spin Speed", 10, 300, 35, function(v) CFG.spinSpeed = v end)
-CreateToggle(SecVis, "Player ESP", false, function(s) CFG.playerEsp = s end)
 CreateToggle(SecVis, "Freecam (WASD + Q/E)", false, function(s) setFreecam(s) end)
 CreateSlider(SecVis, "Freecam Speed", 1, 10, 1, function(v) CFG.freecamSpeed = v end)
 
@@ -783,14 +784,18 @@ local function applySkinByUsername(name)
         local targetPlr = Players:FindFirstChild(name)
         if targetPlr then
             local userId = targetPlr.UserId
-            local desc = Players:GetHumanoidDescriptionFromUserId(userId)
-            if desc and hum then
+            local success, desc = pcall(function()
+                return Players:GetHumanoidDescriptionFromUserId(userId)
+            end)
+            if success and desc and hum then
                 hum:ApplyDescriptionReset(desc)
-                -- Add to history (max 5)
                 if not table.find(skinHistory, name) then
                     table.insert(skinHistory, 1, name)
                     if #skinHistory > 5 then table.remove(skinHistory, 6) end
                 end
+                SendNotification("Success", "Applied skin of " .. name, 2)
+            else
+                SendNotification("Error", "Could not load description!", 2)
             end
         else
             SendNotification("Error", "Player not found!", 2)
@@ -804,7 +809,7 @@ end)
 
 local SecHistory = CreateSection(SubTrl, "Skin History (Last 5)")
 local historyContainer = Instance.new("Frame", SecHistory)
-historyContainer.Size = UDim2.new(0.92, 0, 0, 110)
+historyContainer.Size = UDim2.new(0.92, 0, 0, 140)
 historyContainer.BackgroundTransparency = 1
 local histLayout = Instance.new("UIListLayout", historyContainer)
 histLayout.Padding = UDim.new(0, 4)
@@ -816,7 +821,7 @@ local function refreshSkinHistory()
         end
         for i, username in ipairs(skinHistory) do
             local btn = Instance.new("TextButton", historyContainer)
-            btn.Size = UDim2.new(1, 0, 0, 24)
+            btn.Size = UDim2.new(1, 0, 0, 26)
             btn.BackgroundColor3 = Theme.Sidebar
             btn.TextColor3 = Theme.Text
             btn.Text = "Skin: " .. username
@@ -825,13 +830,11 @@ local function refreshSkinHistory()
             Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
             btn.MouseButton1Click:Connect(function()
                 applySkinByUsername(username)
-                SendNotification("Skin Applied", "Loaded skin of " .. username, 1.5)
             end)
         end
     end)
 end
 
--- Refresh history list periodically
 task.spawn(function()
     while task.wait(2) do
         refreshSkinHistory()
@@ -882,4 +885,4 @@ pcall(function()
     if Tabs[1] and Tabs[1].SubTabs[1] and Tabs[1].SubTabs[1].Open then Tabs[1].SubTabs[1].Open() end 
 end)
 
-print("[Ryu Hub] Tower of Hell Suite v5.1 successfully updated.")
+print("[Ryu Hub] Tower of Hell Suite v5.2 successfully updated & fixed.")
