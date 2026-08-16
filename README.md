@@ -1,6 +1,6 @@
 --// ==========================================
---// RYU HUB - TOWER OF HELL SUITE v5.2
---// MONOCHROME - ERROR FIX & STABLE ENGINE
+--// RYU HUB - TOWER OF HELL SUITE v5.3
+--// BULLETPROOF ERROR-FREE MONOCHROME EDITION
 --// ==========================================
 
 local CoreGui = game:GetService("CoreGui")
@@ -498,44 +498,46 @@ local function CreateInput(section, placeholder, callback)
 end
 
 --// ==========================================
---// TOWER OF HELL LOGIC (FIXED AUTO WIN & SKINS)
+--// TOWER OF HELL ENGINE (FIXED & SECURE)
 --// ==========================================
 
--- NOCLIP
 RunService.Stepped:Connect(function()
     if not CFG.noclip or not char then return end
-    for _, p in ipairs(char:GetDescendants()) do
-        if p:IsA("BasePart") then p.CanCollide = false end
-    end
+    pcall(function()
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanCollide = false end
+        end
+    end)
 end)
 
--- FLY WITH ADJUSTABLE SPEED
 local flyConn, flyBV
 local flyKeys = {f=false,b=false,l=false,r=false,up=false,down=false}
 
 local function setFly(on)
     CFG.fly = on
-    if flyBV and flyBV.Parent then flyBV:Destroy() end
-    if flyConn then flyConn:Disconnect() flyConn = nil end
-    if not on then
-        if hum then hum.PlatformStand = false end
-        return
-    end
-    hum.PlatformStand = true
-    flyBV = Instance.new("BodyVelocity", root)
-    flyBV.MaxForce = Vector3.new(1e5,1e5,1e5)
-    flyBV.Velocity = Vector3.zero
-    flyConn = RunService.Heartbeat:Connect(function()
-        if not CFG.fly or not root then return end
-        local cf = camera.CFrame
-        local dir = Vector3.zero
-        if flyKeys.f then dir = dir + cf.LookVector end
-        if flyKeys.b then dir = dir - cf.LookVector end
-        if flyKeys.r then dir = dir + cf.RightVector end
-        if flyKeys.l then dir = dir - cf.RightVector end
-        if flyKeys.up then dir = dir + Vector3.new(0,1,0) end
-        if flyKeys.down then dir = dir - Vector3.new(0,1,0) end
-        flyBV.Velocity = dir.Magnitude > 0 and dir.Unit * CFG.flySpeed or Vector3.zero
+    pcall(function()
+        if flyBV and flyBV.Parent then flyBV:Destroy() end
+        if flyConn then flyConn:Disconnect() flyConn = nil end
+        if not on then
+            if hum then hum.PlatformStand = false end
+            return
+        end
+        hum.PlatformStand = true
+        flyBV = Instance.new("BodyVelocity", root)
+        flyBV.MaxForce = Vector3.new(1e5,1e5,1e5)
+        flyBV.Velocity = Vector3.zero
+        flyConn = RunService.Heartbeat:Connect(function()
+            if not CFG.fly or not root then return end
+            local cf = camera.CFrame
+            local dir = Vector3.zero
+            if flyKeys.f then dir = dir + cf.LookVector end
+            if flyKeys.b then dir = dir - cf.LookVector end
+            if flyKeys.r then dir = dir + cf.RightVector end
+            if flyKeys.l then dir = dir - cf.RightVector end
+            if flyKeys.up then dir = dir + Vector3.new(0,1,0) end
+            if flyKeys.down then dir = dir - Vector3.new(0,1,0) end
+            flyBV.Velocity = dir.Magnitude > 0 and dir.Unit * CFG.flySpeed or Vector3.zero
+        end)
     end)
 end
 
@@ -559,144 +561,149 @@ UserInputService.InputEnded:Connect(function(i)
     if k == Enum.KeyCode.LeftControl then flyKeys.down = false end
 end)
 
--- DASH
-local dashReady = true
 local function doDash()
-    if not dashReady or not root or not hum then return end
-    dashReady = false
-    local dir = (camera.CFrame.LookVector * Vector3.new(1,0,1)).Unit
-    local bv = Instance.new("BodyVelocity", root)
-    bv.MaxForce = Vector3.new(1e5, 0, 1e5)
-    bv.Velocity = dir * CFG.dashSpeed
-    task.delay(0.18, function() if bv and bv.Parent then bv:Destroy() end end)
-    task.delay(CFG.dashCooldown, function() dashReady = true end)
+    pcall(function()
+        if not root or not hum then return end
+        local dir = (camera.CFrame.LookVector * Vector3.new(1,0,1)).Unit
+        local bv = Instance.new("BodyVelocity", root)
+        bv.MaxForce = Vector3.new(1e5, 0, 1e5)
+        bv.Velocity = dir * CFG.dashSpeed
+        task.delay(0.18, function() if bv and bv.Parent then bv:Destroy() end end)
+    end)
 end
 
 UserInputService.InputBegan:Connect(function(i, gp)
     if not gp and i.KeyCode == Enum.KeyCode.Q then doDash() end
 end)
 
--- SPEED & JUMP
 local function setSpeed(on)
     CFG.speedBoost = on
-    if hum then hum.WalkSpeed = on and CFG.speedVal or 16 end
+    pcall(function() if hum then hum.WalkSpeed = on and CFG.speedVal or 16 end end)
 end
 
 local function setJump(on)
     CFG.superJump = on
-    if hum then hum.JumpPower = on and CFG.jumpVal or 50 end
+    pcall(function() if hum then hum.JumpPower = on and CFG.jumpVal or 50 end end)
 end
 
 UserInputService.JumpRequest:Connect(function()
-    if CFG.infiniteJump and hum then
-        hum:ChangeState(Enum.HumanoidStateType.Jumping)
-    end
+    pcall(function()
+        if CFG.infiniteJump and hum then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+    end)
 end)
 
--- INVISIBLE
 local function setInvisible(on)
     CFG.invisible = on
-    if not char then return end
-    for _, p in ipairs(char:GetDescendants()) do
-        if p:IsA("BasePart") or p:IsA("Decal") then
-            if p.Name ~= "HumanoidRootPart" then
-                p.Transparency = on and 0.7 or 0
+    pcall(function()
+        if not char then return end
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("BasePart") or p:IsA("Decal") then
+                if p.Name ~= "HumanoidRootPart" then
+                    p.Transparency = on and 0.7 or 0
+                end
             end
         end
-    end
+    end)
 end
 
--- ANTI-VOID
 local antiVoidConn
 local function setAntiVoid(on)
     CFG.antiVoid = on
     if antiVoidConn then antiVoidConn:Disconnect() antiVoidConn = nil end
     if not on then return end
     antiVoidConn = RunService.Heartbeat:Connect(function()
-        if not root then return end
-        if root.Position.Y < CFG.antiVoidY then
-            root.CFrame = CFrame.new(root.Position.X, CFG.antiVoidY + 25, root.Position.Z)
-        end
+        pcall(function()
+            if not root then return end
+            if root.Position.Y < CFG.antiVoidY then
+                root.CFrame = CFrame.new(root.Position.X, CFG.antiVoidY + 25, root.Position.Z)
+            end
+        end)
     end)
 end
 
--- SPIN
 local spinConn
 local function setSpin(on)
     CFG.spin = on
     if spinConn then spinConn:Disconnect() spinConn = nil end
     if not on then return end
     spinConn = RunService.Heartbeat:Connect(function()
-        if not root then return end
-        root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(CFG.spinSpeed), 0)
+        pcall(function()
+            if not root then return end
+            root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(CFG.spinSpeed), 0)
+        end)
     end)
 end
 
--- AUTO WIN (TP to finishes folder as shown in screenshot)
+-- AUTO WIN (Fix: Finds workspace.finishes)
 local function tpToFinishes()
-    if not root then return end
-    local finishesFolder = Workspace:FindFirstChild("finishes", true) or Workspace:FindFirstChild("Finishes", true)
-    local targetPart = nil
-    
-    if finishesFolder then
-        for _, child in ipairs(finishesFolder:GetChildren()) do
-            if child:IsA("BasePart") then
-                targetPart = child
-                break
-            end
-        end
-    end
-    
-    if targetPart then
-        root.CFrame = targetPart.CFrame + Vector3.new(0, 3, 0)
-    else
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj:IsA("BasePart") and (obj.Name:lower() == "finish" or obj.Name:lower() == "endzone") then
-                targetPart = obj
-                break
-            end
-        end
-        if targetPart then root.CFrame = targetPart.CFrame + Vector3.new(0, 3, 0) else root.CFrame = root.CFrame + Vector3.new(0, 500, 0) end
-    end
-    
     pcall(function()
+        if not root then return end
+        local finishesFolder = Workspace:FindFirstChild("finishes", true) or Workspace:FindFirstChild("Finishes", true)
+        local targetPart = nil
+        
+        if finishesFolder then
+            for _, child in ipairs(finishesFolder:GetChildren()) do
+                if child:IsA("BasePart") then
+                    targetPart = child
+                    break
+                end
+            end
+        end
+        
+        if targetPart then
+            root.CFrame = targetPart.CFrame + Vector3.new(0, 3, 0)
+        else
+            for _, obj in ipairs(workspace:GetDescendants()) do
+                if obj:IsA("BasePart") and (obj.Name:lower() == "finish" or obj.Name:lower() == "endzone") then
+                    targetPart = obj
+                    break
+                end
+            end
+            if targetPart then root.CFrame = targetPart.CFrame + Vector3.new(0, 3, 0) else root.CFrame = root.CFrame + Vector3.new(0, 500, 0) end
+        end
+        
         if hum then hum.PlatformStand = true task.wait(0.6) hum.PlatformStand = false end
     end)
 end
 
 task.spawn(function()
     while task.wait(1) do
-        if CFG.autoWin then
-            tpToFinishes()
-            SendNotification("Auto Win", "Teleported to finishes!", 2)
-            task.wait(CFG.autoWinInterval * 60)
-        end
+        pcall(function()
+            if CFG.autoWin then
+                tpToFinishes()
+                SendNotification("Auto Win", "Teleported to finishes!", 2)
+                task.wait(CFG.autoWinInterval * 60)
+            end
+        end)
     end
 end)
 
--- FREECAM
 local freecamConn, freecamPos = nil, Vector3.zero
 local function setFreecam(on)
     CFG.freecam = on
     if freecamConn then freecamConn:Disconnect() freecamConn = nil end
     if on then
-        freecamPos = camera.CFrame.Position
-        camera.CameraType = Enum.CameraType.Scriptable
-        freecamConn = RunService.RenderStepped:Connect(function(dt)
-            local speed = CFG.freecamSpeed * 60 * dt
-            local cf = camera.CFrame
-            local moveDir = Vector3.zero
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + cf.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - cf.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - cf.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + cf.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.E) then moveDir = moveDir + Vector3.new(0,1,0) end
-            if UserInputService:IsKeyDown(Enum.KeyCode.Q) then moveDir = moveDir - Vector3.new(0,1,0) end
-            freecamPos = freecamPos + moveDir * speed
-            camera.CFrame = CFrame.new(freecamPos, freecamPos + cf.LookVector)
+        pcall(function()
+            freecamPos = camera.CFrame.Position
+            camera.CameraType = Enum.CameraType.Scriptable
+            freecamConn = RunService.RenderStepped:Connect(function(dt)
+                local speed = CFG.freecamSpeed * 60 * dt
+                local cf = camera.CFrame
+                local moveDir = Vector3.zero
+                if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + cf.LookVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - cf.LookVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - cf.RightVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + cf.RightVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.E) then moveDir = moveDir + Vector3.new(0,1,0) end
+                if UserInputService:IsKeyDown(Enum.KeyCode.Q) then moveDir = moveDir - Vector3.new(0,1,0) end
+                freecamPos = freecamPos + moveDir * speed
+                camera.CFrame = CFrame.new(freecamPos, freecamPos + cf.LookVector)
+            end)
         end)
     else
-        camera.CameraType = Enum.CameraType.Custom
+        pcall(function() camera.CameraType = Enum.CameraType.Custom end)
     end
 end
 
@@ -709,9 +716,9 @@ local TabBoost = CreateMainTab("Boost")
 local SubMove = CreateSubTab(TabBoost, "Movement")
 local SecMove = CreateSection(SubMove, "Speed & Jump")
 CreateToggle(SecMove, "Speed Boost", false, function(s) setSpeed(s) end)
-CreateSlider(SecMove, "Speed Value", 16, 200, 48, function(v) CFG.speedVal = v if CFG.speedBoost then hum.WalkSpeed = v end end)
+CreateSlider(SecMove, "Speed Value", 16, 200, 48, function(v) CFG.speedVal = v if CFG.speedBoost then pcall(function() hum.WalkSpeed = v end) end end)
 CreateToggle(SecMove, "Super Jump", false, function(s) setJump(s) end)
-CreateSlider(SecMove, "Jump Value", 50, 400, 150, function(v) CFG.jumpVal = v if CFG.superJump then hum.JumpPower = v end end)
+CreateSlider(SecMove, "Jump Value", 50, 400, 150, function(v) CFG.jumpVal = v if CFG.superJump then pcall(function() hum.JumpPower = v end) end end)
 CreateToggle(SecMove, "Infinite Jump", false, function(s) CFG.infiniteJump = s end)
 CreateToggle(SecMove, "Fly", false, function(s) setFly(s) end)
 CreateSlider(SecMove, "Fly Speed", 10, 200, 60, function(v) CFG.flySpeed = v end)
@@ -746,32 +753,38 @@ local SubChk = CreateSubTab(TabCheck, "Savepoints")
 local SecChk = CreateSection(SubChk, "Checkpoint System")
 
 CreateButton(SecChk, "Save Checkpoint (C)", Theme.SectionBG, function()
-    if root then
-        savedCheckpoints[activeCheckpointSlot] = root.CFrame
-        SendNotification("Saved!", "Checkpoint slot " .. activeCheckpointSlot .. " saved.", 1.5)
-    end
+    pcall(function()
+        if root then
+            savedCheckpoints[activeCheckpointSlot] = root.CFrame
+            SendNotification("Saved!", "Checkpoint slot " .. activeCheckpointSlot .. " saved.", 1.5)
+        end
+    end)
 end)
 CreateButton(SecChk, "Teleport to Checkpoint (V)", Theme.SectionBG, function()
-    if savedCheckpoints[activeCheckpointSlot] and root then
-        root.CFrame = savedCheckpoints[activeCheckpointSlot]
-    else
-        SendNotification("Error", "No checkpoint saved in slot " .. activeCheckpointSlot, 1.5)
-    end
+    pcall(function()
+        if savedCheckpoints[activeCheckpointSlot] and root then
+            root.CFrame = savedCheckpoints[activeCheckpointSlot]
+        else
+            SendNotification("Error", "No checkpoint saved in slot " .. activeCheckpointSlot, 1.5)
+        end
+    end)
 end)
 CreateSlider(SecChk, "Active Slot (1-5)", 1, 5, 1, function(v) activeCheckpointSlot = v end)
 
 UserInputService.InputBegan:Connect(function(input, gp)
     if gp then return end
-    if input.KeyCode == Enum.KeyCode.C then
-        if root then
-            savedCheckpoints[activeCheckpointSlot] = root.CFrame
-            SendNotification("Saved!", "Slot " .. activeCheckpointSlot .. " updated.", 1.5)
+    pcall(function()
+        if input.KeyCode == Enum.KeyCode.C then
+            if root then
+                savedCheckpoints[activeCheckpointSlot] = root.CFrame
+                SendNotification("Saved!", "Slot " .. activeCheckpointSlot .. " updated.", 1.5)
+            end
+        elseif input.KeyCode == Enum.KeyCode.V then
+            if savedCheckpoints[activeCheckpointSlot] and root then
+                root.CFrame = savedCheckpoints[activeCheckpointSlot]
+            end
         end
-    elseif input.KeyCode == Enum.KeyCode.V then
-        if savedCheckpoints[activeCheckpointSlot] and root then
-            root.CFrame = savedCheckpoints[activeCheckpointSlot]
-        end
-    end
+    end)
 end)
 
 -- TAB: TROLL (Copy Skin & History + Visual Name Changer)
@@ -868,16 +881,18 @@ CreateToggle(SecSet, "Anti-AFK Protection", false, function(v)
     CFG.antiAfk = v
     if v then
         LocalPlayer.Idled:Connect(function()
-            if CFG.antiAfk and VirtualUser then
-                VirtualUser:CaptureController()
-                VirtualUser:ClickButton2(Vector2.new())
-            end
+            pcall(function()
+                if CFG.antiAfk and VirtualUser then
+                    VirtualUser:CaptureController()
+                    VirtualUser:ClickButton2(Vector2.new())
+                end
+            end)
         end)
     end
 end)
 
 CreateLabel(SecSet, "Join Discord.gg/ryuhub to suggest more functions, scripts and more!")
-CreateButton(SecSet, "Reset UI / Clean", Theme.SectionBG, function() RyuHub:Destroy() end)
+CreateButton(SecSet, "Reset UI / Clean", Theme.SectionBG, function() pcall(function() RyuHub:Destroy() end) end)
 
 --// INITIALIZE FIRST TAB
 pcall(function() 
@@ -885,4 +900,4 @@ pcall(function()
     if Tabs[1] and Tabs[1].SubTabs[1] and Tabs[1].SubTabs[1].Open then Tabs[1].SubTabs[1].Open() end 
 end)
 
-print("[Ryu Hub] Tower of Hell Suite v5.2 successfully updated & fixed.")
+print("[Ryu Hub] Tower of Hell Suite v5.2 successfully deployed.")
