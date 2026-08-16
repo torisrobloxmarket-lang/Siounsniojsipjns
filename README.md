@@ -3,16 +3,15 @@ local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 
 local player = Players.LocalPlayer
-local activeLoops = {}
-local glitchTrack = nil
 local isInvisible = false
+local fakeBodyLoop = nil
+local savedRootJoint = nil
 
 --// 1. GUI ERSTELLEN
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "JJS_Desync_Test"
+screenGui.Name = "JJS_RootDesync"
 screenGui.ResetOnSpawn = false
 
--- Versuche das GUI sicher zu parenten
 local success, err = pcall(function()
     screenGui.Parent = (gethui and gethui()) or CoreGui
 end)
@@ -36,7 +35,7 @@ corner.Parent = mainFrame
 local toggleBtn = Instance.new("TextButton")
 toggleBtn.Size = UDim2.new(1, -10, 1, -10)
 toggleBtn.Position = UDim2.new(0, 5, 0, 5)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50) 
 toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 toggleBtn.Font = Enum.Font.GothamBold
 toggleBtn.TextSize = 14
@@ -47,60 +46,62 @@ local btnCorner = Instance.new("UICorner")
 btnCorner.CornerRadius = UDim.new(0, 6)
 btnCorner.Parent = toggleBtn
 
---// 2. FUNKTIONEN FÜR UNSICHTBARKEIT
-local function setCharacterTransparency(character, transparency)
-    local parts = {"Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg", "UpperTorso", "LowerTorso"}
-    for _, partName in ipairs(parts) do
-        local part = character:FindFirstChild(partName)
-        if part and part:IsA("BasePart") then
-            part.Transparency = transparency
+--// 2. DESYNC FUNKTIONEN
+local function stopInvisibility()
+    -- Render-Loop stoppen
+    if fakeBodyLoop then
+        fakeBodyLoop:Disconnect()
+        fakeBodyLoop = nil
+    end
+
+    local char = player.Character
+    if char and savedRootJoint then
+        local lowerTorso = char:FindFirstChild("LowerTorso")
+        -- Gelenk wiederherstellen, damit der Server uns wieder sieht
+        if lowerTorso and not lowerTorso:FindFirstChild("Root") then
+            local newJoint = savedRootJoint:Clone()
+            newJoint.Parent = lowerTorso
         end
     end
-end
-
-local function stopInvisibility()
-    for _, loop in pairs(activeLoops) do
-        if loop then loop:Disconnect() end
-    end
-    activeLoops = {}
-
-    if glitchTrack and glitchTrack.IsPlaying then
-        glitchTrack:Stop()
-    end
     
-    if player.Character then
-        setCharacterTransparency(player.Character, 0)
+    -- Transparenz zurücksetzen
+    if char then
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                part.Transparency = 0
+            elseif part:IsA("Decal") then
+                part.Transparency = 0
+            end
+        end
     end
 end
 
 local function startInvisibility(character)
-    local humanoid = character:WaitForChild("Humanoid")
-    local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
+    local rootPart = character:WaitForChild("HumanoidRootPart")
+    local lowerTorso = character:WaitForChild("LowerTorso")
+    
+    -- Das Hauptgelenk suchen und zerstören (Bricht den Charakter für den Server)
+    local rootJoint = lowerTorso:FindFirstChild("Root")
+    if rootJoint then
+        savedRootJoint = rootJoint:Clone() -- Speichern für später
+        rootJoint:Destroy()
+    end
 
-    -- FIX: Standard Roblox Animation verwenden, die niemals gelöscht wird
-    local anim = Instance.new("Animation")
-    anim.AnimationId = "rbxassetid://507771019" 
-    glitchTrack = animator:LoadAnimation(anim)
-    glitchTrack.Priority = Enum.AnimationPriority.Action4
-
-    setCharacterTransparency(character, 0.5)
-
-    -- Replikations-Überlastung starten
-    local heartbeat = RunService.Heartbeat:Connect(function()
-        if not glitchTrack.IsPlaying then
-            glitchTrack:Play()
-        end
-        glitchTrack:AdjustSpeed(0)
-        glitchTrack.TimePosition = 10
-    end)
-    table.insert(activeLoops, heartbeat)
-
-    local render = RunService.RenderStepped:Connect(function()
-        if glitchTrack.IsPlaying then
-            glitchTrack:Stop()
+    -- Wir kleben uns lokal selbst wieder zusammen, damit wir uns bewegen können
+    fakeBodyLoop = RunService.RenderStepped:Connect(function()
+        if lowerTorso and rootPart then
+            lowerTorso.CFrame = rootPart.CFrame
         end
     end)
-    table.insert(activeLoops, render)
+
+    -- Visuelles Feedback (Du bist halb durchsichtig für dich selbst)
+    for _, part in pairs(character:GetDescendants()) do
+        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+            part.Transparency = 0.5
+        elseif part:IsA("Decal") then
+            part.Transparency = 0.5
+        end
+    end
 end
 
 --// 3. KNOPF-LOGIK
@@ -125,7 +126,7 @@ end)
 --// 4. RESET-SCHUTZ
 player.CharacterAdded:Connect(function(char)
     if isInvisible then
-        char:WaitForChild("HumanoidRootPart")
+        char:WaitForChild("LowerTorso")
         task.wait(0.5) 
         stopInvisibility()
         startInvisibility(char)
