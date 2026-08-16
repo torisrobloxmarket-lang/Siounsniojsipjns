@@ -72,7 +72,7 @@ local function stopInvisibility()
     
     -- Charakter wieder komplett sichtbar machen
     if player.Character then
-        setCharacterTransparency(0, player.Character)
+        setCharacterTransparency(player.Character, 0) -- FIX: Argumente in richtiger Reihenfolge
     end
 end
 
@@ -87,7 +87,7 @@ local function startInvisibility(character)
     glitchTrack.Priority = Enum.AnimationPriority.Action4
 
     -- Dich lokal halb-durchsichtig machen, damit du weißt, es ist aktiv
-    setCharacterTransparency(0.5, character)
+    setCharacterTransparency(character, 0.5) -- FIX: Argumente in richtiger Reihenfolge
 
     -- Replikations-Überlastung starten
     local heartbeat = RunService.Heartbeat:Connect(function()
