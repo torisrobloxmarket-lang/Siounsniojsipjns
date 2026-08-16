@@ -140,14 +140,14 @@ local function setCharacterTransparency(char, transparency)
             end
         end
         -- Hide accessories/meshes too
-        if part:IsA("Decal") or part:IsA("SpecialMesh") then
+        if part:IsA("Decal") then
             if transparency == 1 then
                 if not originalProperties[part] then
                     originalProperties[part] = { Transparency = part.Transparency }
                 end
-                if part:IsA("Decal") then part.Transparency = 1 end
+                part.Transparency = 1
             else
-                if originalProperties[part] and part:IsA("Decal") then
+                if originalProperties[part] then
                     part.Transparency = originalProperties[part].Transparency
                 end
             end
