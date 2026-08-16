@@ -12,7 +12,7 @@ local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "JJS_Desync_Test"
 screenGui.ResetOnSpawn = false
 
--- Versuche das GUI sicher zu parenten (Bypass für einige Anticheats)
+-- Versuche das GUI sicher zu parenten
 local success, err = pcall(function()
     screenGui.Parent = (gethui and gethui()) or CoreGui
 end)
@@ -26,7 +26,7 @@ mainFrame.Position = UDim2.new(0.5, -75, 0.2, 0)
 mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
-mainFrame.Draggable = true -- Macht das Fenster verschiebbar
+mainFrame.Draggable = true
 mainFrame.Parent = screenGui
 
 local corner = Instance.new("UICorner")
@@ -36,7 +36,7 @@ corner.Parent = mainFrame
 local toggleBtn = Instance.new("TextButton")
 toggleBtn.Size = UDim2.new(1, -10, 1, -10)
 toggleBtn.Position = UDim2.new(0, 5, 0, 5)
-toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50) -- Startet Rot (Aus)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
 toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 toggleBtn.Font = Enum.Font.GothamBold
 toggleBtn.TextSize = 14
@@ -49,7 +49,7 @@ btnCorner.Parent = toggleBtn
 
 --// 2. FUNKTIONEN FÜR UNSICHTBARKEIT
 local function setCharacterTransparency(character, transparency)
-    local parts = {"Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg"}
+    local parts = {"Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg", "UpperTorso", "LowerTorso"}
     for _, partName in ipairs(parts) do
         local part = character:FindFirstChild(partName)
         if part and part:IsA("BasePart") then
@@ -59,20 +59,17 @@ local function setCharacterTransparency(character, transparency)
 end
 
 local function stopInvisibility()
-    -- Alle Loops kappen
     for _, loop in pairs(activeLoops) do
         if loop then loop:Disconnect() end
     end
     activeLoops = {}
 
-    -- Animation stoppen
     if glitchTrack and glitchTrack.IsPlaying then
         glitchTrack:Stop()
     end
     
-    -- Charakter wieder komplett sichtbar machen
     if player.Character then
-        setCharacterTransparency(player.Character, 0) -- FIX: Argumente in richtiger Reihenfolge
+        setCharacterTransparency(player.Character, 0)
     end
 end
 
@@ -80,14 +77,13 @@ local function startInvisibility(character)
     local humanoid = character:WaitForChild("Humanoid")
     local animator = humanoid:FindFirstChildOfClass("Animator") or Instance.new("Animator", humanoid)
 
-    -- Kaputte Animation laden
+    -- FIX: Standard Roblox Animation verwenden, die niemals gelöscht wird
     local anim = Instance.new("Animation")
-    anim.AnimationId = "rbxassetid://83555998356899"
+    anim.AnimationId = "rbxassetid://507771019" 
     glitchTrack = animator:LoadAnimation(anim)
     glitchTrack.Priority = Enum.AnimationPriority.Action4
 
-    -- Dich lokal halb-durchsichtig machen, damit du weißt, es ist aktiv
-    setCharacterTransparency(character, 0.5) -- FIX: Argumente in richtiger Reihenfolge
+    setCharacterTransparency(character, 0.5)
 
     -- Replikations-Überlastung starten
     local heartbeat = RunService.Heartbeat:Connect(function()
@@ -113,24 +109,22 @@ toggleBtn.MouseButton1Click:Connect(function()
     local char = player.Character
 
     if isInvisible then
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50) -- Grün
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
         toggleBtn.Text = "Desync: ON"
         if char then
             stopInvisibility()
             startInvisibility(char)
         end
     else
-        toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50) -- Rot
+        toggleBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
         toggleBtn.Text = "Desync: OFF"
         stopInvisibility()
     end
 end)
 
 --// 4. RESET-SCHUTZ
--- Verhindert, dass der Glitch beim Respawnen Fehler wirft
 player.CharacterAdded:Connect(function(char)
     if isInvisible then
-        -- Kurz warten bis der Charakter voll geladen ist
         char:WaitForChild("HumanoidRootPart")
         task.wait(0.5) 
         stopInvisibility()
