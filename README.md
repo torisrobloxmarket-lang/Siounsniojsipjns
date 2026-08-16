@@ -1,6 +1,6 @@
 --// ==========================================
---// RYU HUB - TOWER OF HELL SUITE v7.2
---// MONOCHROME - LIVE SKIN APPLY & SAFE TP
+--// RYU HUB - TOWER OF HELL SUITE v7.3
+--// MONOCHROME - 2ND HIGHEST TP & PERFECT ACCESSORIES
 --// ==========================================
 
 local CoreGui = game:GetService("CoreGui")
@@ -62,6 +62,7 @@ local CFG = {
     playerEsp       = false,
     autoWin         = false,
     autoWinInterval = 2,
+    autoWinOffset   = 5,
     freecam         = false,
     freecamSpeed    = 1,
     antiAfk         = false,
@@ -326,11 +327,6 @@ local function CreateMainTab(name)
     Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 8)
     tabObj.Btn = tabBtn
 
-    local arrow = Instance.new("TextLabel", tabBtn)
-    arrow.Size = UDim2.new(0, 20, 1, 0); arrow.Position = UDim2.new(1, -25, 0, 0); arrow.BackgroundTransparency = 1; arrow.Text = "v"
-    arrow.TextColor3 = Theme.SubText; arrow.Font = Enum.Font.GothamBold; arrow.TextSize = 12
-    tabObj.Arrow = arrow
-
     local subContainer = Instance.new("Frame", Sidebar)
     subContainer.Size = UDim2.new(1, 0, 0, 0); subContainer.BackgroundTransparency = 1; subContainer.ClipsDescendants = true
     tabObj.SubContainer = subContainer
@@ -554,6 +550,7 @@ end
 --// ==========================================
 
 local TabBoost = CreateMainTab("Boost")
+
 local SubMove = CreateSubTab(TabBoost, "Speed & Jump")
 local SecMove = CreateSection(SubMove, "Movement Adjustments")
 CreateToggle(SecMove, "Speed Boost", false, function(s) CFG.speedBoost = s end)
@@ -586,37 +583,49 @@ CreateToggle(SecProt, "Anti-Void", false, function(s) CFG.antiVoid = s end)
 local TabFarm = CreateMainTab("Auto Win")
 local SubAutoWin = CreateSubTab(TabFarm, "Automation")
 local SecAutoWin = CreateSection(SubAutoWin, "Win Settings")
-CreateToggle(SecAutoWin, "Auto Win (Highest Point)", false, function(s) CFG.autoWin = s end)
+CreateToggle(SecAutoWin, "Auto Win (2nd Highest Point)", false, function(s) CFG.autoWin = s end)
 CreateSlider(SecAutoWin, "Interval (Minutes)", 1, 10, 2, function(v) CFG.autoWinInterval = v end)
+CreateSlider(SecAutoWin, "TP Y-Offset (Studs)", -20, 100, 5, function(v) CFG.autoWinOffset = v end)
 
-local function tpToHighestPoint()
+local function tpToWinArea()
     pcall(function()
         if not root then return end
+        
         local highestY = -math.huge
         local highestPart = nil
+        local secondHighestY = -math.huge
+        local secondHighestPart = nil
         
         for _, obj in ipairs(Workspace:GetDescendants()) do
             if obj:IsA("BasePart") and not obj:IsDescendantOf(char) and obj.Transparency < 1 and obj.Position.Y < 15000 then
-                if obj.Position.Y > highestY then
-                    highestY = obj.Position.Y
+                local y = obj.Position.Y
+                if y > highestY then
+                    secondHighestY = highestY
+                    secondHighestPart = highestPart
+                    highestY = y
                     highestPart = obj
+                elseif y > secondHighestY and y < highestY then
+                    secondHighestY = y
+                    secondHighestPart = obj
                 end
             end
         end
         
-        if highestPart then
-            root.CFrame = CFrame.new(highestPart.Position.X, highestY + 5, highestPart.Position.Z)
+        local targetPart = secondHighestPart or highestPart
+        
+        if targetPart then
+            root.CFrame = CFrame.new(targetPart.Position.X, targetPart.Position.Y + CFG.autoWinOffset, targetPart.Position.Z)
             root.Velocity = Vector3.zero
             
             local plat = Instance.new("Part", Workspace)
             plat.Size = Vector3.new(20, 2, 20)
-            plat.Position = Vector3.new(highestPart.Position.X, highestY + 2, highestPart.Position.Z)
+            plat.Position = Vector3.new(targetPart.Position.X, targetPart.Position.Y + CFG.autoWinOffset - 3, targetPart.Position.Z)
             plat.Anchored = true
             plat.Transparency = 0.5
             plat.Color = Color3.fromRGB(0, 255, 0)
             task.delay(2.5, function() if plat then plat:Destroy() end end)
             
-            SendNotification("Auto Win", "Teleported to highest point!", 2)
+            SendNotification("Auto Win", "Teleported to 2nd highest point!", 2)
         else
             root.CFrame = root.CFrame + Vector3.new(0, 350, 0)
             root.Velocity = Vector3.zero
@@ -625,7 +634,7 @@ local function tpToHighestPoint()
     end)
 end
 
-CreateButton(SecAutoWin, "Teleport to Highest Point Now", Theme.SectionBG, function() tpToHighestPoint() end)
+CreateButton(SecAutoWin, "Teleport to 2nd Highest Now", Theme.SectionBG, function() tpToWinArea() end)
 CreateButton(SecAutoWin, "Rejoin Low Server", Theme.SectionBG, function()
     pcall(function()
         local servers = HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100"))
@@ -676,16 +685,18 @@ CreateSlider(SecChk, "Active Slot (1-5)", 1, 5, 1, function(v) activeCheckpointS
 UserInputService.InputBegan:Connect(function(input, gp)
     if gp then return end
     pcall(function()
+        local c = LocalPlayer.Character
+        local hrp = c and c:FindFirstChild("HumanoidRootPart")
         if input.KeyCode == Enum.KeyCode.C then
-            if root then
-                savedCheckpoints[activeCheckpointSlot] = root.CFrame
+            if hrp then
+                savedCheckpoints[activeCheckpointSlot] = hrp.CFrame
                 SaveLog.Text = "Saved at slot " .. activeCheckpointSlot .. "!"
                 task.delay(2, function() SaveLog.Text = "Ready to save." end)
             end
         elseif input.KeyCode == Enum.KeyCode.V then
-            if savedCheckpoints[activeCheckpointSlot] and root then
-                root.CFrame = savedCheckpoints[activeCheckpointSlot]
-                root.Velocity = Vector3.zero
+            if savedCheckpoints[activeCheckpointSlot] and hrp then
+                hrp.CFrame = savedCheckpoints[activeCheckpointSlot]
+                hrp.Velocity = Vector3.zero
             end
         end
     end)
@@ -705,6 +716,13 @@ applyGlobalSkin = function(username, isRespawn)
             local h = c and c:FindFirstChild("Humanoid")
             
             if c and h then
+                if not isRespawn then
+                    if not table.find(skinHistory, username) then
+                        table.insert(skinHistory, 1, username)
+                        if #skinHistory > 5 then table.remove(skinHistory, 6) end
+                    end
+                end
+                
                 -- Direct Live Apply without killing
                 local descApplied = false
                 pcall(function()
@@ -720,15 +738,25 @@ applyGlobalSkin = function(username, isRespawn)
                     local dummy
                     pcall(function() dummy = Players:CreateHumanoidModelFromUserId(userId) end)
                     if dummy then
+                        -- Clear current clothes & accessories
                         for _, v in pairs(c:GetChildren()) do
                             if v:IsA("Accessory") or v:IsA("Shirt") or v:IsA("Pants") or v:IsA("ShirtGraphic") or v:IsA("CharacterMesh") or v:IsA("BodyColors") then
                                 v:Destroy()
                             end
                         end
+                        
+                        -- Add clothes, meshes, and accessories (properly welded via AddAccessory)
                         for _, v in pairs(dummy:GetChildren()) do
-                            if v:IsA("Accessory") or v:IsA("Shirt") or v:IsA("Pants") or v:IsA("ShirtGraphic") or v:IsA("CharacterMesh") or v:IsA("BodyColors") then
+                            if v:IsA("Shirt") or v:IsA("Pants") or v:IsA("ShirtGraphic") or v:IsA("CharacterMesh") or v:IsA("BodyColors") then
                                 v:Clone().Parent = c
+                            elseif v:IsA("Accessory") then
+                                local clonedAcc = v:Clone()
+                                pcall(function() h:AddAccessory(clonedAcc) end)
                             end
+                        end
+                        
+                        -- Handle R15 MeshParts & Head
+                        for _, v in pairs(dummy:GetChildren()) do
                             if v:IsA("MeshPart") then
                                 local myPart = c:FindFirstChild(v.Name)
                                 if myPart and myPart:IsA("MeshPart") then
@@ -762,10 +790,6 @@ applyGlobalSkin = function(username, isRespawn)
                 end
                 
                 if not isRespawn then
-                    if not table.find(skinHistory, username) then
-                        table.insert(skinHistory, 1, username)
-                        if #skinHistory > 5 then table.remove(skinHistory, 6) end
-                    end
                     SendNotification("Success", "Loaded global skin: " .. username, 2)
                 end
             end
@@ -851,17 +875,21 @@ RunService.Stepped:Connect(function()
         
         if not c or not hrp or not hum then return end
         
+        -- GODMODE
         if CFG.godmode then hum.Health = hum.MaxHealth end
         
+        -- NOCLIP
         if CFG.noclip then
             for _, p in ipairs(c:GetDescendants()) do
                 if p:IsA("BasePart") then p.CanCollide = false end
             end
         end
         
+        -- SPEED & JUMP PERSISTENCE
         if CFG.speedBoost then hum.WalkSpeed = CFG.speedVal else if hum.WalkSpeed > 30 then hum.WalkSpeed = 16 end end
         if CFG.superJump then hum.JumpPower = CFG.jumpVal else if hum.JumpPower > 60 then hum.JumpPower = 50 end end
         
+        -- INVISIBLE PERSISTENCE
         if CFG.invisible then
             for _, p in ipairs(c:GetDescendants()) do
                 if p:IsA("BasePart") or p:IsA("Decal") then
@@ -870,25 +898,20 @@ RunService.Stepped:Connect(function()
             end
         end
         
+        -- SPIN PERSISTENCE
         if CFG.spin then
             hrp.CFrame = hrp.CFrame * CFrame.Angles(0, math.rad(CFG.spinSpeed), 0)
         end
         
+        -- ANTI VOID PERSISTENCE
         if CFG.antiVoid then
             if hrp.Position.Y < CFG.antiVoidY then
                 hrp.CFrame = CFrame.new(hrp.Position.X, CFG.antiVoidY + 25, hrp.Position.Z)
                 hrp.Velocity = Vector3.zero
             end
         end
-        
-        if CFG.autoWin and hrp.Velocity.Y < -50 then
-            local ray = Workspace:Raycast(hrp.Position, Vector3.new(0, -1000, 0))
-            if ray and ray.Instance and ray.Instance.CanCollide then
-                hrp.CFrame = CFrame.new(ray.Position + Vector3.new(0, 4, 0))
-                hrp.Velocity = Vector3.zero
-            end
-        end
 
+        -- FLY PERSISTENCE
         if CFG.fly then
             if not flyBV then
                 flyBV = Instance.new("BodyVelocity", hrp)
@@ -918,6 +941,7 @@ end)
 local freecamPos = Vector3.zero
 RunService.RenderStepped:Connect(function(dt)
     pcall(function()
+        -- Freecam
         if CFG.freecam then
             if camera.CameraType ~= Enum.CameraType.Scriptable then
                 camera.CameraType = Enum.CameraType.Scriptable
@@ -938,6 +962,7 @@ RunService.RenderStepped:Connect(function(dt)
             if camera.CameraType == Enum.CameraType.Scriptable then camera.CameraType = Enum.CameraType.Custom end
         end
         
+        -- ESP
         if CFG.playerEsp then
             for _, p in pairs(Players:GetPlayers()) do
                 if p ~= LocalPlayer and p.Character then
@@ -954,6 +979,7 @@ RunService.RenderStepped:Connect(function(dt)
             end
         end
         
+        -- Fake Name
         local c = LocalPlayer.Character
         if CFG.fakeName ~= "" and c and c:FindFirstChild("Head") then
             local head = c.Head
@@ -981,15 +1007,16 @@ RunService.RenderStepped:Connect(function(dt)
     end)
 end)
 
+-- Auto Win Background Loop
 task.spawn(function()
     while task.wait(1) do
         pcall(function()
             if CFG.autoWin then
-                tpToHighestPoint()
+                tpToWinArea()
                 task.wait(CFG.autoWinInterval * 60)
             end
         end)
     end
 end)
 
-print("[Ryu Hub] ToH Suite v7.2 Successfully Loaded.")
+print("[Ryu Hub] ToH Suite v7.3 Initialized.")
