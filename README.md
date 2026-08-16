@@ -1,6 +1,6 @@
 --// ==========================================
---// RYU HUB - TOWER OF HELL SUITE v6.2
---// MONOCHROME - GLOBAL SKINS & AUTO WIN FIXED
+--// RYU HUB - TOWER OF HELL SUITE v6.3
+--// MONOCHROME - AUTO WIN PLATFORM & MESH SKINS
 --// ==========================================
 
 local CoreGui = game:GetService("CoreGui")
@@ -314,11 +314,6 @@ local function CreateMainTab(name)
     Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 8)
     tabObj.Btn = tabBtn
 
-    local arrow = Instance.new("TextLabel", tabBtn)
-    arrow.Size = UDim2.new(0, 20, 1, 0); arrow.Position = UDim2.new(1, -25, 0, 0); arrow.BackgroundTransparency = 1; arrow.Text = "v"
-    arrow.TextColor3 = Theme.SubText; arrow.Font = Enum.Font.GothamBold; arrow.TextSize = 12
-    tabObj.Arrow = arrow
-
     local subContainer = Instance.new("Frame", Sidebar)
     subContainer.Size = UDim2.new(1, 0, 0, 0); subContainer.BackgroundTransparency = 1; subContainer.ClipsDescendants = true
     tabObj.SubContainer = subContainer
@@ -429,14 +424,15 @@ local function CreateToggle(section, text, descText, defaultState, callback)
     circle.BackgroundColor3 = defaultState and Theme.Background or Color3.fromRGB(150, 150, 150)
     Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
     
+    local isOn = defaultState or false
     tBtn.MouseButton1Click:Connect(function()
-        defaultState = not defaultState
+        isOn = not isOn
         pcall(function()
-            TweenService:Create(tBtn, TweenInfo.new(0.2), {BackgroundColor3 = defaultState and Theme.ToggleOn or Theme.ToggleOff}):Play()
-            TweenService:Create(circle, TweenInfo.new(0.2), {Position = defaultState and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8), BackgroundColor3 = defaultState and Theme.Background or Color3.fromRGB(150, 150, 150)}):Play()
-            label.TextColor3 = defaultState and Theme.Text or Theme.SubText
+            TweenService:Create(tBtn, TweenInfo.new(0.2), {BackgroundColor3 = isOn and Theme.ToggleOn or Theme.ToggleOff}):Play()
+            TweenService:Create(circle, TweenInfo.new(0.2), {Position = isOn and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8), BackgroundColor3 = isOn and Theme.Background or Color3.fromRGB(150, 150, 150)}):Play()
+            label.TextColor3 = isOn and Theme.Text or Theme.SubText
         end)
-        if callback then pcall(function() callback(defaultState) end) end
+        if callback then pcall(function() callback(isOn) end) end
     end)
 end
 
@@ -567,6 +563,8 @@ local function setFly(on)
             if flyKeys.l then dir = dir - cf.RightVector end
             if flyKeys.up then dir = dir + Vector3.new(0,1,0) end
             if flyKeys.down then dir = dir - Vector3.new(0,1,0) end
+            
+            for _, track in pairs(hum:GetPlayingAnimationTracks()) do track:Stop() end
             flyBV.Velocity = dir.Magnitude > 0 and dir.Unit * CFG.flySpeed or Vector3.zero
         end)
     end)
@@ -610,7 +608,7 @@ UserInputService.JumpRequest:Connect(function()
     end)
 end)
 
--- AUTO WIN (CLOSEST FINISH VIA FOLDER)
+-- AUTO WIN (CLOSEST FINISH VIA FOLDER + PLATFORM FIX)
 local function tpToClosestFinish()
     pcall(function()
         if not root then return end
@@ -631,6 +629,19 @@ local function tpToClosestFinish()
         
         if targetPart then
             root.CFrame = targetPart.CFrame * CFrame.new(0, 3, 0)
+            
+            -- Platform underneath to prevent falling
+            local plat = Instance.new("Part", Workspace)
+            plat.Size = Vector3.new(10, 1, 10)
+            plat.Position = root.Position - Vector3.new(0, 3.5, 0)
+            plat.Anchored = true
+            plat.Transparency = 0.5
+            plat.Color = Color3.fromRGB(0, 255, 0)
+            
+            task.delay(2, function()
+                if plat then plat:Destroy() end
+            end)
+
             SendNotification("Auto Win", "Teleported to nearest finish!", 2)
         else
             SendNotification("Auto Win", "No finish found!", 2)
@@ -691,7 +702,7 @@ RunService.Stepped:Connect(function()
     end)
 end)
 
--- GLOBAL SKIN CHANGER (BYPASSING APPLYDESCRIPTION BLOCK)
+-- GLOBAL SKIN CHANGER (BYPASSING APPLYDESCRIPTION BLOCK + PACKAGES)
 local function applyGlobalSkin(username)
     task.spawn(function()
         local userId
@@ -700,29 +711,56 @@ local function applyGlobalSkin(username)
             local dummy
             local s2, _ = pcall(function() dummy = Players:CreateHumanoidModelFromUserId(userId) end)
             
-            if s2 and dummy and char then
-                -- Clear current accessories & clothes
+            if s2 and dummy and char and hum then
+                -- 1. Try Native ApplyDescription
+                pcall(function()
+                    local desc = Players:GetHumanoidDescriptionFromUserId(userId)
+                    if desc then hum:ApplyDescriptionReset(desc) end
+                end)
+                
+                -- 2. Manual Fallback
                 for _, v in pairs(char:GetChildren()) do
                     if v:IsA("Accessory") or v:IsA("Shirt") or v:IsA("Pants") or v:IsA("ShirtGraphic") or v:IsA("CharacterMesh") or v:IsA("BodyColors") then
                         v:Destroy()
                     end
                 end
                 
-                -- Copy from dummy
                 for _, v in pairs(dummy:GetChildren()) do
                     if v:IsA("Accessory") or v:IsA("Shirt") or v:IsA("Pants") or v:IsA("ShirtGraphic") or v:IsA("CharacterMesh") or v:IsA("BodyColors") then
                         v:Clone().Parent = char
                     end
                 end
                 
-                -- Copy face
-                local dHead = dummy:FindFirstChild("Head")
-                local mHead = char:FindFirstChild("Head")
-                if dHead and mHead then
-                    local dFace = dHead:FindFirstChildOfClass("Decal")
-                    local mFace = mHead:FindFirstChildOfClass("Decal")
-                    if dFace then
-                        if mFace then mFace.Texture = dFace.Texture else dFace:Clone().Parent = mHead end
+                -- Handle R15 MeshParts & Head
+                for _, v in pairs(dummy:GetChildren()) do
+                    if v:IsA("MeshPart") then
+                        local myPart = char:FindFirstChild(v.Name)
+                        if myPart and myPart:IsA("MeshPart") then
+                            pcall(function()
+                                myPart.MeshId = v.MeshId
+                                myPart.TextureID = v.TextureID
+                                myPart.Size = v.Size
+                            end)
+                        end
+                    elseif v.Name == "Head" then
+                        local myHead = char:FindFirstChild("Head")
+                        if myHead then
+                            local dMesh = v:FindFirstChildOfClass("SpecialMesh")
+                            local mMesh = myHead:FindFirstChildOfClass("SpecialMesh")
+                            if dMesh and mMesh then
+                                mMesh.MeshId = dMesh.MeshId
+                                mMesh.TextureId = dMesh.TextureId
+                                mMesh.Scale = dMesh.Scale
+                            elseif dMesh and not mMesh then
+                                dMesh:Clone().Parent = myHead
+                            end
+                            
+                            local dFace = v:FindFirstChildOfClass("Decal")
+                            local mFace = myHead:FindFirstChildOfClass("Decal")
+                            if dFace then
+                                if mFace then mFace.Texture = dFace.Texture else dFace:Clone().Parent = myHead end
+                            end
+                        end
                     end
                 end
                 
@@ -761,6 +799,7 @@ RunService.RenderStepped:Connect(function()
             end
         end
         
+        -- Fake Name Color Logic
         if CFG.fakeName ~= "" and char and char:FindFirstChild("Head") then
             local head = char.Head
             local bg = head:FindFirstChild("RyuFakeName")
@@ -820,6 +859,7 @@ end
 --// ==========================================
 
 local TabBoost = CreateMainTab("Boost")
+
 local SubMove = CreateSubTab(TabBoost, "Speed & Jump")
 local SecMove = CreateSection(SubMove, "Movement Adjustments")
 CreateToggle(SecMove, "Speed Boost", false, function(s) setSpeed(s) end)
@@ -835,7 +875,7 @@ local SubProt = CreateSubTab(TabBoost, "Safety & Passives")
 local SecProt = CreateSection(SubProt, "Protections")
 CreateToggle(SecProt, "God Mode", "Permanent health refill", true, function(s) CFG.godmode = s end)
 CreateToggle(SecProt, "Noclip", true, function(s) CFG.noclip = s end)
-CreateToggle(SecProt, "Invisible (Local transparency)", false, function(s) setInvisible(s) end)
+CreateToggle(SecProt, "Invisible (Local visibility)", false, function(s) setInvisible(s) end)
 CreateToggle(SecProt, "Anti-Void", false, function(s) setAntiVoid(s) end)
 
 local TabFarm = CreateMainTab("Auto Win")
@@ -901,7 +941,9 @@ local TabTroll = CreateMainTab("Troll")
 local SubTrl = CreateSubTab(TabTroll, "Copy & Name")
 local SecTrl = CreateSection(SubTrl, "Troll Suite")
 
-CreateInput(SecTrl, "Global Copy Skin (Username)...", function(name) applyGlobalSkin(name) end)
+CreateInput(SecTrl, "Global Copy Skin (Username)...", function(name)
+    applyGlobalSkin(name)
+end)
 
 local SecHistory = CreateSection(SubTrl, "Skin History (Last 5)")
 local historyContainer = Instance.new("Frame", SecHistory)
@@ -924,14 +966,18 @@ local function refreshSkinHistory()
             btn.Font = Enum.Font.GothamMedium
             btn.TextSize = 11
             Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-            btn.MouseButton1Click:Connect(function() applyGlobalSkin(username) end)
+            btn.MouseButton1Click:Connect(function()
+                applyGlobalSkin(username)
+            end)
         end
     end)
 end
 
-task.spawn(function() while task.wait(2) do refreshSkinHistory() end end)
+task.spawn(function()
+    while task.wait(2) do refreshSkinHistory() end
+end)
 
-CreateInput(SecTrl, "Name Changer (Visual)...", function(v) CFG.fakeName = v end)
+CreateInput(SecTrl, "Name Changer (Visual Name)...", function(v) CFG.fakeName = v end)
 CreateDropdown(SecTrl, "Name Color", {"White", "Red", "Blue", "Green", "Yellow", "Rainbow", "Neon Blue"}, "FakeNameColor", function(v) CFG.FakeNameColor = v end)
 
 local TabSettings = CreateMainTab("Settings")
@@ -953,7 +999,7 @@ CreateToggle(SecSet, "Anti-AFK Protection", false, function(v)
 end)
 
 CreateLabel(SecSet, "Join Discord.gg/ryuhub to suggest more functions, scripts and more!")
-CreateButton(SecSet, "Reset Settings / Clean UI", Theme.Warning, function() pcall(function() ResetConfig() RyuHub:Destroy() end) end)
+CreateButton(SecSet, "Reset Settings / Clean UI", Theme.Warning, function() pcall(function() ResetConfig(); RyuHub:Destroy() end) end)
 
 --// INITIALIZE FIRST TAB
 pcall(function() 
@@ -961,4 +1007,4 @@ pcall(function()
     if Tabs[1] and Tabs[1].SubTabs[1] and Tabs[1].SubTabs[1].Open then Tabs[1].SubTabs[1].Open() end 
 end)
 
-print("[Ryu Hub] ToH Suite v6.2 Initialized.")
+print("[Ryu Hub] ToH Suite v6.3 Initialized.")
