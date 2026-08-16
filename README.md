@@ -1,6 +1,6 @@
 --// ==========================================
---// RYU HUB - TOWER OF HELL SUITE v5.0
---// FULLY CUSTOMIZED & POLISHED MONOCHROME
+--// RYU HUB - TOWER OF HELL SUITE v5.1
+--// MONOCHROME - AUTO WIN FIX & SKIN HISTORY
 --// ==========================================
 
 local CoreGui = game:GetService("CoreGui")
@@ -16,7 +16,6 @@ local VirtualUser = game:GetService("VirtualUser")
 
 local LocalPlayer = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
-local cam = camera
 local lp = LocalPlayer
 local char = lp.Character or lp.CharacterAdded:Wait()
 local root, hum
@@ -58,6 +57,7 @@ local CFG = {
 
 local savedCheckpoints = {}
 local activeCheckpointSlot = 1
+local skinHistory = {}
 local NotificationContainer
 
 --// 1. GUI CLEANUP & INJECTION
@@ -75,7 +75,7 @@ for _, v in pairs(guiParent:GetChildren()) do
     if v.Name == "RyuHubToH" or v.Name == "RyuNotifications" then v:Destroy() end 
 end
 
---// 2. THEME & UI FRAMEWORK (PURE MONOCHROME WITH WAVE ANIMATION)
+--// 2. THEME & UI FRAMEWORK (PURE MONOCHROME)
 local Theme = {
     Background = Color3.fromRGB(15, 15, 15), Sidebar = Color3.fromRGB(22, 22, 22),
     SectionBG = Color3.fromRGB(30, 30, 30), Text = Color3.fromRGB(255, 255, 255),
@@ -142,7 +142,7 @@ local function AddClickPop(element)
     end)
 end
 
--- FIXED TOP LEFT TOGGLE BUTTON (Under Roblox Logo)
+-- FIXED TOP LEFT TOGGLE BUTTON
 local ToggleBtn = Instance.new("TextButton")
 ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
 ToggleBtn.Position = UDim2.new(0, 15, 0, 60)
@@ -180,7 +180,6 @@ MainFrame.Parent = RyuHub
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
 Instance.new("UIStroke", MainFrame).Color = Theme.Stroke; Instance.new("UIStroke", MainFrame).Thickness = 1.5
 
--- Discord Watermark Header Text above MainFrame
 local DiscordWatermark = Instance.new("TextLabel", RyuHub)
 DiscordWatermark.Size = UDim2.new(0, 300, 0, 30)
 DiscordWatermark.Position = UDim2.new(0.5, -150, 0.5, -260)
@@ -242,7 +241,7 @@ local SubTitle = Instance.new("TextLabel", Topbar)
 SubTitle.Size = UDim2.new(0, 300, 0, 15); SubTitle.Position = UDim2.new(0, 20, 0, 38); SubTitle.BackgroundTransparency = 1
 SubTitle.Text = "Tower of Hell Suite"; SubTitle.TextColor3 = Theme.SubText; SubTitle.Font = Enum.Font.Gotham; SubTitle.TextSize = 11; SubTitle.TextXAlignment = Enum.TextXAlignment.Left
 
--- CLOSE BUTTON (WHITE MONOCHROME)
+-- CLOSE BUTTON
 local CloseBtn = Instance.new("TextButton", Topbar)
 CloseBtn.Size = UDim2.new(0, 28, 0, 28)
 CloseBtn.Position = UDim2.new(1, -40, 0, 15)
@@ -271,7 +270,6 @@ Topbar.InputChanged:Connect(function(input)
     if mDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
         local delta = input.Position - mDragStart
         MainFrame.Position = UDim2.new(mStartPos.X.Scale, mStartPos.X.Offset + delta.X, mStartPos.Y.Scale, mStartPos.Y.Offset + delta.Y)
-        DiscordWatermark.Position = UDim2.new(0.5, -150, 0.5, MainMainFrameOffset or -(MainSize.Y.Offset/2) - 35)
     end
 end)
 Topbar.InputEnded:Connect(function(input)
@@ -497,7 +495,7 @@ local function CreateInput(section, placeholder, callback)
 end
 
 --// ==========================================
---// TOWER OF HELL LOGIC (OPTIMIZED & EXPANDED)
+--// TOWER OF HELL LOGIC (FIXED AUTO WIN & SKINS)
 --// ==========================================
 
 -- NOCLIP
@@ -507,18 +505,6 @@ RunService.Stepped:Connect(function()
         if p:IsA("BasePart") then p.CanCollide = false end
     end
 end)
-
--- GODMODE
-local godConn
-local function setGodmode(on)
-    CFG.godmode = on
-    if godConn then godConn:Disconnect() godConn = nil end
-    if on then
-        godConn = RunService.Heartbeat:Connect(function()
-            if hum then hum.Health = hum.MaxHealth end
-        end)
-    end
-end
 
 -- FLY WITH ADJUSTABLE SPEED
 local flyConn, flyBV
@@ -546,7 +532,7 @@ local function setFly(on)
         if flyKeys.l then dir = dir - cf.RightVector end
         if flyKeys.up then dir = dir + Vector3.new(0,1,0) end
         if flyKeys.down then dir = dir - Vector3.new(0,1,0) end
-        flyBV.Velocity = dir.Magnitude > 0 and dir.Unit * CFG.flySpeed or Vector3.zero
+        flyBV.Velocity = dir.Magnitude > 0 and dir.Unit * CFG.flySpeed else Vector3.zero end
     end)
 end
 
@@ -570,7 +556,7 @@ UserInputService.InputEnded:Connect(function(i)
     if k == Enum.KeyCode.LeftControl then flyKeys.down = false end
 end)
 
--- DASH (in camera look vector)
+-- DASH
 local dashReady = true
 local function doDash()
     if not dashReady or not root or not hum then return end
@@ -604,7 +590,7 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
--- INVISIBLE (Visual check with slight visibility)
+-- INVISIBLE
 local function setInvisible(on)
     CFG.invisible = on
     if not char then return end
@@ -631,7 +617,7 @@ local function setAntiVoid(on)
     end)
 end
 
--- SPIN (Faster)
+-- SPIN
 local spinConn
 local function setSpin(on)
     CFG.spin = on
@@ -643,52 +629,50 @@ local function setSpin(on)
     end)
 end
 
--- WIN ZONE TP & AUTO WIN
-local function tpToWin()
+-- AUTO WIN (TP to finishes folder as shown in screenshot)
+local function tpToFinishes()
     if not root then return end
-    local kws = {"EndZone","Finish","Win","Goal","End","Completed"}
-    local target
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            for _, kw in ipairs(kws) do
-                if obj.Name:lower():find(kw:lower()) then target = obj break end
+    local finishesFolder = Workspace:FindFirstChild("finishes", true) or Workspace:FindFirstChild("Finishes", true)
+    local targetPart = nil
+    
+    if finishesFolder then
+        for _, child in ipairs(finishesFolder:GetChildren()) do
+            if child:IsA("BasePart") then
+                targetPart = child
+                break
             end
         end
-        if target then break end
     end
-    if target then
-        root.CFrame = CFrame.new(target.Position + Vector3.new(0,5,0))
+    
+    if targetPart then
+        root.CFrame = targetPart.CFrame + Vector3.new(0, 3, 0)
     else
-        root.CFrame = root.CFrame + Vector3.new(0, 500, 0)
+        -- Fallback search by name
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") and (obj.Name:lower() == "finish" or obj.Name:lower() == "endzone") then
+                targetPart = obj
+                break
+            end
+        end
+        if targetPart then root.CFrame = targetPart.CFrame + Vector3.new(0, 3, 0) else root.CFrame = root.CFrame + Vector3.new(0, 500, 0) end
     end
+    
     pcall(function()
-        if hum then hum.PlatformStand = true task.wait(0.5) hum.PlatformStand = false end
+        if hum then hum.PlatformStand = true task.wait(0.6) hum.PlatformStand = false end
     end)
 end
 
 task.spawn(function()
     while task.wait(1) do
         if CFG.autoWin then
-            tpToWin()
-            SendNotification("Auto Win", "Teleported to finish!", 2)
+            tpToFinishes()
+            SendNotification("Auto Win", "Teleported to finishes!", 2)
             task.wait(CFG.autoWinInterval * 60)
         end
     end
 end)
 
-local function doServerRejoin()
-    pcall(function()
-        local servers = HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Desc&limit=100"))
-        for _, s in ipairs(servers.data) do
-            if s.playing < s.maxPlayers and s.id ~= game.JobId then
-                TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer)
-                break
-            end
-        end
-    end)
-end
-
--- FREECAM (Mobile & PC Support)
+-- FREECAM
 local freecamConn, freecamPos = nil, Vector3.zero
 local function setFreecam(on)
     CFG.freecam = on
@@ -713,27 +697,6 @@ local function setFreecam(on)
         camera.CameraType = Enum.CameraType.Custom
     end
 end
-
--- PLAYER ESP
-RunService.RenderStepped:Connect(function()
-    pcall(function()
-        if CFG.playerEsp then
-            for _, p in pairs(Players:GetPlayers()) do
-                if p ~= lp and p.Character then
-                    local h = p.Character:FindFirstChild("Highlight") or Instance.new("Highlight", p.Character)
-                    h.FillColor = Color3.fromRGB(255, 255, 255)
-                end
-            end
-        else
-            for _, p in pairs(Players:GetPlayers()) do
-                if p.Character then
-                    local h = p.Character:FindFirstChild("Highlight")
-                    if h then h:Destroy() end
-                end
-            end
-        end
-    end)
-end)
 
 --// ==========================================
 --// BUILD TABS & SECTIONS
@@ -764,28 +727,22 @@ local SubAutoWin = CreateSubTab(TabFarm, "Auto Win")
 local SecAutoWin = CreateSection(SubAutoWin, "Win Automations")
 CreateToggle(SecAutoWin, "Enable Auto Win (Ragdoll)", false, function(s) CFG.autoWin = s end)
 CreateSlider(SecAutoWin, "Interval (Minutes)", 1, 10, 2, function(v) CFG.autoWinInterval = v end)
-CreateButton(SecAutoWin, "Rejoin Low Server", Theme.SectionBG, function() doServerRejoin() end)
+CreateButton(SecAutoWin, "Teleport to Finish Now", Theme.SectionBG, function() tpToFinishes() end)
 
 -- TAB: VISUALS
 local TabVisuals = CreateMainTab("Visuals")
 local SubVis = CreateSubTab(TabVisuals, "Client Mods")
 local SecVis = CreateSection(SubVis, "Visual Enhancements")
-CreateToggle(SubVis, "Spin Bot", false, function(s) setSpin(s) end)
-CreateSlider(SubVis, "Spin Speed", 10, 150, 35, function(v) CFG.spinSpeed = v end)
-CreateToggle(SubVis, "Player ESP", false, function(s) CFG.playerEsp = s end)
-CreateToggle(SubVis, "Freecam (WASD + Q/E)", false, function(s) setFreecam(s) end)
-CreateSlider(SubVis, "Freecam Speed", 1, 10, 1, function(v) CFG.freecamSpeed = v end)
+CreateToggle(SecVis, "Spin Bot", false, function(s) setSpin(s) end)
+CreateSlider(SecVis, "Spin Speed", 10, 300, 35, function(v) CFG.spinSpeed = v end)
+CreateToggle(SecVis, "Player ESP", false, function(s) CFG.playerEsp = s end)
+CreateToggle(SecVis, "Freecam (WASD + Q/E)", false, function(s) setFreecam(s) end)
+CreateSlider(SecVis, "Freecam Speed", 1, 10, 1, function(v) CFG.freecamSpeed = v end)
 
 -- TAB: CHECKPOINTS
 local TabCheck = CreateMainTab("Checkpoints")
 local SubChk = CreateSubTab(TabCheck, "Savepoints")
 local SecChk = CreateSection(SubChk, "Checkpoint System")
-
-local SaveStatusLbl = CreateLabel(SecChk, "Current Slot: 1 (Press C to save, V to load)")
-
-local function UpdateSlotButtons()
-    -- visual indicator handled inside buttons
-end
 
 CreateButton(SecChk, "Save Checkpoint (C)", Theme.SectionBG, function()
     if root then
@@ -800,7 +757,6 @@ CreateButton(SecChk, "Teleport to Checkpoint (V)", Theme.SectionBG, function()
         SendNotification("Error", "No checkpoint saved in slot " .. activeCheckpointSlot, 1.5)
     end
 end)
-
 CreateSlider(SecChk, "Active Slot (1-5)", 1, 5, 1, function(v) activeCheckpointSlot = v end)
 
 UserInputService.InputBegan:Connect(function(input, gp)
@@ -817,29 +773,72 @@ UserInputService.InputBegan:Connect(function(input, gp)
     end
 end)
 
--- TAB: TROLL
+-- TAB: TROLL (Copy Skin & History + Visual Name Changer)
 local TabTroll = CreateMainTab("Troll")
 local SubTrl = CreateSubTab(TabTroll, "Copy & Name")
 local SecTrl = CreateSection(SubTrl, "Troll Suite")
 
-CreateInput(SecTrl, "Copy Skin (Username)", function(name)
+local function applySkinByUsername(name)
     pcall(function()
-        local tPlr = Players:FindFirstChild(name)
-        if tPlr and tPlr.Character then
-            local desc = tPlr.Character:FindFirstChildOfClass("HumanoidDescription")
+        local targetPlr = Players:FindFirstChild(name)
+        if targetPlr then
+            local userId = targetPlr.UserId
+            local desc = Players:GetHumanoidDescriptionFromUserId(userId)
             if desc and hum then
                 hum:ApplyDescriptionReset(desc)
+                -- Add to history (max 5)
+                if not table.find(skinHistory, name) then
+                    table.insert(skinHistory, 1, name)
+                    if #skinHistory > 5 then table.remove(skinHistory, 6) end
+                end
             end
+        else
+            SendNotification("Error", "Player not found!", 2)
         end
     end)
+end
+
+CreateInput(SecTrl, "Copy Skin (Username)...", function(name)
+    applySkinByUsername(name)
 end)
 
--- TAB: SETTINGS
-local TabSettings = CreateMainTab("Settings")
-local SubSet = CreateSubTab(TabSettings, "Settings")
-local SecSet = CreateSection(SubSet, "System Configuration")
+local SecHistory = CreateSection(SubTrl, "Skin History (Last 5)")
+local historyContainer = Instance.new("Frame", SecHistory)
+historyContainer.Size = UDim2.new(0.92, 0, 0, 110)
+historyContainer.BackgroundTransparency = 1
+local histLayout = Instance.new("UIListLayout", historyContainer)
+histLayout.Padding = UDim.new(0, 4)
 
-CreateInput(SecSet, "Fake Name (Visual)", function(v)
+local function refreshSkinHistory()
+    pcall(function()
+        for _, c in ipairs(historyContainer:GetChildren()) do
+            if c:IsA("TextButton") then c:Destroy() end
+        end
+        for i, username in ipairs(skinHistory) do
+            local btn = Instance.new("TextButton", historyContainer)
+            btn.Size = UDim2.new(1, 0, 0, 24)
+            btn.BackgroundColor3 = Theme.Sidebar
+            btn.TextColor3 = Theme.Text
+            btn.Text = "Skin: " .. username
+            btn.Font = Enum.Font.GothamMedium
+            btn.TextSize = 11
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+            btn.MouseButton1Click:Connect(function()
+                applySkinByUsername(username)
+                SendNotification("Skin Applied", "Loaded skin of " .. username, 1.5)
+            end)
+        end
+    end)
+end
+
+-- Refresh history list periodically
+task.spawn(function()
+    while task.wait(2) do
+        refreshSkinHistory()
+    end
+end)
+
+CreateInput(SecTrl, "Name Changer (Visual Name)...", function(v)
     CFG.fakeName = v
     pcall(function()
         local head = char and char:FindFirstChild("Head")
@@ -856,6 +855,11 @@ CreateInput(SecSet, "Fake Name (Visual)", function(v)
         end
     end)
 end)
+
+-- TAB: SETTINGS
+local TabSettings = CreateMainTab("Settings")
+local SubSet = CreateSubTab(TabSettings, "Settings")
+local SecSet = CreateSection(SubSet, "System Configuration")
 
 CreateToggle(SecSet, "Anti-AFK Protection", false, function(v)
     CFG.antiAfk = v
@@ -878,4 +882,4 @@ pcall(function()
     if Tabs[1] and Tabs[1].SubTabs[1] and Tabs[1].SubTabs[1].Open then Tabs[1].SubTabs[1].Open() end 
 end)
 
-print("[Ryu Hub] Tower of Hell Suite v5.0 successfully deployed.")
+print("[Ryu Hub] Tower of Hell Suite v5.1 successfully updated.")
