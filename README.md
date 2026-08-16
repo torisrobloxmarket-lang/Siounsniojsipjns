@@ -1,52 +1,64 @@
--- Custom All-in-One GUI Hub für DOORS (Extrahiert aus clutch.lua)
+-- Custom DOORS Hub (Clean Rewrite / No External Framework Dependencies)
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 
--- Altes GUI löschen, falls bereits vorhanden
-if CoreGui:FindFirstChild("DoorsCustomHub") then
-    CoreGui.DoorsCustomHub:Destroy()
+-- Altes GUI entfernen, falls vorhanden
+if CoreGui:FindFirstChild("CleanDoorsHub") then
+    CoreGui.CleanDoorsHub:Destroy()
 end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "DoorsCustomHub"
+ScreenGui.Name = "CleanDoorsHub"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = CoreGui
 
 -- Hauptfenster
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 360, 0, 440)
-MainFrame.Position = UDim2.new(0.5, -180, 0.3, -220)
-MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+MainFrame.Size = UDim2.new(0, 320, 0, 390)
+MainFrame.Position = UDim2.new(0.5, -160, 0.3, -195)
+MainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
 MainFrame.Draggable = true
 MainFrame.Parent = ScreenGui
 
 local UICorner = Instance.new("UICorner")
-UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.CornerRadius = UDim.new(0, 10)
 UICorner.Parent = MainFrame
 
--- Titel
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, 0, 0, 45)
-Title.BackgroundTransparency = 1
-Title.Text = "DOORS - Custom Clutch Hub"
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.TextSize = 16
-Title.Font = Enum.Font.GothamBold
-Title.Parent = MainFrame
+-- Titelleiste
+local TitleBar = Instance.new("Frame")
+TitleBar.Size = UDim2.new(1, 0, 0, 40)
+TitleBar.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
+TitleBar.BorderSizePixel = 0
+TitleBar.Parent = MainFrame
 
--- Scrollable Liste für Buttons/Toggles
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 10)
+TitleCorner.Parent = TitleBar
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -20, 1, 0)
+Title.Position = UDim2.new(0, 10, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "DOORS - Custom Built Hub"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 14
+Title.Font = Enum.Font.GothamBold
+Title.Parent = TitleBar
+
+-- Scrollbarer Inhaltsbereich
 local ScrollingFrame = Instance.new("ScrollingFrame")
-ScrollingFrame.Size = UDim2.new(1, -20, 1, -60)
-ScrollingFrame.Position = UDim2.new(0, 10, 0, 50)
+ScrollingFrame.Size = UDim2.new(1, -20, 1, -55)
+ScrollingFrame.Position = UDim2.new(0, 10, 0, 48)
 ScrollingFrame.BackgroundTransparency = 1
-ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 650)
-ScrollingFrame.ScrollBarThickness = 4
+ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 450)
+ScrollingFrame.ScrollBarThickness = 3
 ScrollingFrame.Parent = MainFrame
 
 local UIListLayout = Instance.new("UIListLayout")
@@ -54,11 +66,12 @@ UIListLayout.Padding = UDim.new(0, 8)
 UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 UIListLayout.Parent = ScrollingFrame
 
+-- Helper-Funktionen für UI-Elemente
 local function createToggle(text, callback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, 0, 0, 35)
-    btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    btn.TextColor3 = Color3.fromRGB(220, 220, 220)
     btn.TextSize = 13
     btn.Font = Enum.Font.Gotham
     btn.Text = text .. ": OFF"
@@ -72,7 +85,7 @@ local function createToggle(text, callback)
     btn.MouseButton1Click:Connect(function()
         state = not state
         btn.Text = text .. (state and ": ON" or ": OFF")
-        btn.BackgroundColor3 = state and Color3.fromRGB(0, 120, 215) or Color3.fromRGB(40, 40, 40)
+        btn.BackgroundColor3 = state and Color3.fromRGB(0, 110, 200) or Color3.fromRGB(35, 35, 35)
         callback(state)
     end)
 end
@@ -80,7 +93,7 @@ end
 local function createButton(text, callback)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, 0, 0, 35)
-    btn.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
     btn.TextColor3 = Color3.fromRGB(255, 255, 255)
     btn.TextSize = 13
     btn.Font = Enum.Font.Gotham
@@ -95,10 +108,10 @@ local function createButton(text, callback)
 end
 
 -- ==========================================
--- INTEGRIERTE FUNKTIONEN AUS DEM SKRIPT
+-- SAUBER NACHGEBAUTE FUNKTIONEN
 -- ==========================================
 
--- 1. Fullbright (Helligkeit)
+-- 1. Fullbright
 createToggle("Fullbright", function(value)
     if value then
         Lighting.Ambient = Color3.new(1, 1, 1)
@@ -107,7 +120,7 @@ createToggle("Fullbright", function(value)
     end
 end)
 
--- 2. Noclip (Durch Wände gehen)
+-- 2. Noclip
 createToggle("Noclip", function(value)
     RunService.Stepped:Connect(function()
         local char = LocalPlayer.Character
@@ -121,17 +134,17 @@ createToggle("Noclip", function(value)
     end)
 end)
 
--- 3. Speed Boost (WalkSpeed Erhöhung)
-createToggle("Speed Boost (WalkSpeed)", function(value)
+-- 3. Speed Boost
+createToggle("Speed Boost", function(value)
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     if hum then
-        hum.WalkSpeed = value and 25 or 15
+        hum.WalkSpeed = value and 22 or 15
     end
 end)
 
--- 4. Door Reach (Türen automatisch öffnen/fernaktivieren)
-createToggle("Door Reach (Auto Client Open)", function(value)
+-- 4. Door Reach
+createToggle("Door Reach", function(value)
     task.spawn(function()
         while value do
             task.wait(0.2)
@@ -148,8 +161,8 @@ createToggle("Door Reach (Auto Client Open)", function(value)
     end)
 end)
 
--- 5. Anti-Eyes (Automatisch wegschauen bei Augen-Monstern)
-createToggle("Anti-Eyes (Auto-Lookaway)", function(value)
+-- 5. Anti-Eyes
+createToggle("Anti-Eyes", function(value)
     task.spawn(function()
         while value do
             task.wait(0.1)
@@ -165,7 +178,7 @@ createToggle("Anti-Eyes (Auto-Lookaway)", function(value)
     end)
 end)
 
--- 6. Anti-Snare (Fallen unsichtbar/harmlos machen)
+-- 6. Disable Snares Button
 createButton("Disable All Snares", function()
     pcall(function()
         for _, room in pairs(Workspace.CurrentRooms:GetChildren()) do
@@ -180,27 +193,7 @@ createButton("Disable All Snares", function()
     end)
 end)
 
--- 7. Twerk Emote (Animation abspielen)
-createToggle("Twerk Animation", function(value)
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
-    
-    local twerkAnim = Instance.new("Animation")
-    twerkAnim.AnimationId = "rbxassetid://12874447851"
-    
-    if not _G.twerkTrack then
-        _G.twerkTrack = hum:LoadAnimation(twerkAnim)
-    end
-    
-    if value then
-        _G.twerkTrack:Play()
-    else
-        _G.twerkTrack:Stop()
-    end
-end)
-
--- 8. Sofortige Wiederbelebung (Revive)
+-- 7. Revive Button
 createButton("Instant Revive", function()
     pcall(function()
         local remotesFolder = ReplicatedStorage:FindFirstChild("RemotesFolder")
@@ -210,9 +203,9 @@ createButton("Instant Revive", function()
     end)
 end)
 
--- GUI Schließen
-createButton("Close GUI", function()
+-- 8. GUI Schließen
+createButton("Close Hub", function()
     ScreenGui:Destroy()
 end)
 
-print("[+] DOORS Custom Hub Loaded Successfully!")
+print("[+] Clean DOORS Hub Loaded Successfully.")
