@@ -1,21 +1,23 @@
 --Decompiled with the Synapse X Decompiler.
 
-if env_flag and getgenv().loaded then
-    if guard_508(7715) ~= 37 then
-        while true do
-        end;
-    end;
-    warn("script already loaded");
-    return ;
-end;
-getgenv().loaded = true;
-local frame_class = "Frame"
+-- Guard stubs + stripped checks
 local frame_class = "Frame"
 local guard_502 = function(n) return n end
 local guard_503 = 1353
 local guard_506 = function(n) return n end
 local guard_507 = function(n) return n end
 local guard_508 = function(n) return n end
+local env_flag = false
+
+if env_flag and getgenv().loaded then
+    warn("script already loaded")
+    return
+end
+getgenv().loaded = true
+
+repeat
+    task.wait()
+until game:IsLoaded()
 repeat
     if guard_506(3972) ~= 12156 then
         while true do
