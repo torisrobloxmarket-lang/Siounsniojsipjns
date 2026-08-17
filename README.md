@@ -1,5 +1,5 @@
 --// ==========================================
---// RYU HUB: THE ULTIMATE GPO ENGINE (ALL FEATURES + ESP + IMPEL DOWN)
+--// RYU HUB: ULTIMATE EDITION (IMPEL DOWN + EXTRACTED GPO FEATURES)
 --// ==========================================
 
 local CoreGui = game:GetService("CoreGui")
@@ -13,53 +13,59 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local PathfindingService = game:GetService("PathfindingService")
+local GuiService = game:GetService("GuiService")
+local TeleportService = game:GetService("TeleportService")
 
 local LocalPlayer = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
---// 1. ANTI-CHEAT BYPASS
+--// EXTRACTED: ADONIS ANTI-CHEAT BYPASS
 task.spawn(function()
     pcall(function()
-        for _, v in ipairs(game:GetDescendants()) do
-            if v.Name:lower():match("adonis") or v.Name:match("ClientMover") or v.Name == "__FUNCTION" then
-                v:Destroy()
+        for _, descendant in ipairs(game:GetDescendants()) do
+            if descendant.Name:lower():match("adonis") or descendant.Name == "__FUNCTION" or descendant.Name:match("ClientMover") then
+                descendant:Destroy()
             end
         end
     end)
+    pcall(function()
+        local original_fire_server
+        original_fire_server = hookfunction(Instance.new("RemoteEvent").FireServer, newcclosure(function(remote, ...)
+            local args = {...}
+            if typeof(args[1]) == "table" and args[1].Mode == "Get" then return end
+            return original_fire_server(remote, ...)
+        end))
+    end)
 end)
 
---// 2. GUI CLEANUP
+--// GUI CLEANUP
 local guiParent = LocalPlayer:WaitForChild("PlayerGui")
 pcall(function() if gethui then guiParent = gethui() elseif syn and syn.protect_gui then guiParent = CoreGui end end)
 for _, v in pairs(guiParent:GetChildren()) do if v.Name == "RyuHubGPO" then v:Destroy() end end
 
---// 3. CONFIG & GLOBALS
+--// CONFIG SYSTEM
 _G.RyuConfig = {
     AutoImpelDown = false,
+    AutoFishmanFarm = false,
     AntiAFK = false,
     ChestESP = false,
     PlayerESP = false,
     MedalESP = false,
     AutoJoinPS = false,
+    AutoRejoin = false,
     PsCode = "",
     Sea = "First Sea"
 }
 
+--// EXTRACTED: ISLANDS & CHESTS
 local Islands = { 
-    ["Town of Beginnings"] = CFrame.new(-528, 5, -3423), 
-    ["Shell's Town"] = CFrame.new(-1299, 4, -5052), 
-    ["Sandora"] = CFrame.new(-1545, 4, -3353), 
-    ["Orange Town"] = CFrame.new(-4448, 5, -6638), 
-    ["Restaurant Baratie"] = CFrame.new(-2964, 6, -6672), 
-    ["Logue Town"] = CFrame.new(-6589, 7, -7643), 
-    ["Roca Island"] = CFrame.new(1564, 154, -6598), 
-    ["Shark Park"] = CFrame.new(-1572, 11, -10082), 
-    ["Reverse Mountain"] = CFrame.new(-8030, 17, -8785), 
-    ["Sphinx Island"] = CFrame.new(-4006, 41, -9138), 
-    ["Fishman Island"] = CFrame.new(7996, -2154, -17075), 
-    ["Marine Fort F-1"] = CFrame.new(393, 18, -4467), 
-    ["Marine Base G-1"] = CFrame.new(-5979, 57, -11496), 
-    ["Colosseum"] = CFrame.new(-2020, 7, -7675), 
+    ["Town of Beginnings"] = CFrame.new(-528, 5, -3423), ["Shell's Town"] = CFrame.new(-1299, 4, -5052), 
+    ["Sandora"] = CFrame.new(-1545, 4, -3353), ["Orange Town"] = CFrame.new(-4448, 5, -6638), 
+    ["Restaurant Baratie"] = CFrame.new(-2964, 6, -6672), ["Logue Town"] = CFrame.new(-6589, 7, -7643), 
+    ["Roca Island"] = CFrame.new(1564, 154, -6598), ["Shark Park"] = CFrame.new(-1572, 11, -10082), 
+    ["Reverse Mountain"] = CFrame.new(-8030, 17, -8785), ["Sphinx Island"] = CFrame.new(-4006, 41, -9138), 
+    ["Fishman Island"] = CFrame.new(7996, -2154, -17075), ["Marine Fort F-1"] = CFrame.new(393, 18, -4467), 
+    ["Marine Base G-1"] = CFrame.new(-5979, 57, -11496), ["Colosseum"] = CFrame.new(-2020, 7, -7675), 
     ["Hell"] = CFrame.new(18944, 8122, -12501) 
 }
 local IslandNames = {}
@@ -68,20 +74,13 @@ for name, _ in pairs(Islands) do table.insert(IslandNames, name) end
 local ChestsIDs = { Common = "rbxassetid://10779253534", Uncommon = "rbxassetid://10858352843", Rare = "rbxassetid://10788852296", Legendary = "rbxassetid://10798559852" }
 local ChestColors = { Common = Color3.fromRGB(181, 135, 99), Uncommon = Color3.fromRGB(144, 238, 144), Rare = Color3.fromRGB(135, 206, 250), Legendary = Color3.fromRGB(255, 200, 100), Mythic = Color3.fromRGB(255, 182, 193) }
 
-
 --// ==========================================
 --// CUSTOM UI BUILDER
 --// ==========================================
 local Theme = {
-    Background = Color3.fromRGB(15, 15, 18),
-    Sidebar = Color3.fromRGB(20, 20, 25),
-    SectionBG = Color3.fromRGB(25, 25, 30),
-    Text = Color3.fromRGB(230, 230, 230),
-    SubText = Color3.fromRGB(150, 150, 150),
-    Accent = Color3.fromRGB(0, 150, 255),
-    ToggleOff = Color3.fromRGB(40, 40, 50),
-    ToggleOn = Color3.fromRGB(0, 150, 255),
-    Stroke = Color3.fromRGB(40, 40, 50)
+    Background = Color3.fromRGB(15, 15, 18), Sidebar = Color3.fromRGB(20, 20, 25), SectionBG = Color3.fromRGB(25, 25, 30),
+    Text = Color3.fromRGB(230, 230, 230), SubText = Color3.fromRGB(150, 150, 150), Accent = Color3.fromRGB(0, 150, 255),
+    ToggleOff = Color3.fromRGB(40, 40, 50), ToggleOn = Color3.fromRGB(0, 150, 255), Stroke = Color3.fromRGB(40, 40, 50)
 }
 
 local RyuHub = Instance.new("ScreenGui", guiParent)
@@ -156,7 +155,6 @@ local function CreateTabButton(name, targetPage)
     btn.Size = UDim2.new(1, 0, 0, 30); btn.BackgroundColor3 = Theme.Sidebar; btn.Text = "  " .. name
     btn.TextColor3 = Theme.SubText; btn.Font = Enum.Font.GothamBold; btn.TextSize = 12; btn.TextXAlignment = Enum.TextXAlignment.Left
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-    
     btn.MouseButton1Click:Connect(function()
         for _, page in pairs(ContentContainer:GetChildren()) do if page:IsA("ScrollingFrame") then page.Visible = (page.Name == targetPage.Name) end end
         for _, otherBtn in pairs(Sidebar:GetChildren()) do if otherBtn:IsA("TextButton") then otherBtn.TextColor3 = Theme.SubText; otherBtn.BackgroundColor3 = Theme.Sidebar end end
@@ -179,12 +177,10 @@ local function CreateToggle(page, text, configKey, callback)
     local frame = Instance.new("Frame", page)
     frame.Size = UDim2.new(0.95, 0, 0, 35); frame.BackgroundColor3 = Theme.SectionBG
     Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
-    
     local lbl = Instance.new("TextLabel", frame)
     lbl.Size = UDim2.new(0.7, 0, 1, 0); lbl.Position = UDim2.new(0, 10, 0, 0)
     lbl.BackgroundTransparency = 1; lbl.Text = text; lbl.TextColor3 = Theme.Text
     lbl.Font = Enum.Font.GothamMedium; lbl.TextSize = 12; lbl.TextXAlignment = Enum.TextXAlignment.Left
-    
     local btn = Instance.new("TextButton", frame)
     btn.Size = UDim2.new(0, 36, 0, 18); btn.Position = UDim2.new(1, -45, 0.5, -9)
     btn.BackgroundColor3 = _G.RyuConfig[configKey] and Theme.ToggleOn or Theme.ToggleOff; btn.Text = ""
@@ -210,14 +206,12 @@ local function CreateDropdown(page, text, items, callback)
     local btn = Instance.new("TextButton", frame)
     btn.Size = UDim2.new(1, -20, 0, 30); btn.Position = UDim2.new(0, 10, 0, 0); btn.BackgroundTransparency = 1
     btn.Text = text .. " [+]"; btn.TextColor3 = Theme.Text; btn.Font = Enum.Font.GothamMedium; btn.TextSize = 12; btn.TextXAlignment = Enum.TextXAlignment.Left
-    
     local isOpen = false
     btn.MouseButton1Click:Connect(function()
         isOpen = not isOpen
         frame.Size = isOpen and UDim2.new(0.95, 0, 0, 30 + (#items * 25)) or UDim2.new(0.95, 0, 0, 30)
         btn.Text = isOpen and text .. " [-]" or text .. " [+]"
     end)
-    
     for i, item in ipairs(items) do
         local itemBtn = Instance.new("TextButton", frame)
         itemBtn.Size = UDim2.new(1, -20, 0, 25); itemBtn.Position = UDim2.new(0, 10, 0, 30 + ((i-1)*25))
@@ -247,40 +241,133 @@ local PageESP = CreatePage("Visuals")
 local PageTeleport = CreatePage("Teleport")
 local PageMisc = CreatePage("Misc")
 
-CreateTabButton("Impel Down", PageAuto)
-CreateTabButton("ESP / Visuals", PageESP)
-CreateTabButton("Islands", PageTeleport)
+CreateTabButton("Auto Farming", PageAuto)
+CreateTabButton("ESP Visuals", PageESP)
+CreateTabButton("Teleportations", PageTeleport)
 CreateTabButton("Misc / Server", PageMisc)
 
 PageAuto.Visible = true
 
--- Populating UI
-CreateToggle(PageAuto, "Enable Auto Impel Down", "AutoImpelDown")
+CreateToggle(PageAuto, "Enable Impel Down Farm", "AutoImpelDown")
+CreateToggle(PageAuto, "Enable Fishman Karate Farm", "AutoFishmanFarm")
+
 CreateToggle(PageESP, "Chest ESP", "ChestESP")
 CreateToggle(PageESP, "Player ESP", "PlayerESP")
-CreateToggle(PageESP, "Fighting Style ESP", "MedalESP")
+CreateToggle(PageESP, "Fighting Style / Medal ESP", "MedalESP")
+
+-- EXTRACTED: CustomTween Teleport
+local function CustomTween(targetPos)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    
+    local targetY = targetPos.Y + 3
+    local dist = (Vector2.new(hrp.Position.X, hrp.Position.Z) - Vector2.new(targetPos.X, targetPos.Z)).Magnitude
+    
+    if dist <= 8 then
+        hrp.CFrame = CFrame.new(targetPos.X, targetY, targetPos.Z)
+        hrp.Velocity = Vector3.zero
+        return
+    end
+    
+    local timeToTake = dist / 40
+    local tween = TweenService:Create(hrp, TweenInfo.new(timeToTake, Enum.EasingStyle.Linear), {CFrame = CFrame.new(targetPos.X, targetY, targetPos.Z)})
+    tween:Play()
+end
 
 CreateDropdown(PageTeleport, "Teleport to Island", IslandNames, function(val)
     local target = Islands[val]
-    if target and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        local hrp = LocalPlayer.Character.HumanoidRootPart
-        local dist = (hrp.Position - target.Position).Magnitude
-        local tween = TweenService:Create(hrp, TweenInfo.new(dist / 150, Enum.EasingStyle.Linear), {CFrame = target})
-        tween:Play()
-    end
+    if target then CustomTween(target.Position) end
 end)
 
 CreateToggle(PageMisc, "Auto Join Private Server", "AutoJoinPS")
+CreateToggle(PageMisc, "Auto Rejoin on Kick", "AutoRejoin")
 CreateTextBox(PageMisc, "Enter PS Code...", "PsCode")
 CreateToggle(PageMisc, "Anti-AFK", "AntiAFK", function(state)
     if state then _G.AntiAfkConnection = LocalPlayer.Idled:Connect(function() game:GetService("VirtualUser"):CaptureController(); game:GetService("VirtualUser"):ClickButton2(Vector2.new()) end)
     else if _G.AntiAfkConnection then _G.AntiAfkConnection:Disconnect() end end
 end)
 
+--// ============================================================================
+--// EXTRACTED: ESP ENGINES
+--// ============================================================================
 
---// ============================================================================
---// ESP ENGINES (FROM DECOMPILED FILE)
---// ============================================================================
+local PlayerESP_Folder = Instance.new("Folder", CoreGui)
+PlayerESP_Folder.Name = "RyuPlayerESP_Container"
+
+local function DrawPlayerESP(plr)
+    if plr == LocalPlayer then return end
+    local espFrame = Instance.new("BillboardGui")
+    espFrame.Name = plr.Name
+    espFrame.AlwaysOnTop = true
+    espFrame.LightInfluence = 0
+    espFrame.Size = UDim2.new(0, 100, 0, 100)
+    espFrame.Parent = PlayerESP_Folder
+
+    local box = Instance.new("Frame", espFrame)
+    box.BackgroundTransparency = 0.5
+    box.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    box.Size = UDim2.new(1, 0, 1, 0)
+    local stroke = Instance.new("UIStroke", box)
+    stroke.Color = Color3.fromRGB(0, 150, 255)
+    stroke.Thickness = 1.5
+
+    local nameLbl = Instance.new("TextLabel", espFrame)
+    nameLbl.Size = UDim2.new(1, 0, 0, 15)
+    nameLbl.Position = UDim2.new(0, 0, 0, -20)
+    nameLbl.BackgroundTransparency = 1
+    nameLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+    nameLbl.TextStrokeTransparency = 0
+    nameLbl.Font = Enum.Font.GothamBold
+    nameLbl.TextSize = 12
+
+    local hpBarBG = Instance.new("Frame", espFrame)
+    hpBarBG.Size = UDim2.new(0, 4, 1, 0)
+    hpBarBG.Position = UDim2.new(0, -8, 0, 0)
+    hpBarBG.BackgroundColor3 = Color3.new(0, 0, 0)
+    local hpBar = Instance.new("Frame", hpBarBG)
+    hpBar.Size = UDim2.new(1, 0, 1, 0)
+    hpBar.Position = UDim2.new(0, 0, 0, 0)
+    hpBar.AnchorPoint = Vector2.new(0, 1)
+    hpBar.Position = UDim2.new(0, 0, 1, 0)
+    hpBar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+
+    task.spawn(function()
+        while espFrame.Parent and plr.Parent do
+            if _G.RyuConfig.PlayerESP and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and plr.Character:FindFirstChild("Humanoid") then
+                espFrame.Enabled = true
+                
+                -- Extracted 3D Bounding Box Logic
+                local hrp = plr.Character.HumanoidRootPart
+                local extents = plr.Character:GetExtentsSize()
+                local sizeY = math.clamp(extents.Y, 2, 10)
+                local sizeX = math.clamp(extents.X, 2, 10)
+                
+                espFrame.Adornee = hrp
+                espFrame.Size = UDim2.new(0, sizeX * 15, 0, sizeY * 15)
+
+                local dist = LocalPlayer.Character and math.floor((LocalPlayer.Character.PrimaryPart.Position - hrp.Position).Magnitude) or 0
+                local fruit = "None"
+                for _, tool in pairs(plr.Backpack:GetChildren()) do if tool:GetAttribute("devilFruit") then fruit = tool.Name end end
+                for _, tool in pairs(plr.Character:GetChildren()) do if tool:GetAttribute("devilFruit") then fruit = tool.Name end end
+                
+                nameLbl.Text = plr.Name .. " [" .. fruit .. "] [" .. dist .. "m]"
+                local hp = plr.Character.Humanoid.Health / plr.Character.Humanoid.MaxHealth
+                hpBar.Size = UDim2.new(1, 0, hp, 0)
+                hpBar.BackgroundColor3 = Color3.new(1 - hp, hp, 0)
+            else
+                espFrame.Enabled = false
+            end
+            task.wait(0.05)
+        end
+        espFrame:Destroy()
+    end)
+end
+
+Players.PlayerAdded:Connect(DrawPlayerESP)
+for _, p in pairs(Players:GetPlayers()) do DrawPlayerESP(p) end
+
 local function DrawTextESP(parent, text, color, offset)
     local bill = Instance.new("BillboardGui", parent)
     bill.AlwaysOnTop = true; bill.Size = UDim2.new(0, 200, 0, 50); bill.StudsOffset = offset or Vector3.new(0, 2, 0)
@@ -292,7 +379,6 @@ end
 
 task.spawn(function()
     while task.wait(1) do
-        -- Chest ESP
         if _G.RyuConfig.ChestESP then
             local effects = Workspace:FindFirstChild("Effects")
             if effects then
@@ -321,7 +407,6 @@ task.spawn(function()
             for _, v in pairs(Workspace:GetDescendants()) do if v.Name == "RyuChestESP" then v:Destroy() end end
         end
         
-        -- Medal ESP
         if _G.RyuConfig.MedalESP then
             local effects = Workspace:FindFirstChild("Effects")
             if effects then
@@ -335,159 +420,100 @@ task.spawn(function()
         else
             for _, v in pairs(Workspace:GetDescendants()) do if v.Name == "RyuMedalESP" then v:Destroy() end end
         end
-
-        -- Player ESP
-        if _G.RyuConfig.PlayerESP then
-            for _, plr in pairs(Players:GetPlayers()) do
-                if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Head") then
-                    if not plr.Character.Head:FindFirstChild("RyuPlayerESP") then
-                        local bill, lbl = DrawTextESP(plr.Character.Head, "", Color3.fromRGB(0, 150, 255), Vector3.new(0, 3, 0))
-                        bill.Name = "RyuPlayerESP"
-                        task.spawn(function()
-                            while bill.Parent and plr.Character do
-                                local fruit = "None"
-                                for _, tool in pairs(plr.Backpack:GetChildren()) do if tool:GetAttribute("devilFruit") then fruit = tool.Name end end
-                                for _, tool in pairs(plr.Character:GetChildren()) do if tool:GetAttribute("devilFruit") then fruit = tool.Name end end
-                                local dist = LocalPlayer.Character and math.floor((LocalPlayer.Character.PrimaryPart.Position - plr.Character.Head.Position).Magnitude) or 0
-                                lbl.Text = plr.Name .. "\nFruit: " .. fruit .. "\n[" .. dist .. "m]"
-                                task.wait(0.5)
-                            end
-                        end)
-                    end
-                end
-            end
-        else
-            for _, v in pairs(Workspace:GetDescendants()) do if v.Name == "RyuPlayerESP" then v:Destroy() end end
-        end
     end
 end)
 
-
 --// ============================================================================
---// IMPEL DOWN AUTO FARM ENGINE (V5.7: PERFECTED PHASES, PATHFINDING, FAILSAFES)
+--// EXTRACTED: AUTO REJOIN & AUTO JOIN PS LOGIC
 --// ============================================================================
 
--- ANTI-STUN SYSTEM
-local function AntiStunSetup(char)
-    char.DescendantAdded:Connect(function(desc)
-        if not _G.RyuConfig.AutoImpelDown then return end
-        task.wait()
-        if desc.Name == "Stun" or desc.Name == "StunFolder" then
-            desc:Destroy()
-        end
-        if (desc:IsA("BodyPosition") or desc:IsA("BodyVelocity")) and desc.Name ~= "geppo" and desc.Name ~= "rolling" and desc.Name ~= "RyuHover" then
-            desc:Destroy()
-        end
-    end)
-end
+GuiService.ErrorMessageChanged:Connect(function()
+    if _G.RyuConfig.AutoRejoin then
+        local code = _G.RyuConfig.PsCode
+        local str = string.format("repeat task.wait() until game:IsLoaded()\ntask.wait(30)\ngetgenv().PsCode = \"%s\"\nloadstring(game:HttpGet(\"https://raw.githubusercontent.com/ryuhub/gpo/main.lua\"))()", code)
+        queue_on_teleport(str)
+        TeleportService:Teleport(1730877806, LocalPlayer)
+    end
+end)
 
-if LocalPlayer.Character then AntiStunSetup(LocalPlayer.Character) end
-LocalPlayer.CharacterAdded:Connect(function(char) AntiStunSetup(char) end)
-
--- PASSIVE STATS ALLOCATOR
 task.spawn(function()
-    while true do
-        task.wait()
-        if _G.RyuConfig.AutoImpelDown then
+    while task.wait(1) do
+        if _G.RyuConfig.AutoJoinPS and _G.RyuConfig.PsCode ~= "" then
             pcall(function()
-                local argsStr = {"Strength", nil, 1}
-                game:GetService("ReplicatedStorage"):WaitForChild("Events"):WaitForChild("stats"):FireServer(unpack(argsStr, 1, 3))
-                local argsDef = {"Defense", nil, 1}
-                game:GetService("ReplicatedStorage"):WaitForChild("Events"):WaitForChild("stats"):FireServer(unpack(argsDef, 1, 3))
+                ReplicatedStorage:WaitForChild("Events"):WaitForChild("reserved"):InvokeServer(_G.RyuConfig.PsCode)
+                if LocalPlayer.PlayerGui:FindFirstChild("chooseType") then
+                    LocalPlayer.PlayerGui.chooseType.Frame.RemoteEvent:FireServer(true)
+                end
+                if LocalPlayer.PlayerGui:FindFirstChild("ConfirmationPrompt") then
+                    LocalPlayer.PlayerGui.ConfirmationPrompt.RemoteEvent:FireServer(_G.RyuConfig.Sea)
+                end
             end)
         end
     end
 end)
 
--- PASSIVE SPIRIT ESSENCE HANDLER
-_G.SpiritEssenceUsed = false
+--// ============================================================================
+--// EXTRACTED: AUTO FISHMAN FARM (RIFLE)
+--// ============================================================================
+
 task.spawn(function()
-    while true do
-        task.wait(1)
-        if not _G.RyuConfig.AutoImpelDown then continue end
-        if _G.SpiritEssenceUsed then continue end
-        if _G.ImpelState == "Init" or _G.ImpelState == "WaitForCutscene" then continue end 
+    while task.wait(0.1) do
+        if not _G.RyuConfig.AutoFishmanFarm then continue end
         
         local char = LocalPlayer.Character
-        if not char then continue end
-        local hum = char:FindFirstChildOfClass("Humanoid")
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then continue end
+
+        local peli = 0
+        pcall(function() peli = tonumber(string.split(LocalPlayer.PlayerGui.HUD.Main.Peli.TextLabel.Text, ": ")[2]) end)
         
-        local essence = LocalPlayer.Backpack:FindFirstChild("Spirit Essence") or char:FindFirstChild("Spirit Essence")
-        if essence and hum then
-            char.PrimaryPart.Velocity = Vector3.new(0,0,0)
-            pcall(function() ReplicatedStorage.Events.Tools:InvokeServer("equip", "Spirit Essence") end)
-            task.wait(0.5)
-            pcall(function() hum:EquipTool(essence) end)
-            task.wait(0.5)
-            
-            pcall(function()
-                local center = camera.ViewportSize / 2
-                VirtualInputManager:SendMouseButtonEvent(center.X, center.Y, 0, true, game, 1)
-                task.wait(0.1)
-                VirtualInputManager:SendMouseButtonEvent(center.X, center.Y, 0, false, game, 1)
-            end)
-            task.wait(1.5)
-            
-            pcall(function()
-                local pg = LocalPlayer:FindFirstChild("PlayerGui")
-                local guiInset = GuiService:GetGuiInset()
-                if pg then
-                    local clicked = false
-                    for _, v in pairs(pg:GetDescendants()) do
-                        if clicked then break end
-                        if v:IsA("TextButton") or v:IsA("ImageButton") then
-                            local txt = string.lower(v:IsA("TextLabel") and v.Text or v:IsA("TextButton") and v.Text or "")
-                            local name = string.lower(v.Name)
-                            local isGreen, isRed = false, false
-                            if v.BackgroundColor3 then
-                                isGreen = (v.BackgroundColor3.G > v.BackgroundColor3.R + 0.1 and v.BackgroundColor3.G > v.BackgroundColor3.B + 0.1)
-                                isRed = (v.BackgroundColor3.R > v.BackgroundColor3.G + 0.1 and v.BackgroundColor3.R > v.BackgroundColor3.B + 0.1)
-                            end
-                            
-                            if isRed or string.find(txt, "no") or string.find(txt, "decline") or string.find(txt, "ablehnen") then continue end
-                            
-                            if (string.find(txt, "accept") or string.find(name, "accept") or string.find(txt, "yes") or isGreen) then
-                                local absPos = v.AbsolutePosition; local absSize = v.AbsoluteSize
-                                local centerX = absPos.X + (absSize.X / 2); local centerY = absPos.Y + (absSize.Y / 2) + guiInset.Y
-                                
-                                VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, true, game, 1)
-                                task.wait(0.05)
-                                VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 1)
-                                
-                                pcall(function() v.Activated:Fire() end)
-                                pcall(function() getsenv(v).Click() end)
-                                clicked = true; break
-                            end
-                        end
-                    end
-                end
-            end)
-            
+        local hasRifle = false
+        for _, v in pairs(LocalPlayer.Backpack:GetChildren()) do if v.Name == "Rifle" then hasRifle = true end end
+        for _, v in pairs(char:GetChildren()) do if v.Name == "Rifle" then hasRifle = true end end
+
+        if peli < 300 and not hasRifle then continue end 
+        
+        if peli >= 300 and not hasRifle then
+            CustomTween(Vector3.new(-532, 6, -3450))
             task.wait(1)
-            pcall(function() game:GetService("ReplicatedStorage"):WaitForChild("Events"):WaitForChild("Haki"):FireServer(unpack({"Buso"}, 1, 1)) end)
-            _G.SpiritEssenceUsed = true
+            pcall(function() ReplicatedStorage.Events.Shop:InvokeServer(Workspace.BuyableItems.Rifle, 1) end)
+            continue
         end
-    end
-end)
 
-_G.ImpelState = "Init"
-_G.VeraSeen = false
+        local statsFolder = ReplicatedStorage:FindFirstChild("Stats" .. LocalPlayer.Name)
+        if statsFolder and statsFolder.Stats.SpawnPoint.Value ~= "Fishman Island" then
+            CustomTween(Vector3.new(7976, -2153, -17075))
+            pcall(function() ReplicatedStorage.Events.SetSpawn:FireServer(nil, Workspace.NPCs.Robo) end)
+            continue
+        end
 
--- PASSIVE CAMERA TRACKING
-task.spawn(function()
-    while true do
-        task.wait()
-        if _G.RyuConfig.AutoImpelDown then
-            pcall(function()
-                local char = LocalPlayer.Character
-                if char and char:FindFirstChildOfClass("Humanoid") then
-                    camera.CameraType = Enum.CameraType.Custom
-                    camera.CameraSubject = char:FindFirstChildOfClass("Humanoid")
+        CustomTween(Vector3.new(7838, -2151, -17134))
+        
+        local cicklcon = ReplicatedStorage.Events:FindFirstChild("CIcklcon")
+        if cicklcon then
+            pcall(function() ReplicatedStorage.Events.Tools:InvokeServer("equip", "Rifle") end)
+            local target = nil
+            for _, v in pairs(Workspace.NPCs:GetChildren()) do
+                if v.Name == "Fishman Karate User" and v:FindFirstChild("Head") and v:FindFirstChildOfClass("Humanoid").Health > 0 then
+                    target = v; break
                 end
-            end)
+            end
+            
+            if target and char:FindFirstChild("Rifle") then
+                pcall(function()
+                    local args = { Gun = "Rifle", Position = target.Head.Position, Start = char.Rifle.Hole.CFrame, joe = "true" }
+                    cicklcon:FireServer("fire", args)
+                    ReplicatedStorage.Events.stats:FireServer("GunMastery", nil, 1)
+                end)
+            end
         end
     end
 end)
+
+
+--// ============================================================================
+--// IMPEL DOWN ENGINE (PHASES 1-6 & FLOOR 2)
+--// ============================================================================
 
 local currentComboIndex = 1
 local lastSwing = 0
@@ -675,6 +701,9 @@ local function CheckHPAndFailsafe(root, hum, safePos)
 end
 
 -- IMPEL DOWN MASTER LOOP
+_G.ImpelState = "Init"
+_G.VeraSeen = false
+
 task.spawn(function()
     while true do
         task.wait(0.05)
@@ -717,7 +746,9 @@ task.spawn(function()
                     _G.PlayerLastHpVera = hum.Health
                     
                     if not _G.VeraLastHp then _G.VeraLastHp = vHum.Health end
-                    if vHum.Health < _G.VeraLastHp then _G.VeraLastHp = vHum.Health; _G.VeraLastHitTime = tick() end
+                    if vHum.Health < _G.VeraLastHp then
+                        _G.VeraLastHp = vHum.Health; _G.VeraLastHitTime = tick()
+                    end
                     if tick() - (_G.VeraLastHitTime or tick()) > 1.5 then _G.SmartHoverHeight = math.max(4.0, _G.SmartHoverHeight - 0.1); _G.VeraLastHitTime = tick() end
 
                     local currentDodgeOffset = (tick() < (_G.DodgeEndTime or 0)) and 2 or 0
@@ -878,7 +909,9 @@ task.spawn(function()
                     _G.PlayerLastHpGuard = hum.Health
                     
                     if not _G.GuardLastHp then _G.GuardLastHp = tHum.Health end
-                    if tHum.Health < _G.GuardLastHp then _G.GuardLastHp = tHum.Health; _G.GuardLastHitTime = tick() end
+                    if tHum.Health < _G.GuardLastHp then
+                        _G.GuardLastHp = tHum.Health; _G.GuardLastHitTime = tick()
+                    end
                     if tick() - (_G.GuardLastHitTime or tick()) > 1.5 then _G.GuardHoverHeight = math.max(4.0, _G.GuardHoverHeight - 0.1); _G.GuardLastHitTime = tick() end
 
                     local currentDodgeOffset = (tick() < (_G.GuardDodgeEndTime or 0)) and 2 or 0
@@ -961,7 +994,9 @@ task.spawn(function()
                     _G.PlayerLastHpGuard = hum.Health
                     
                     if not _G.GuardLastHp then _G.GuardLastHp = tHum.Health end
-                    if tHum.Health < _G.GuardLastHp then _G.GuardLastHp = tHum.Health; _G.GuardLastHitTime = tick() end
+                    if tHum.Health < _G.GuardLastHp then
+                        _G.GuardLastHp = tHum.Health; _G.GuardLastHitTime = tick()
+                    end
                     if tick() - (_G.GuardLastHitTime or tick()) > 1.5 then _G.GuardHoverHeight = math.max(4.0, _G.GuardHoverHeight - 0.1); _G.GuardLastHitTime = tick() end
 
                     local currentDodgeOffset = (tick() < (_G.GuardDodgeEndTime or 0)) and 2 or 0
@@ -1072,7 +1107,9 @@ task.spawn(function()
                     _G.PlayerLastHpF2 = hum.Health
                     
                     if not _G.F2LastHp then _G.F2LastHp = tHum.Health end
-                    if tHum.Health < _G.F2LastHp then _G.F2LastHp = tHum.Health; _G.F2LastHitTime = tick() end
+                    if tHum.Health < _G.F2LastHp then
+                        _G.F2LastHp = tHum.Health; _G.F2LastHitTime = tick()
+                    end
                     if tick() - (_G.F2LastHitTime or tick()) > 1.5 then _G.F2HoverHeight = math.max(4.0, _G.F2HoverHeight - 0.1); _G.F2LastHitTime = tick() end
 
                     local currentDodgeOffset = (tick() < (_G.F2DodgeEndTime or 0)) and 2 or 0
@@ -1111,7 +1148,10 @@ task.spawn(function()
                     for _, v in pairs(pg:GetDescendants()) do
                         if v:IsA("TextLabel") and v.Visible and v.TextTransparency < 1 then
                             local txt = string.lower(v.Text)
-                            if string.find(txt, "room cleared") or string.find(txt, "floor cleared") then roomCleared = true; break end
+                            if string.find(txt, "room cleared") or string.find(txt, "floor cleared") then
+                                roomCleared = true
+                                break
+                            end
                         end
                     end
                 end
