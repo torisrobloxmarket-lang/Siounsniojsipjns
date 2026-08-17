@@ -1,5 +1,5 @@
 --// ==========================================
---// RYUHUB: GRAND PIECE ONLINE (CLEANED & PORTED)
+--// RYU HUB: IMPEL DOWN 100% PERFECT ENGINE (MOBILE + ANTI-STUN + ALL PHASES)
 --// ==========================================
 
 local CoreGui = game:GetService("CoreGui")
@@ -8,401 +8,1300 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local Lighting = game:GetService("Lighting")
-local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local PathfindingService = game:GetService("PathfindingService")
+local TeleportService = game:GetService("TeleportService")
+local GuiService = game:GetService("GuiService")
 
 local LocalPlayer = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
+--// ANTI-CHEAT BYPASS (Adonis & ClientMovers)
+task.spawn(function()
+    pcall(function()
+        for _, v in ipairs(game:GetDescendants()) do
+            if v.Name:lower():match("adonis") or v.Name:match("ClientMover") or v.Name == "__FUNCTION" then
+                v:Destroy()
+            end
+        end
+    end)
+end)
+
 --// GUI SECURITY & CLEANUP
 local guiParent = LocalPlayer:WaitForChild("PlayerGui")
 pcall(function() if gethui then guiParent = gethui() elseif syn and syn.protect_gui then guiParent = CoreGui end end)
-for _, v in pairs(guiParent:GetChildren()) do if v.Name == "RyuHubGPO" then v:Destroy() end end
+for _, v in pairs(guiParent:GetChildren()) do if v.Name == "RyuHubPremium" then v:Destroy() end end
 
---// THEME SETTINGS
+--// CONFIG SAVE SYSTEM
+local configFileName = "RyuHub_ImpelDown_Config.json"
+local RyuSavedConfig = {
+    GlassMode = false, WorldBlur = false, AccentColor = {255, 255, 255}, BgColor = {12, 12, 14},
+    Font = "Gotham", HideBorders = false, Roundness = 12, BgImage = "", BgOpacity = 0.6,
+    ToggleIcon = "rbxthumb://type=Asset&id=6050149849&w=150&h=150", ToggleSize = 50, ToggleGlow = 0.5,
+    RainbowMode = false, FloatingIcon = false, AutoImpelDown = false, ImpelFarmDistance = 15, AntiStun = true
+}
+
+if readfile and isfile and isfile(configFileName) then
+    pcall(function()
+        local data = HttpService:JSONDecode(readfile(configFileName))
+        for k, v in pairs(data) do RyuSavedConfig[k] = v end
+    end)
+end
+
+local function SaveConfig()
+    if writefile then pcall(function() writefile(configFileName, HttpService:JSONEncode(RyuSavedConfig)) end) end
+end
+
+--// PREMIUM MONOCHROME THEME
 local Theme = {
-    Background = Color3.fromRGB(12, 12, 14),
-    Sidebar = Color3.fromRGB(18, 18, 20),
-    SectionBG = Color3.fromRGB(24, 24, 26),
-    Text = Color3.fromRGB(250, 250, 250),
-    SubText = Color3.fromRGB(130, 130, 135),
-    Accent = Color3.fromRGB(0, 150, 255),
-    ToggleOff = Color3.fromRGB(35, 35, 38),
-    ToggleOn = Color3.fromRGB(255, 255, 255),
-    Stroke = Color3.fromRGB(45, 45, 50)
+    Background = Color3.fromRGB(RyuSavedConfig.BgColor[1], RyuSavedConfig.BgColor[2], RyuSavedConfig.BgColor[3]),
+    Sidebar = Color3.fromRGB(18, 18, 20), SectionBG = Color3.fromRGB(24, 24, 26),
+    Text = Color3.fromRGB(250, 250, 250), SubText = Color3.fromRGB(130, 130, 135),
+    Accent = Color3.fromRGB(RyuSavedConfig.AccentColor[1], RyuSavedConfig.AccentColor[2], RyuSavedConfig.AccentColor[3]),
+    ToggleOff = Color3.fromRGB(35, 35, 38), ToggleOn = Color3.fromRGB(255, 255, 255),
+    Stroke = Color3.fromRGB(45, 45, 50), Warning = Color3.fromRGB(255, 75, 75)
 }
 
---// GPO DATA EXTRACTED FROM DECOMPILED SCRIPT
-local Islands = { 
-    ["Town of Beginnings"] = CFrame.new(-528, 5, -3423), 
-    ["Shell's Town"] = CFrame.new(-1299, 4, -5052), 
-    ["Sandora"] = CFrame.new(-1545, 4, -3353), 
-    ["Orange Town"] = CFrame.new(-4448, 5, -6638), 
-    ["Restaurant Baratie"] = CFrame.new(-2964, 6, -6672), 
-    ["Logue Town"] = CFrame.new(-6589, 7, -7643), 
-    ["Roca Island"] = CFrame.new(1564, 154, -6598), 
-    ["Shark Park"] = CFrame.new(-1572, 11, -10082), 
-    ["Reverse Mountain"] = CFrame.new(-8030, 17, -8785), 
-    ["Sphinx Island"] = CFrame.new(-4006, 41, -9138), 
-    ["Fishman Island"] = CFrame.new(7996, -2154, -17075), 
-    ["Marine Fort F-1"] = CFrame.new(393, 18, -4467), 
-    ["Marine Base G-1"] = CFrame.new(-5979, 57, -11496), 
-    ["Colosseum"] = CFrame.new(-2020, 7, -7675), 
-    ["Hell"] = CFrame.new(18944, 8122, -12501) 
-}
+local MainSize = UDim2.new(0, math.min(750, camera.ViewportSize.X - 40), 0, math.min(480, camera.ViewportSize.Y - 40))
+local SidebarWidth = 160
 
-local IslandNames = {}
-for name, _ in pairs(Islands) do table.insert(IslandNames, name) end
-
-getgenv().AntiStun = false
-getgenv().ChestEspEnabled = false
-getgenv().PlayerEspEnabled = false
-getgenv().AutoJoinPS = false
-getgenv().PsCode = ""
-
---// MAIN GUI BUILDER
 local RyuHub = Instance.new("ScreenGui")
-RyuHub.Name = "RyuHubGPO"
+RyuHub.Name = "RyuHubPremium"
 RyuHub.ResetOnSpawn = false
+RyuHub.IgnoreGuiInset = true
 RyuHub.Parent = guiParent
 
-local MainFrame = Instance.new("Frame", RyuHub)
-MainFrame.Size = UDim2.new(0, 650, 0, 400)
-MainFrame.Position = UDim2.new(0.5, -325, 0.5, -200)
-MainFrame.BackgroundColor3 = Theme.Background
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
-Instance.new("UIStroke", MainFrame).Color = Theme.Stroke
+local UIBlur = Instance.new("BlurEffect")
+UIBlur.Size = 0
+UIBlur.Parent = Lighting
 
-local Topbar = Instance.new("Frame", MainFrame)
-Topbar.Size = UDim2.new(1, 0, 0, 50)
-Topbar.BackgroundTransparency = 1
+--// ANIMATION & UI HELPERS
+local function AddHoverEffect(element, def, hov)
+    element.MouseEnter:Connect(function() TweenService:Create(element, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = hov}):Play() end)
+    element.MouseLeave:Connect(function() TweenService:Create(element, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = def}):Play() end)
+end
 
-local Title = Instance.new("TextLabel", Topbar)
-Title.Size = UDim2.new(0, 300, 1, 0)
-Title.Position = UDim2.new(0, 20, 0, 0)
-Title.BackgroundTransparency = 1
-Title.Text = "RYU HUB | GRAND PIECE ONLINE"
-Title.Font = Enum.Font.GothamBlack
-Title.TextSize = 18
-Title.TextColor3 = Theme.Accent
-Title.TextXAlignment = Enum.TextXAlignment.Left
+local function AddClickPop(element)
+    local orig = element.Size
+    element.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            TweenService:Create(element, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(orig.X.Scale, orig.X.Offset-4, orig.Y.Scale, orig.Y.Offset-4)}):Play()
+        end
+    end)
+    element.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            TweenService:Create(element, TweenInfo.new(0.3, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), {Size = orig}):Play()
+        end
+    end)
+end
 
--- Dragging Logic
-local dragging, dragInput, dragStart, startPos
-Topbar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        dragging = true; dragStart = input.Position; startPos = MainFrame.Position
+--// IMAGE BUTTON TOGGLE (MOBILE TOUCH SUPPORT)
+local ToggleBtn = Instance.new("ImageButton")
+ToggleBtn.Size = UDim2.new(0, 50, 0, 50); ToggleBtn.Position = UDim2.new(0, 25, 0, 25); ToggleBtn.BackgroundColor3 = Theme.Sidebar
+ToggleBtn.Image = RyuSavedConfig.ToggleIcon; ToggleBtn.Parent = RyuHub; ToggleBtn.ScaleType = Enum.ScaleType.Crop
+ToggleBtn.ClipsDescendants = true
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
+local btnStroke = Instance.new("UIStroke", ToggleBtn); btnStroke.Color = Theme.Accent; btnStroke.Thickness = 2; btnStroke.Transparency = 0.5
+
+AddClickPop(ToggleBtn)
+local tDragStart, tStartPos, isDraggingBtn = nil, nil, false
+ToggleBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDraggingBtn = false; tDragStart = input.Position; tStartPos = ToggleBtn.Position
     end
 end)
-Topbar.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end
-end)
 UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        local delta = input.Position - dragStart
-        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    if tDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - tDragStart
+        if delta.Magnitude > 5 then isDraggingBtn = true; ToggleBtn.Position = UDim2.new(tStartPos.X.Scale, tStartPos.X.Offset + delta.X, tStartPos.Y.Scale, tStartPos.Y.Offset + delta.Y) end
     end
 end)
 UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then tDragStart = nil end
 end)
 
+--// MAIN WINDOW FRAME
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 0, 0, 0); MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0); MainFrame.BackgroundColor3 = Theme.Background
+MainFrame.BorderSizePixel = 0; MainFrame.Active = true; MainFrame.Visible = false; MainFrame.ClipsDescendants = true; MainFrame.Parent = RyuHub
+local MainCorner = Instance.new("UICorner", MainFrame); MainCorner.CornerRadius = UDim.new(0, 12)
+
+local MainBgImage = Instance.new("ImageLabel", MainFrame)
+MainBgImage.Size = UDim2.new(1, 0, 1, 0); MainBgImage.BackgroundTransparency = 1; MainBgImage.ImageTransparency = 1; MainBgImage.ScaleType = Enum.ScaleType.Crop; MainBgImage.ZIndex = 0
+
+local mainStroke = Instance.new("UIStroke", MainFrame); mainStroke.Color = Theme.Stroke; mainStroke.Transparency = 0.2; mainStroke.Thickness = 1.5
+
+local isUIOpen = false
+ToggleBtn.MouseButton1Click:Connect(function()
+    if not isDraggingBtn then
+        if MainFrame.Visible then
+            isUIOpen = false
+            TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
+            TweenService:Create(UIBlur, TweenInfo.new(0.3), {Size = 0}):Play()
+            task.wait(0.3); MainFrame.Visible = false
+        else
+            isUIOpen = true
+            MainFrame.Visible = true
+            TweenService:Create(MainFrame, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = MainSize, Position = UDim2.new(0.5, -MainSize.X.Offset/2, 0.5, -MainSize.Y.Offset/2)}):Play()
+            if _G.BlurEnabled then TweenService:Create(UIBlur, TweenInfo.new(0.35), {Size = 15}):Play() end
+        end
+    end
+end)
+
+local Topbar = Instance.new("Frame", MainFrame)
+Topbar.Size = UDim2.new(1, 0, 0, 60); Topbar.BackgroundTransparency = 1; Topbar.ZIndex = 2
+
+local Title = Instance.new("TextLabel", Topbar)
+Title.Size = UDim2.new(0, 300, 0, 24); Title.Position = UDim2.new(0, 20, 0, 12); Title.BackgroundTransparency = 1; Title.Text = "RYU HUB"; Title.Font = Enum.Font.GothamBlack; Title.TextSize = 22; Title.TextXAlignment = Enum.TextXAlignment.Left; Title.ZIndex = 2
+
+local TitleGradient = Instance.new("UIGradient", Title)
+TitleGradient.Color = ColorSequence.new{ColorSequenceKeypoint.new(0, Color3.fromRGB(180, 180, 185)), ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 180, 185))}
+TitleGradient.Offset = Vector2.new(-1, 0)
+task.spawn(function() TweenService:Create(TitleGradient, TweenInfo.new(2.0, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Offset = Vector2.new(1, 0)}):Play() end)
+
+local SubTitle = Instance.new("TextLabel", Topbar)
+SubTitle.Size = UDim2.new(0, 300, 0, 15); SubTitle.Position = UDim2.new(0, 20, 0, 36); SubTitle.BackgroundTransparency = 1; SubTitle.Text = "IMPEL DOWN SCRIPT"; SubTitle.TextColor3 = Theme.SubText; SubTitle.Font = Enum.Font.Gotham; SubTitle.TextSize = 12; SubTitle.TextXAlignment = Enum.TextXAlignment.Left; SubTitle.ZIndex = 2
+
+local CloseBtn = Instance.new("TextButton", Topbar)
+CloseBtn.Size = UDim2.new(0, 28, 0, 28); CloseBtn.Position = UDim2.new(1, -40, 0, 15); CloseBtn.BackgroundColor3 = Theme.SectionBG; CloseBtn.Text = "X"; CloseBtn.TextColor3 = Theme.SubText; CloseBtn.Font = Enum.Font.GothamBold; CloseBtn.TextSize = 14; CloseBtn.ZIndex = 2
+Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
+Instance.new("UIStroke", CloseBtn).Color = Theme.Stroke
+AddHoverEffect(CloseBtn, Theme.SectionBG, Theme.Warning)
+CloseBtn.MouseButton1Click:Connect(function() 
+    isUIOpen = false
+    TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
+    TweenService:Create(UIBlur, TweenInfo.new(0.3), {Size = 0}):Play()
+    task.wait(0.3); MainFrame.Visible = false 
+end)
+
+-- WINDOW DRAGGING (MOBILE TOUCH SUPPORT)
+local mDragging, mDragStart, mStartPos
+Topbar.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then mDragging = true; mDragStart = input.Position; mStartPos = MainFrame.Position end end)
+Topbar.InputChanged:Connect(function(input) if mDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then local delta = input.Position - mDragStart; MainFrame.Position = UDim2.new(mStartPos.X.Scale, mStartPos.X.Offset + delta.X, mStartPos.Y.Scale, mStartPos.Y.Offset + delta.Y) end end)
+Topbar.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then mDragging = false end end)
+
+local Line = Instance.new("Frame", MainFrame)
+Line.Size = UDim2.new(1, -40, 0, 1); Line.Position = UDim2.new(0, 20, 0, 65); Line.BackgroundColor3 = Theme.Stroke; Line.BorderSizePixel = 0; Line.ZIndex = 2
+
 local Sidebar = Instance.new("ScrollingFrame", MainFrame)
-Sidebar.Size = UDim2.new(0, 150, 1, -60)
-Sidebar.Position = UDim2.new(0, 10, 0, 50)
-Sidebar.BackgroundTransparency = 1
-Sidebar.ScrollBarThickness = 0
-local SideLayout = Instance.new("UIListLayout", Sidebar)
-SideLayout.Padding = UDim.new(0, 5)
+Sidebar.Size = UDim2.new(0, SidebarWidth, 1, -85); Sidebar.Position = UDim2.new(0, 10, 0, 75); Sidebar.BackgroundTransparency = 1; Sidebar.ScrollBarThickness = 0; Sidebar.ZIndex = 2
+local SideLayout = Instance.new("UIListLayout", Sidebar); SideLayout.Padding = UDim.new(0, 6); SideLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left; SideLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
 local ContentContainer = Instance.new("Frame", MainFrame)
-ContentContainer.Size = UDim2.new(1, -180, 1, -60)
-ContentContainer.Position = UDim2.new(0, 170, 0, 50)
-ContentContainer.BackgroundTransparency = 1
+ContentContainer.Size = UDim2.new(1, -(SidebarWidth + 25), 1, -85); ContentContainer.Position = UDim2.new(0, SidebarWidth + 15, 0, 75); ContentContainer.BackgroundTransparency = 1; ContentContainer.ZIndex = 2
 
---// UI ELEMENTS
-local function CreateTabButton(name, targetPage)
-    local btn = Instance.new("TextButton", Sidebar)
-    btn.Size = UDim2.new(1, 0, 0, 35)
-    btn.BackgroundColor3 = Theme.Sidebar
-    btn.Text = "  " .. name
-    btn.TextColor3 = Theme.SubText
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 13
-    btn.TextXAlignment = Enum.TextXAlignment.Left
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-    
-    btn.MouseButton1Click:Connect(function()
-        for _, page in pairs(ContentContainer:GetChildren()) do
-            if page:IsA("ScrollingFrame") then page.Visible = (page.Name == targetPage.Name) end
-        end
-        for _, otherBtn in pairs(Sidebar:GetChildren()) do
-            if otherBtn:IsA("TextButton") then
-                otherBtn.TextColor3 = Theme.SubText
-                otherBtn.BackgroundColor3 = Theme.Sidebar
-            end
-        end
-        btn.TextColor3 = Theme.Text
-        btn.BackgroundColor3 = Theme.SectionBG
-    end)
-    return btn
+local DiscordLabel = Instance.new("TextLabel", MainFrame)
+DiscordLabel.Size = UDim2.new(0, 150, 0, 20); DiscordLabel.Position = UDim2.new(0, 15, 1, -30); DiscordLabel.BackgroundTransparency = 1; DiscordLabel.Text = "DISCORD.GG/RYUHUB"; DiscordLabel.Font = Enum.Font.GothamBold; DiscordLabel.TextSize = 11; DiscordLabel.TextXAlignment = Enum.TextXAlignment.Left; DiscordLabel.TextTransparency = 0.05; DiscordLabel.ZIndex = 2
+
+local DiscordGradient = Instance.new("UIGradient", DiscordLabel)
+DiscordGradient.Color = ColorSequence.new{ColorSequenceKeypoint.new(0, Color3.fromRGB(180, 180, 185)), ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 180, 185))}
+DiscordGradient.Offset = Vector2.new(-1, 0)
+task.spawn(function() TweenService:Create(DiscordGradient, TweenInfo.new(2.0, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Offset = Vector2.new(1, 0)}):Play() end)
+
+--// UI SYSTEM BUILDER
+local Tabs, sidebarOrderCounter, itemOrderCounter = {}, 0, 0
+local function UpdateSidebarCanvas()
+    local totalH = 10
+    for _, t in pairs(Tabs) do totalH = totalH + 36 + 6; if t.IsOpen then totalH = totalH + t.SubLayout.AbsoluteContentSize.Y + 6 end end
+    Sidebar.CanvasSize = UDim2.new(0, 0, 0, totalH)
 end
 
-local function CreatePage(name)
-    local page = Instance.new("ScrollingFrame", ContentContainer)
-    page.Name = name
-    page.Size = UDim2.new(1, 0, 1, 0)
-    page.BackgroundTransparency = 1
-    page.ScrollBarThickness = 4
-    page.Visible = false
-    local layout = Instance.new("UIListLayout", page)
-    layout.Padding = UDim.new(0, 8)
-    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        page.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 10)
-    end)
+local function CreateMainTab(name)
+    local tabObj = { Btn = nil, Arrow = nil, SubContainer = nil, SubLayout = nil, IsOpen = false, SubTabs = {}, Toggle = nil }
+    sidebarOrderCounter = sidebarOrderCounter + 1
+    local tabBtn = Instance.new("TextButton", Sidebar); tabBtn.LayoutOrder = sidebarOrderCounter; tabBtn.Size = UDim2.new(1, 0, 0, 36); tabBtn.BackgroundColor3 = Theme.Sidebar; tabBtn.Text = "  " .. string.upper(name); tabBtn.TextColor3 = Theme.SubText; tabBtn.Font = Enum.Font.GothamBlack; tabBtn.TextSize = 13; tabBtn.TextXAlignment = Enum.TextXAlignment.Left; tabBtn.ZIndex = 2
+    Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 8)
+    tabObj.Btn = tabBtn
+
+    local arrow = Instance.new("TextLabel", tabBtn)
+    arrow.Size = UDim2.new(0, 20, 1, 0); arrow.Position = UDim2.new(1, -25, 0, 0); arrow.BackgroundTransparency = 1
+    arrow.Text = "v"; arrow.TextColor3 = Theme.SubText; arrow.Font = Enum.Font.GothamBold; arrow.TextSize = 12; arrow.ZIndex = 2
+    tabObj.Arrow = arrow
+
+    sidebarOrderCounter = sidebarOrderCounter + 1
+    local subContainer = Instance.new("Frame", Sidebar); subContainer.LayoutOrder = sidebarOrderCounter; subContainer.Size = UDim2.new(1, 0, 0, 0); subContainer.BackgroundTransparency = 1; subContainer.ClipsDescendants = true; subContainer.ZIndex = 2
+    tabObj.SubContainer = subContainer
+
+    local subLayout = Instance.new("UIListLayout", subContainer)
+    subLayout.Padding = UDim.new(0, 2); subLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left; subLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    tabObj.SubLayout = subLayout
+
+    local function toggleTab()
+        tabObj.IsOpen = not tabObj.IsOpen
+        local targetSize = tabObj.IsOpen and UDim2.new(1, 0, 0, subLayout.AbsoluteContentSize.Y) or UDim2.new(1, 0, 0, 0)
+        TweenService:Create(subContainer, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = targetSize}):Play()
+        if tabObj.IsOpen then
+            arrow.Text = "^"; TweenService:Create(tabBtn, TweenInfo.new(0.25), {TextColor3 = Theme.Text, BackgroundColor3 = Theme.SectionBG}):Play(); TweenService:Create(arrow, TweenInfo.new(0.25), {TextColor3 = Theme.Text}):Play()
+        else
+            arrow.Text = "v"; TweenService:Create(tabBtn, TweenInfo.new(0.25), {TextColor3 = Theme.SubText, BackgroundColor3 = Theme.Sidebar}):Play(); TweenService:Create(arrow, TweenInfo.new(0.25), {TextColor3 = Theme.SubText}):Play()
+        end
+        task.delay(0.26, UpdateSidebarCanvas); UpdateSidebarCanvas()
+    end
+    tabBtn.MouseButton1Click:Connect(toggleTab); tabObj.Toggle = toggleTab
+    subLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() if tabObj.IsOpen then subContainer.Size = UDim2.new(1, 0, 0, subLayout.AbsoluteContentSize.Y) end; UpdateSidebarCanvas() end)
+    table.insert(Tabs, tabObj)
+    return tabObj
+end
+
+local function CreateSubTab(tabObj, subName)
+    local subObj = { Btn = nil, Page = nil, Indicator = nil, Open = nil }
+    local subBtn = Instance.new("TextButton", tabObj.SubContainer); subBtn.LayoutOrder = #tabObj.SubTabs + 1; subBtn.Size = UDim2.new(1, 0, 0, 28); subBtn.BackgroundTransparency = 1; subBtn.Text = "     " .. subName; subBtn.TextColor3 = Theme.SubText; subBtn.Font = Enum.Font.GothamMedium; subBtn.TextSize = 12; subBtn.TextXAlignment = Enum.TextXAlignment.Left; subBtn.ZIndex = 2; subObj.Btn = subBtn
+    local indicator = Instance.new("Frame", subBtn); indicator.Size = UDim2.new(0, 16, 0, 2); indicator.Position = UDim2.new(0, 20, 1, -4); indicator.BackgroundColor3 = Theme.Accent; indicator.BorderSizePixel = 0; indicator.BackgroundTransparency = 1; indicator.ZIndex = 2; Instance.new("UICorner", indicator).CornerRadius = UDim.new(1, 0); subObj.Indicator = indicator
+    local page = Instance.new("ScrollingFrame", ContentContainer); page.Size = UDim2.new(1, 0, 1, 0); page.BackgroundTransparency = 1; page.ScrollBarThickness = 2; page.ScrollBarImageColor3 = Theme.Accent; page.Visible = false; page.ZIndex = 2; subObj.Page = page
+    local pageLayout = Instance.new("UIListLayout", page); pageLayout.Padding = UDim.new(0, 12); pageLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    pageLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() page.CanvasSize = UDim2.new(0, 0, 0, pageLayout.AbsoluteContentSize.Y + 20) end)
+    local function openSubTab()
+        for _, t in pairs(Tabs) do for _, st in pairs(t.SubTabs) do st.Page.Visible = false; TweenService:Create(st.Btn, TweenInfo.new(0.2), {TextColor3 = Theme.SubText}):Play(); TweenService:Create(st.Indicator, TweenInfo.new(0.2), {BackgroundTransparency = 1}):Play() end end
+        page.Visible = true; TweenService:Create(subBtn, TweenInfo.new(0.2), {TextColor3 = Theme.Text}):Play(); TweenService:Create(indicator, TweenInfo.new(0.2), {BackgroundTransparency = 0}):Play()
+    end
+    subBtn.MouseButton1Click:Connect(openSubTab); subObj.Open = openSubTab
+    table.insert(tabObj.SubTabs, subObj)
     return page
 end
 
-local function CreateToggle(page, text, state, callback)
-    local frame = Instance.new("Frame", page)
-    frame.Size = UDim2.new(0.95, 0, 0, 35)
-    frame.BackgroundColor3 = Theme.SectionBG
-    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
-    
-    local label = Instance.new("TextLabel", frame)
-    label.Size = UDim2.new(0.7, 0, 1, 0)
-    label.Position = UDim2.new(0, 10, 0, 0)
-    label.BackgroundTransparency = 1
-    label.Text = text
-    label.TextColor3 = Theme.Text
-    label.Font = Enum.Font.GothamMedium
-    label.TextSize = 13
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    
-    local btn = Instance.new("TextButton", frame)
-    btn.Size = UDim2.new(0, 40, 0, 20)
-    btn.Position = UDim2.new(1, -50, 0.5, -10)
-    btn.BackgroundColor3 = state and Theme.ToggleOn or Theme.ToggleOff
-    btn.Text = ""
-    Instance.new("UICorner", btn).CornerRadius = UDim.new(1, 0)
-    
-    local circle = Instance.new("Frame", btn)
-    circle.Size = UDim2.new(0, 14, 0, 14)
-    circle.Position = state and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
-    circle.BackgroundColor3 = Theme.Background
-    Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
-    
-    local isOn = state
-    btn.MouseButton1Click:Connect(function()
+local function CreateSection(page, titleText)
+    local section = Instance.new("Frame", page); section.Name = "SectionContainer"; section.Size = UDim2.new(0.98, 0, 0, 50); section.BackgroundColor3 = Theme.SectionBG; section.BackgroundTransparency = 0; section.ZIndex = 2; Instance.new("UICorner", section).CornerRadius = UDim.new(0, 10)
+    local sStroke = Instance.new("UIStroke", section); sStroke.Color = Theme.Stroke; sStroke.Transparency = 0.2
+    local secLayout = Instance.new("UIListLayout", section); secLayout.Padding = UDim.new(0, 10); secLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center; secLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    local secPadding = Instance.new("UIPadding", section); secPadding.PaddingTop = UDim.new(0, 12); secPadding.PaddingBottom = UDim.new(0, 12)
+    local title = Instance.new("TextLabel", section); title.LayoutOrder = -1; title.Size = UDim2.new(0.92, 0, 0, 24); title.BackgroundTransparency = 1; title.Text = titleText; title.TextColor3 = Theme.Text; title.Font = Enum.Font.GothamBold; title.TextSize = 14; title.TextXAlignment = Enum.TextXAlignment.Left; title.ZIndex = 2
+    secLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() section.Size = UDim2.new(1, 0, 0, secLayout.AbsoluteContentSize.Y + 24) end)
+    return section
+end
+
+local function CreateToggle(section, text, descText, defaultState, callback)
+    if type(defaultState) == "function" then callback = defaultState; defaultState = false end
+    itemOrderCounter = itemOrderCounter + 1
+    local frame = Instance.new("Frame", section); frame.LayoutOrder = itemOrderCounter; frame.Size = UDim2.new(0.92, 0, 0, descText and 52 or 34); frame.BackgroundTransparency = 1; frame.ZIndex = 2
+    local label = Instance.new("TextLabel", frame); label.Size = UDim2.new(0.7, 0, 0, 34); label.BackgroundTransparency = 1; label.Text = text; label.TextColor3 = defaultState and Theme.Text or Theme.SubText; label.Font = Enum.Font.GothamMedium; label.TextSize = 13; label.TextXAlignment = Enum.TextXAlignment.Left; label.ZIndex = 2
+    if descText then
+        local descLabel = Instance.new("TextLabel", frame); descLabel.Size = UDim2.new(0.7, 0, 0, 15); descLabel.Position = UDim2.new(0, 0, 0, 30); descLabel.BackgroundTransparency = 1; descLabel.Text = descText; descLabel.TextColor3 = Theme.SubText; descLabel.Font = Enum.Font.Gotham; descLabel.TextSize = 11; descLabel.TextXAlignment = Enum.TextXAlignment.Left; descLabel.ZIndex = 2
+    end
+    local tBtn = Instance.new("TextButton", frame); tBtn.Size = UDim2.new(0, 42, 0, 22); tBtn.Position = UDim2.new(1, -42, 0, 6); tBtn.BackgroundColor3 = defaultState and Theme.ToggleOn or Theme.ToggleOff; tBtn.Text = ""; tBtn.ZIndex = 2; Instance.new("UICorner", tBtn).CornerRadius = UDim.new(1, 0)
+    local bStroke = Instance.new("UIStroke", tBtn); bStroke.Color = defaultState and Theme.ToggleOn or Theme.Stroke; bStroke.Transparency = 0.2; AddClickPop(tBtn)
+    local circle = Instance.new("Frame", tBtn); circle.Size = UDim2.new(0, 16, 0, 16); circle.Position = defaultState and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8); circle.BackgroundColor3 = defaultState and Theme.Background or Color3.fromRGB(150, 150, 150); circle.ZIndex = 2; Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
+    local isOn = defaultState or false
+    tBtn.MouseButton1Click:Connect(function()
         isOn = not isOn
-        btn.BackgroundColor3 = isOn and Theme.ToggleOn or Theme.ToggleOff
-        circle.Position = isOn and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
+        if isOn then TweenService:Create(tBtn, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {BackgroundColor3 = Theme.ToggleOn}):Play(); TweenService:Create(circle, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {Position = UDim2.new(1, -19, 0.5, -8), BackgroundColor3 = Theme.Background}):Play(); TweenService:Create(label, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {TextColor3 = Theme.Text}):Play(); bStroke.Color = Theme.ToggleOn else TweenService:Create(tBtn, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {BackgroundColor3 = Theme.ToggleOff}):Play(); TweenService:Create(circle, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {Position = UDim2.new(0, 3, 0.5, -8), BackgroundColor3 = Color3.fromRGB(150, 150, 150)}):Play(); TweenService:Create(label, TweenInfo.new(0.25, Enum.EasingStyle.Quad), {TextColor3 = Theme.SubText}):Play(); bStroke.Color = Theme.Stroke end
         if callback then callback(isOn) end
     end)
 end
 
-local function CreateTextBox(page, text, callback)
-    local frame = Instance.new("Frame", page)
-    frame.Size = UDim2.new(0.95, 0, 0, 35)
-    frame.BackgroundColor3 = Theme.SectionBG
-    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
-    
-    local box = Instance.new("TextBox", frame)
-    box.Size = UDim2.new(1, -20, 1, 0)
-    box.Position = UDim2.new(0, 10, 0, 0)
-    box.BackgroundTransparency = 1
-    box.PlaceholderText = text
-    box.Text = ""
-    box.TextColor3 = Theme.Text
-    box.Font = Enum.Font.GothamMedium
-    box.TextSize = 13
-    box.TextXAlignment = Enum.TextXAlignment.Left
-    
-    box.FocusLost:Connect(function()
-        if callback then callback(box.Text) end
-    end)
+local function CreateSlider(section, text, min, max, default, callback)
+    itemOrderCounter = itemOrderCounter + 1
+    local frame = Instance.new("Frame", section); frame.LayoutOrder = itemOrderCounter; frame.Size = UDim2.new(0.92, 0, 0, 50); frame.BackgroundTransparency = 1; frame.ZIndex = 2
+    local label = Instance.new("TextLabel", frame); label.Size = UDim2.new(1, 0, 0, 20); label.BackgroundTransparency = 1; label.Text = text; label.TextColor3 = Theme.SubText; label.Font = Enum.Font.GothamMedium; label.TextSize = 13; label.TextXAlignment = Enum.TextXAlignment.Left; label.ZIndex = 2
+    local valLabel = Instance.new("TextLabel", frame); valLabel.Size = UDim2.new(0, 40, 0, 20); valLabel.Position = UDim2.new(1, -40, 0, 0); valLabel.BackgroundTransparency = 1; valLabel.Text = tostring(default); valLabel.TextColor3 = Theme.Accent; valLabel.Font = Enum.Font.GothamBold; valLabel.TextSize = 13; valLabel.TextXAlignment = Enum.TextXAlignment.Right; valLabel.ZIndex = 2
+    local sliderBg = Instance.new("Frame", frame); sliderBg.Size = UDim2.new(1, 0, 0, 4); sliderBg.Position = UDim2.new(0, 0, 0, 32); sliderBg.BackgroundColor3 = Theme.ToggleOff; sliderBg.ZIndex = 2; Instance.new("UICorner", sliderBg).CornerRadius = UDim.new(1, 0)
+    local sliderFill = Instance.new("Frame", sliderBg); local percentage = (default - min) / (max - min); sliderFill.Size = UDim2.new(percentage, 0, 1, 0); sliderFill.BackgroundColor3 = Theme.Accent; sliderFill.ZIndex = 2; Instance.new("UICorner", sliderFill).CornerRadius = UDim.new(1, 0)
+    local knob = Instance.new("TextButton", sliderFill); knob.Size = UDim2.new(0, 14, 0, 14); knob.Position = UDim2.new(1, -7, 0.5, -7); knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255); knob.Text = ""; knob.ZIndex = 2; Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+    local dragging = false
+    local function setSlider(value) local relative = math.clamp((value - min) / (max - min), 0, 1); valLabel.Text = tostring(value); TweenService:Create(sliderFill, TweenInfo.new(0.08, Enum.EasingStyle.Quad), {Size = UDim2.new(relative, 0, 1, 0)}):Play(); if callback then callback(value) end end
+    knob.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = true; TweenService:Create(knob, TweenInfo.new(0.1, Enum.EasingStyle.Quad), {Size = UDim2.new(0, 18, 0, 18), Position = UDim2.new(1, -9, 0.5, -9)}):Play() end end)
+    UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false; TweenService:Create(knob, TweenInfo.new(0.1, Enum.EasingStyle.Quad), {Size = UDim2.new(0, 14, 0, 14), Position = UDim2.new(1, -7, 0.5, -7)}):Play() end end)
+    UserInputService.InputChanged:Connect(function(input) if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then local relative = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1); local value = math.floor(min + (max - min) * relative); setSlider(value) end end)
 end
 
-local function CreateDropdown(page, text, items, callback)
-    local frame = Instance.new("Frame", page)
-    frame.Size = UDim2.new(0.95, 0, 0, 35)
-    frame.BackgroundColor3 = Theme.SectionBG
-    frame.ClipsDescendants = true
-    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
-    
-    local btn = Instance.new("TextButton", frame)
-    btn.Size = UDim2.new(1, -20, 0, 35)
-    btn.Position = UDim2.new(0, 10, 0, 0)
-    btn.BackgroundTransparency = 1
-    btn.Text = text .. " (Click to open)"
-    btn.TextColor3 = Theme.Text
-    btn.Font = Enum.Font.GothamMedium
-    btn.TextSize = 13
-    btn.TextXAlignment = Enum.TextXAlignment.Left
-    
-    local listLayout = Instance.new("UIListLayout", frame)
-    listLayout.Padding = UDim.new(0, 2)
-    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    
-    local isOpen = false
-    btn.MouseButton1Click:Connect(function()
-        isOpen = not isOpen
-        frame.Size = isOpen and UDim2.new(0.95, 0, 0, 35 + (#items * 25)) or UDim2.new(0.95, 0, 0, 35)
-    end)
-    
-    for _, item in ipairs(items) do
-        local itemBtn = Instance.new("TextButton", frame)
-        itemBtn.Size = UDim2.new(1, -20, 0, 25)
-        itemBtn.Position = UDim2.new(0, 10, 0, 0)
-        itemBtn.BackgroundTransparency = 1
-        itemBtn.Text = "- " .. item
-        itemBtn.TextColor3 = Theme.SubText
-        itemBtn.Font = Enum.Font.Gotham
-        itemBtn.TextSize = 12
-        itemBtn.TextXAlignment = Enum.TextXAlignment.Left
-        
-        itemBtn.MouseButton1Click:Connect(function()
-            btn.Text = text .. ": " .. item
-            isOpen = false
-            frame.Size = UDim2.new(0.95, 0, 0, 35)
-            if callback then callback(item) end
-        end)
-    end
+local function CreateButton(section, text, color, callback)
+    itemOrderCounter = itemOrderCounter + 1
+    local btn = Instance.new("TextButton", section); btn.LayoutOrder = itemOrderCounter; btn.Size = UDim2.new(0.92, 0, 0, 34); btn.BackgroundColor3 = color; btn.Name = "CustomButton"; btn.Text = text; btn.TextColor3 = Color3.fromRGB(255,255,255); btn.Font = Enum.Font.GothamBold; btn.TextSize = 12; btn.ZIndex = 2; Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6); Instance.new("UIStroke", btn).Color = Theme.Stroke; Instance.new("UIStroke", btn).Transparency = 0.5; AddClickPop(btn); btn.MouseButton1Click:Connect(callback)
+    return btn
 end
 
---// PAGES & LOGIC BINDINGS
-local PageMain = CreatePage("Main")
-local PageESP = CreatePage("ESP")
-local PageTeleport = CreatePage("Teleport")
+local function CreateTextBox(section, placeholder, callback)
+    itemOrderCounter = itemOrderCounter + 1
+    local box = Instance.new("TextBox", section); box.LayoutOrder = itemOrderCounter; box.Size = UDim2.new(0.92, 0, 0, 34); box.BackgroundColor3 = Theme.Background; box.Name = "CustomTextBox"; box.Text = ""; box.PlaceholderText = placeholder; box.TextColor3 = Theme.Text; box.Font = Enum.Font.GothamMedium; box.TextSize = 12; box.ClearTextOnFocus = false; box.ClipsDescendants = true; box.ZIndex = 2; Instance.new("UICorner", box).CornerRadius = UDim.new(0, 6); Instance.new("UIStroke", box).Color = Theme.Stroke; if callback then box.FocusLost:Connect(function() callback(box.Text) end) end
+    return box
+end
 
-CreateTabButton("Main / Farm", PageMain)
-CreateTabButton("ESP Visuals", PageESP)
-CreateTabButton("Teleports", PageTeleport)
-
--- Main Tab
-CreateToggle(PageMain, "Enable Anti-Stun", false, function(state)
-    getgenv().AntiStun = state
-end)
-
-CreateToggle(PageMain, "Auto Join Private Server", false, function(state)
-    getgenv().AutoJoinPS = state
-end)
-
-CreateTextBox(PageMain, "Enter Private Server Code...", function(val)
-    getgenv().PsCode = val
-end)
-
--- Teleport Tab
-CreateDropdown(PageTeleport, "Select Island to Teleport", IslandNames, function(islandName)
-    local targetCFrame = Islands[islandName]
-    if targetCFrame and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-        local hrp = LocalPlayer.Character.HumanoidRootPart
-        -- Simple Tween Teleport from the original script
-        local dist = (hrp.Position - targetCFrame.Position).Magnitude
-        local tweenTime = dist / 150 -- Adjust speed as needed
-        local tween = TweenService:Create(hrp, TweenInfo.new(tweenTime, Enum.EasingStyle.Linear), {CFrame = targetCFrame})
-        tween:Play()
+local function CreateDropdown(section, headerText, itemsList, callback)
+    itemOrderCounter = itemOrderCounter + 1
+    local frame = Instance.new("Frame", section); frame.LayoutOrder = itemOrderCounter; frame.Size = UDim2.new(0.92, 0, 0, 160); frame.BackgroundTransparency = 1; frame.ZIndex = 2
+    local header = Instance.new("TextLabel", frame); header.Size = UDim2.new(1, 0, 0, 20); header.BackgroundTransparency = 1; header.Text = headerText .. ": " .. tostring(itemsList[1]); header.TextColor3 = Theme.SubText; header.Font = Enum.Font.GothamMedium; header.TextSize = 12; header.TextXAlignment = Enum.TextXAlignment.Left; header.ZIndex = 2
+    local scroll = Instance.new("ScrollingFrame", frame); scroll.Name = "DropdownContainer"; scroll.Size = UDim2.new(1, 0, 0, 130); scroll.Position = UDim2.new(0, 0, 0, 25); scroll.BackgroundColor3 = Theme.Background; scroll.ScrollBarThickness = 4; scroll.ZIndex = 2; Instance.new("UICorner", scroll).CornerRadius = UDim.new(0, 6)
+    local listLayout = Instance.new("UIListLayout", scroll); listLayout.Padding = UDim.new(0, 4); listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    for _, itemName in ipairs(itemsList) do
+        local btn = Instance.new("TextButton", scroll); btn.Name = "DropButton"; btn.Size = UDim2.new(0.94, 0, 0, 26); btn.BackgroundColor3 = Theme.SectionBG; btn.Text = "  " .. tostring(itemName); btn.TextColor3 = Theme.Text; btn.Font = Enum.Font.GothamBold; btn.TextSize = 12; btn.TextXAlignment = Enum.TextXAlignment.Left; btn.ZIndex = 2; Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+        btn.MouseButton1Click:Connect(function() header.Text = headerText .. ": " .. tostring(itemName); if callback then callback(itemName) end end)
     end
-end)
+    task.defer(function() scroll.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10) end)
+    return frame
+end
 
--- ESP Tab
-CreateToggle(PageESP, "Chest ESP", false, function(state)
-    getgenv().ChestEspEnabled = state
-end)
+--// ============================================================================
+--// IMPEL DOWN AUTO FARM ENGINE (V5.6: 100% MOBILE READY & ANTI-STUN)
+--// ============================================================================
 
-CreateToggle(PageESP, "Player ESP", false, function(state)
-    getgenv().PlayerEspEnabled = state
-end)
-
--- Set first page visible
-PageMain.Visible = true
-
---// GPO LOGIC LOOPS (Cleaned up from decompiled script)
-
--- Anti Stun Loop
-LocalPlayer.CharacterAdded:Connect(function(char)
+-- ANTI-STUN SYSTEM
+local function AntiStunSetup(char)
     char.DescendantAdded:Connect(function(desc)
-        if not getgenv().AntiStun then return end
+        if not RyuSavedConfig.AutoImpelDown then return end
         task.wait()
         if desc.Name == "Stun" or desc.Name == "StunFolder" then
             desc:Destroy()
         end
-        if (desc:IsA("BodyPosition") or desc:IsA("BodyVelocity")) and desc.Name ~= "geppo" and desc.Name ~= "rolling" then
-            desc:Destroy()
-        end
-    end)
-end)
-
-if LocalPlayer.Character then
-    LocalPlayer.Character.DescendantAdded:Connect(function(desc)
-        if not getgenv().AntiStun then return end
-        task.wait()
-        if desc.Name == "Stun" or desc.Name == "StunFolder" then
-            desc:Destroy()
-        end
-        if (desc:IsA("BodyPosition") or desc:IsA("BodyVelocity")) and desc.Name ~= "geppo" and desc.Name ~= "rolling" then
+        if (desc:IsA("BodyPosition") or desc:IsA("BodyVelocity")) and desc.Name ~= "geppo" and desc.Name ~= "rolling" and desc.Name ~= "RyuHover" then
             desc:Destroy()
         end
     end)
 end
 
--- Auto Join PS Loop
+if LocalPlayer.Character then AntiStunSetup(LocalPlayer.Character) end
+LocalPlayer.CharacterAdded:Connect(function(char) AntiStunSetup(char) end)
+
+-- PASSIVE STATS ALLOCATOR
 task.spawn(function()
-    while task.wait(1) do
-        if getgenv().AutoJoinPS and getgenv().PsCode ~= "" then
+    while true do
+        task.wait()
+        if RyuSavedConfig.AutoImpelDown then
             pcall(function()
-                local reserveEvent = ReplicatedStorage:WaitForChild("Events"):WaitForChild("reserved")
-                reserveEvent:InvokeServer(getgenv().PsCode)
+                local argsStr = {"Strength", nil, 1}
+                game:GetService("ReplicatedStorage"):WaitForChild("Events"):WaitForChild("stats"):FireServer(unpack(argsStr, 1, 3))
                 
-                if LocalPlayer.PlayerGui:FindFirstChild("chooseType") then
-                    LocalPlayer.PlayerGui.chooseType.Frame.RemoteEvent:FireServer(true)
+                local argsDef = {"Defense", nil, 1}
+                game:GetService("ReplicatedStorage"):WaitForChild("Events"):WaitForChild("stats"):FireServer(unpack(argsDef, 1, 3))
+            end)
+        end
+    end
+end)
+
+-- PASSIVE SPIRIT ESSENCE HANDLER
+_G.SpiritEssenceUsed = false
+task.spawn(function()
+    local GuiService = game:GetService("GuiService")
+    while true do
+        task.wait(1)
+        if not RyuSavedConfig.AutoImpelDown then continue end
+        if _G.SpiritEssenceUsed then continue end
+        if _G.ImpelState == "Init" or _G.ImpelState == "WaitForCutscene" then continue end 
+        
+        local char = LocalPlayer.Character
+        if not char then continue end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        
+        local essence = LocalPlayer.Backpack:FindFirstChild("Spirit Essence") or char:FindFirstChild("Spirit Essence")
+        if essence and hum then
+            char.PrimaryPart.Velocity = Vector3.new(0,0,0)
+            
+            pcall(function() ReplicatedStorage.Events.Tools:InvokeServer("equip", "Spirit Essence") end)
+            task.wait(0.5)
+            pcall(function() hum:EquipTool(essence) end)
+            task.wait(0.5)
+            
+            pcall(function()
+                local center = camera.ViewportSize / 2
+                VirtualInputManager:SendMouseButtonEvent(center.X, center.Y, 0, true, game, 1)
+                task.wait(0.1)
+                VirtualInputManager:SendMouseButtonEvent(center.X, center.Y, 0, false, game, 1)
+            end)
+            task.wait(1.5)
+            
+            pcall(function()
+                local pg = LocalPlayer:FindFirstChild("PlayerGui")
+                local guiInset = GuiService:GetGuiInset()
+                if pg then
+                    for _, v in pairs(pg:GetDescendants()) do
+                        if v:IsA("TextButton") or v:IsA("ImageButton") then
+                            local txt = ""
+                            if v:IsA("TextLabel") or v:IsA("TextButton") then txt = string.lower(v.Text or "") end
+                            local name = string.lower(v.Name)
+                            
+                            local isGreen = false
+                            local isRed = false
+                            if v.BackgroundColor3 then
+                                isGreen = (v.BackgroundColor3.G > v.BackgroundColor3.R + 0.1 and v.BackgroundColor3.G > v.BackgroundColor3.B + 0.1)
+                                isRed = (v.BackgroundColor3.R > v.BackgroundColor3.G + 0.1 and v.BackgroundColor3.R > v.BackgroundColor3.B + 0.1)
+                            end
+                            
+                            if isRed or string.find(txt, "no") or string.find(txt, "decline") or string.find(txt, "ablehnen") or string.find(name, "no") or string.find(name, "decline") then
+                                continue
+                            end
+                            
+                            if (string.find(txt, "accept") or string.find(name, "accept") or string.find(txt, "yes") or string.find(name, "yes") or string.find(txt, "akzeptieren") or isGreen) then
+                                local absPos = v.AbsolutePosition
+                                local absSize = v.AbsoluteSize
+                                local centerX = absPos.X + (absSize.X / 2)
+                                local centerY = absPos.Y + (absSize.Y / 2) + guiInset.Y
+                                
+                                VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, true, game, 1)
+                                task.wait(0.05)
+                                VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 1)
+                                
+                                pcall(function() v.Activated:Fire() end)
+                                pcall(function() getsenv(v).Click() end)
+                                pcall(function() v.MouseButton1Click:Fire() end)
+                                break
+                            end
+                        end
+                    end
                 end
-                if LocalPlayer.PlayerGui:FindFirstChild("ConfirmationPrompt") then
-                    LocalPlayer.PlayerGui.ConfirmationPrompt.RemoteEvent:FireServer("First Sea")
+            end)
+            
+            task.wait(1)
+            pcall(function()
+                local args = {"Buso"}
+                game:GetService("ReplicatedStorage"):WaitForChild("Events"):WaitForChild("Haki"):FireServer(unpack(args, 1, 1))
+            end)
+            
+            _G.SpiritEssenceUsed = true
+        end
+    end
+end)
+
+_G.ImpelState = "Init"
+_G.VeraSeen = false
+
+-- PASSIVE CAMERA TRACKING
+task.spawn(function()
+    while true do
+        task.wait()
+        if RyuSavedConfig.AutoImpelDown then
+            pcall(function()
+                local char = LocalPlayer.Character
+                if char then
+                    local hum = char:FindFirstChildOfClass("Humanoid")
+                    if hum then
+                        camera.CameraType = Enum.CameraType.Custom
+                        camera.CameraSubject = hum
+                    end
                 end
             end)
         end
     end
 end)
 
--- Simple ESP Loop
-task.spawn(function()
-    while task.wait(1) do
-        if getgenv().PlayerEspEnabled then
-            for _, player in pairs(Players:GetPlayers()) do
-                if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
-                    if not player.Character.Head:FindFirstChild("RyuESP") then
-                        local esp = Instance.new("BillboardGui")
-                        esp.Name = "RyuESP"
-                        esp.AlwaysOnTop = true
-                        esp.Size = UDim2.new(0, 100, 0, 50)
-                        esp.StudsOffset = Vector3.new(0, 2, 0)
-                        esp.Parent = player.Character.Head
-                        
-                        local label = Instance.new("TextLabel", esp)
-                        label.Size = UDim2.new(1, 0, 1, 0)
-                        label.BackgroundTransparency = 1
-                        label.TextColor3 = Color3.new(1, 0, 0)
-                        label.TextStrokeTransparency = 0
-                        label.Font = Enum.Font.GothamBold
-                        label.TextSize = 14
-                        
-                        task.spawn(function()
-                            while esp.Parent and player.Character do
-                                label.Text = player.Name .. " | " .. math.floor((LocalPlayer.Character.HumanoidRootPart.Position - player.Character.Head.Position).Magnitude) .. "m"
-                                task.wait(0.5)
+local currentComboIndex = 1
+local lastSwing = 0
+
+local function EquipTargetWeapon()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not hum then return false end
+    
+    local targetWep = nil
+    for _, item in pairs(LocalPlayer.Backpack:GetChildren()) do
+        if item:IsA("Tool") and (item:GetAttribute("MeleeTool") or item.Name:lower():find("combat") or item.Name:lower():find("sword")) then
+            targetWep = item; break
+        end
+    end
+    if not targetWep then
+        for _, item in pairs(LocalPlayer.Backpack:GetChildren()) do
+            if item:IsA("Tool") then targetWep = item break end
+        end
+    end
+    
+    if targetWep then
+        pcall(function() ReplicatedStorage.Events.Tools:InvokeServer("equip", targetWep.Name) end)
+        task.wait(0.1)
+        hum:EquipTool(targetWep)
+        return true
+    end
+    return false
+end
+
+local function PerformMeleeAttack(targets)
+    pcall(function()
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        
+        local now = tick()
+        if now - lastSwing >= 0.5 then
+            lastSwing = now
+            task.spawn(function()
+                local hitParts = {}
+                if type(targets) == "table" then
+                    for _, npc in ipairs(targets) do
+                        local mRoot = npc:FindFirstChild("HumanoidRootPart")
+                        local mHum = npc:FindFirstChildOfClass("Humanoid")
+                        if mRoot and mHum and mHum.Health > 0 then
+                            table.insert(hitParts, mRoot)
+                        end
+                    end
+                end
+                
+                local animName = "Punch" .. currentComboIndex
+                if currentComboIndex == 1 then animName = "Dash" end
+                if currentComboIndex == 4 then animName = "GroundPunch4" end
+                
+                local animObj = ReplicatedStorage:FindFirstChild("CombatAnimations") and ReplicatedStorage.CombatAnimations:FindFirstChild("Melee") and ReplicatedStorage.CombatAnimations.Melee:FindFirstChild(animName)
+                
+                if animObj then
+                    local argsAnim = {"swingsfx", "Melee", currentComboIndex, "Ground", currentComboIndex == 1, animObj, 2, 1.5}
+                    if ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("CombatRegister") then
+                        pcall(function() ReplicatedStorage.Events.CombatRegister:InvokeServer(argsAnim) end)
+                    end
+                end
+                
+                if #hitParts > 0 then
+                    local argsDamage = {"damage", hitParts, "Melee", {currentComboIndex, "Ground", "Melee"}, true, root.CFrame, ["aircombo"] = "Ground"}
+                    if ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("CombatRegister") then
+                        pcall(function() ReplicatedStorage.Events.CombatRegister:InvokeServer(argsDamage) end)
+                    end
+                end
+                
+                currentComboIndex = currentComboIndex + 1
+                if currentComboIndex > 4 then currentComboIndex = 1 end
+            end)
+        end
+    end)
+end
+
+local function ToggleHover(state)
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    
+    if state then
+        local bp = root:FindFirstChild("RyuHover")
+        if not bp then
+            bp = Instance.new("BodyPosition")
+            bp.Name = "RyuHover"
+            bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+            bp.D = 500
+            bp.P = 50000
+            bp.Parent = root
+        end
+        bp.Position = root.Position
+    else
+        local bp = root:FindFirstChild("RyuHover")
+        if bp then bp:Destroy() end
+    end
+end
+
+local function PathTransport(targetPos, speed, timeout)
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return false end
+
+    ToggleHover(true)
+    local startTime = tick()
+    local timeoutLimit = timeout or 99999
+    local tickCounter = 0
+    local lastPos = root.Position
+    local stuckTimer = 0
+
+    while RyuSavedConfig.AutoImpelDown do
+        if tick() - startTime > timeoutLimit then return false end
+
+        local dist = (root.Position - targetPos).Magnitude
+        if dist < 4 then break end
+        
+        tickCounter = tickCounter + 1
+        if tickCounter % 15 == 0 then
+            local tpCheck = false
+            pcall(function()
+                local pg = LocalPlayer:FindFirstChild("PlayerGui")
+                if pg then
+                    for _, v in pairs(pg:GetDescendants()) do
+                        if v:IsA("TextLabel") and v.Visible and v.TextTransparency < 1 then
+                            local txt = string.lower(v.Text)
+                            if string.find(txt, "tp check") or string.find(txt, "teleport check") or string.find(txt, "noclip") then
+                                tpCheck = true
+                                break
                             end
-                        end)
+                        end
+                    end
+                end
+            end)
+            if tpCheck then
+                root.Velocity = Vector3.new(0,0,0)
+                task.wait(1.5)
+                return false 
+            end
+        end
+
+        local dt = RunService.Heartbeat:Wait()
+        
+        if (root.Position - lastPos).Magnitude < (speed * dt * 0.2) then
+            stuckTimer = stuckTimer + dt
+            if stuckTimer > 0.5 then return false end 
+        else
+            stuckTimer = 0
+        end
+        lastPos = root.Position
+
+        local dir = (targetPos - root.Position).Unit
+        local flatDir = Vector3.new(dir.X, 0, dir.Z).Unit
+        if flatDir.Magnitude ~= flatDir.Magnitude then flatDir = Vector3.new(1,0,0) end
+
+        local nextPos = root.Position + (dir * speed * dt)
+        
+        root.CFrame = CFrame.lookAt(nextPos, nextPos + flatDir)
+        local bp = root:FindFirstChild("RyuHover")
+        if bp then bp.Position = nextPos end
+        root.Velocity = Vector3.new(0,0,0)
+        root.RotVelocity = Vector3.new(0,0,0)
+        
+        pcall(function()
+            local camPos = root.Position - (flatDir * 15) + Vector3.new(0, 7, 0)
+            camera.CFrame = CFrame.lookAt(camPos, root.Position)
+        end)
+    end
+    return true
+end
+
+local function HoldInteract(duration)
+    local t = tick()
+    while tick() - t < duration do
+        if not RyuSavedConfig.AutoImpelDown then break end
+        
+        pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game) end)
+        
+        for _, v in pairs(Workspace:GetDescendants()) do
+            if v:IsA("ProximityPrompt") and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                if (LocalPlayer.Character.HumanoidRootPart.Position - v.Parent.Position).Magnitude <= v.MaxActivationDistance + 5 then
+                    if fireproximityprompt then 
+                        fireproximityprompt(v, 1) 
+                    else
+                        v:InputHoldBegin()
                     end
                 end
             end
-        else
-            for _, player in pairs(Players:GetPlayers()) do
-                if player.Character and player.Character:FindFirstChild("Head") and player.Character.Head:FindFirstChild("RyuESP") then
-                    player.Character.Head.RyuESP:Destroy()
+        end
+        
+        task.wait(0.5)
+        
+        pcall(function() VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game) end)
+        for _, v in pairs(Workspace:GetDescendants()) do
+            if v:IsA("ProximityPrompt") then pcall(function() v:InputHoldEnd() end) end
+        end
+        
+        task.wait(0.1)
+    end
+end
+
+local function CheckHPAndFailsafe(root, hum, safePos)
+    if hum.Health / hum.MaxHealth < 0.3 then
+        ToggleHover(true)
+        pcall(function() ReplicatedStorage.Events.climb:InvokeServer(true) end)
+        
+        local bp = root:FindFirstChild("RyuHover")
+        if bp then bp.Position = root.Position + Vector3.new(0, 20, 0) end
+        
+        while hum.Health / hum.MaxHealth < 0.8 do
+            if not RyuSavedConfig.AutoImpelDown then break end
+            pcall(function()
+                if ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("Block") then
+                    ReplicatedStorage.Events.Block:InvokeServer(true, "Melee", true)
+                end
+            end)
+            root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            task.wait(0.2)
+        end
+        
+        pcall(function() ReplicatedStorage.Events.climb:InvokeServer(false) end)
+        pcall(function()
+            if ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("Block") then
+                ReplicatedStorage.Events.Block:InvokeServer(false, "Melee", true)
+            end
+        end)
+        return true
+    end
+    return false
+end
+
+-- IMPEL DOWN MASTER LOOP
+task.spawn(function()
+    while true do
+        task.wait(0.05)
+        if not RyuSavedConfig.AutoImpelDown then continue end
+
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not root or not hum or hum.Health <= 0 then continue end
+
+        -- 1. DIFF CHOOSER
+        local diffChooser = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("DiffChooser")
+        if diffChooser and diffChooser.Enabled then
+            pcall(function() diffChooser.Replication.RemoteEvent:FireServer("Nightmare", "check!") end)
+            task.wait(0.5)
+            continue 
+        end
+
+        -- 2. VERA COMBAT
+        if _G.ImpelState == "Init" then
+            local npcsFolder = Workspace:FindFirstChild("NPCs")
+            local vera = npcsFolder and npcsFolder:FindFirstChild("Vera")
+            
+            if vera then
+                local vHum = vera:FindFirstChildOfClass("Humanoid")
+                local vRoot = vera:FindFirstChild("HumanoidRootPart") or vera.PrimaryPart
+                
+                if not vHum or not vRoot then task.wait(0.1) continue end
+                
+                if vHum.Health > 0 then
+                    local distToVera = (root.Position - vRoot.Position).Magnitude
+                    if _G.VeraSeen and distToVera > 150 then ToggleHover(false) _G.ImpelState = "WaitForCutscene" continue end
+                    if not _G.VeraSeen and distToVera > 50 then continue end
+
+                    _G.VeraSeen = true
+                    
+                    if vRoot.Size.X < 15 then vRoot.Size = Vector3.new(15, 15, 15) vRoot.CanCollide = false end
+                    if CheckHPAndFailsafe(root, hum, vRoot.Position) then continue end
+                    
+                    if not _G.SmartHoverHeight then _G.SmartHoverHeight = 6.5 end
+                    if not _G.PlayerLastHpVera then _G.PlayerLastHpVera = hum.Health end
+                    if hum.Health < _G.PlayerLastHpVera then _G.DodgeEndTime = tick() + 0.8 end
+                    _G.PlayerLastHpVera = hum.Health
+                    
+                    if not _G.VeraLastHp then _G.VeraLastHp = vHum.Health end
+                    if vHum.Health < _G.VeraLastHp then
+                        _G.VeraLastHp = vHum.Health
+                        _G.VeraLastHitTime = tick()
+                    end
+                    if tick() - (_G.VeraLastHitTime or tick()) > 1.5 then
+                        _G.SmartHoverHeight = math.max(4.0, _G.SmartHoverHeight - 0.1)
+                        _G.VeraLastHitTime = tick() 
+                    end
+
+                    local currentDodgeOffset = (tick() < (_G.DodgeEndTime or 0)) and 2 or 0
+                    local actualHeight = _G.SmartHoverHeight + currentDodgeOffset
+
+                    local lookDir = vRoot.CFrame.LookVector
+                    local attackPos = vRoot.Position - (lookDir * 3) + Vector3.new(0, actualHeight, 0)
+                    local flatTarget = Vector3.new(vRoot.Position.X, attackPos.Y, vRoot.Position.Z)
+                    local targetRot = CFrame.lookAt(attackPos, flatTarget) * CFrame.Angles(math.rad(-60), 0, 0)
+                    
+                    ToggleHover(true)
+                    local bp = root:FindFirstChild("RyuHover")
+                    if bp then bp.Position = attackPos end
+                    local bg = root:FindFirstChild("RyuGyroVera")
+                    if bg then bg.CFrame = targetRot end
+
+                    EquipTargetWeapon()
+                    PerformMeleeAttack({vera})
+                    continue 
+                else
+                    ToggleHover(false)
+                    _G.ImpelState = "WaitForCutscene"
+                end
+            else
+                if _G.VeraSeen then ToggleHover(false) _G.ImpelState = "WaitForCutscene" end
+            end
+            continue
+        end
+
+        -- 2.5 CUTSCENE / MESSAGE WAIT
+        if _G.ImpelState == "WaitForCutscene" then
+            if not _G.VeraDeadTime then _G.VeraDeadTime = tick() end
+            
+            local messageFound = false
+            pcall(function()
+                local pg = LocalPlayer:FindFirstChild("PlayerGui")
+                if pg then
+                    for _, v in pairs(pg:GetDescendants()) do
+                        if v:IsA("TextLabel") and v.Visible and v.TextTransparency < 1 then
+                            local txt = string.lower(v.Text)
+                            if string.find(txt, "floor 1") or string.find(txt, "stage 1") or string.find(txt, "your skill points have been reset") then
+                                messageFound = true
+                                break
+                            end
+                        end
+                    end
+                end
+            end)
+
+            if messageFound then
+                ToggleHover(false)
+                if hum then hum:Move(Vector3.new(0,0,0), false) end
+                root.Velocity = Vector3.new(0, 0, 0)
+                _G.ImpelState = "Key"
+            else
+                if tick() - _G.VeraDeadTime > 15 then _G.ImpelState = "Key" else task.wait(0.2) end
+            end
+            continue
+        end
+
+        -- 3. KEY PHASE
+        if _G.ImpelState == "Key" then
+            local keyPart = nil
+            pcall(function()
+                local effects = Workspace:FindFirstChild("Effects")
+                if effects then
+                    local kModel = effects:FindFirstChild("Key")
+                    if kModel then
+                        if kModel:IsA("BasePart") then keyPart = kModel elseif kModel:FindFirstChild("Key") then keyPart = kModel.Key end
+                    end
+                end
+                if not keyPart then
+                    local islands = Workspace:FindFirstChild("Islands")
+                    if islands then
+                        for _, isl in pairs(islands:GetChildren()) do
+                            if string.find(string.lower(isl.Name), "impel base") then
+                                local spawns = isl:FindFirstChild("KeySpawns")
+                                if spawns then
+                                    for _, k in pairs(spawns:GetChildren()) do
+                                        if k.Name == "Key" and k:IsA("BasePart") and k.Transparency < 1 then 
+                                            keyPart = k
+                                            break 
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+
+            if keyPart then
+                local reached = PathTransport(keyPart.Position, 43, 20)
+                if reached then HoldInteract(2) end
+                _G.ImpelState = "ChestRoute"
+            else
+                task.wait(0.5)
+            end
+            continue
+        end
+
+        -- 4. CHEST ROUTE
+        if _G.ImpelState == "ChestRoute" then
+            task.wait(2)
+            local points = {
+                {pos = Vector3.new(2952.66, 2075.45, -13461.08), action = "wait", time = 1},
+                {pos = Vector3.new(3010.94, 2076.70, -13535.94), action = "chest", time = 5},
+                {pos = Vector3.new(2991.08, 2076.70, -13583.22), action = "chest", time = 5},
+                {pos = Vector3.new(2886.56, 2077.70, -13581.59), action = "chest", time = 5},
+                {pos = Vector3.new(2860.68, 2084.70, -13604.73), action = "chest", time = 5},
+                {pos = Vector3.new(3036.38, 2082.95, -13540.35), action = "chest", time = 5},
+                {pos = Vector3.new(3090.27, 2080.05, -13512.88), action = "chest", time = 5},
+                {pos = Vector3.new(3079.41, 2080.45, -13473.72), action = "chest", time = 5}
+            }
+
+            for _, pt in ipairs(points) do
+                if not RyuSavedConfig.AutoImpelDown then break end
+                local reached = PathTransport(pt.pos, 43, 20)
+                if reached then
+                    if pt.action == "wait" then task.wait(pt.time) elseif pt.action == "chest" then HoldInteract(pt.time) end
                 end
             end
+            _G.ImpelState = "Waypoints"
+            continue
         end
+
+        -- 5. WAYPOINTS TO GUARDS
+        if _G.ImpelState == "Waypoints" then
+            PathTransport(Vector3.new(2945.63, 2075.55, -13578.02), 30, 20)
+            PathTransport(Vector3.new(2946.49, 2075.45, -13908.61), 30, 20)
+            _G.ImpelState = "Guards"
+            continue
+        end
+
+        -- 6. IMPEL GUARDS
+        if _G.ImpelState == "Guards" then
+            local npcsFolder = Workspace:FindFirstChild("NPCs")
+            if not npcsFolder then continue end
+            
+            local guards = {}
+            for _, v in pairs(npcsFolder:GetChildren()) do
+                if string.find(string.lower(v.Name), "guard") then
+                    local gHum = v:FindFirstChildOfClass("Humanoid")
+                    local gRoot = v:FindFirstChild("HumanoidRootPart") or v.PrimaryPart
+                    if gHum and gHum.Health > 0 and gRoot then
+                        if (root.Position - gRoot.Position).Magnitude <= 100 then
+                            table.insert(guards, v)
+                        end
+                    end
+                end
+            end
+            
+            if #guards > 0 then
+                _G.LastGuardSeenTime = tick()
+                local target = guards[1]
+                local tRoot = target:FindFirstChild("HumanoidRootPart") or target.PrimaryPart
+                local tHum = target:FindFirstChildOfClass("Humanoid")
+                
+                if tRoot and tHum then
+                    local distToGuard = (root.Position - tRoot.Position).Magnitude
+                    local lookDir = tRoot.CFrame.LookVector
+                    local attackPos = tRoot.Position - (lookDir * 3) + Vector3.new(0, 6.5, 0)
+                    
+                    if distToGuard > 15 then PathTransport(attackPos, 30, 20) end
+                    if tRoot.Size.X < 15 then tRoot.Size = Vector3.new(15, 15, 15) tRoot.CanCollide = false end
+                    if CheckHPAndFailsafe(root, hum, tRoot.Position) then continue end
+                    
+                    if not _G.GuardHoverHeight then _G.GuardHoverHeight = 6.5 end
+                    if not _G.PlayerLastHpGuard then _G.PlayerLastHpGuard = hum.Health end
+                    if hum.Health < _G.PlayerLastHpGuard then _G.GuardDodgeEndTime = tick() + 0.8 end
+                    _G.PlayerLastHpGuard = hum.Health
+                    
+                    if not _G.GuardLastHp then _G.GuardLastHp = tHum.Health end
+                    if tHum.Health < _G.GuardLastHp then
+                        _G.GuardLastHp = tHum.Health
+                        _G.GuardLastHitTime = tick()
+                    end
+                    if tick() - (_G.GuardLastHitTime or tick()) > 1.5 then
+                        _G.GuardHoverHeight = math.max(4.0, _G.GuardHoverHeight - 0.1)
+                        _G.GuardLastHitTime = tick()
+                    end
+
+                    local currentDodgeOffset = (tick() < (_G.GuardDodgeEndTime or 0)) and 2 or 0
+                    local actualHeight = _G.GuardHoverHeight + currentDodgeOffset
+                    local finalAttackPos = tRoot.Position - (lookDir * 3) + Vector3.new(0, actualHeight, 0)
+                    local flatTarget = Vector3.new(tRoot.Position.X, finalAttackPos.Y, tRoot.Position.Z)
+                    local targetRot = CFrame.lookAt(finalAttackPos, flatTarget) * CFrame.Angles(math.rad(-60), 0, 0)
+                    
+                    ToggleHover(true)
+                    local bp = root:FindFirstChild("RyuHover")
+                    if bp then bp.Position = finalAttackPos end
+                    local bg = root:FindFirstChild("RyuGyroVera")
+                    if bg then bg.CFrame = targetRot end
+
+                    EquipTargetWeapon()
+                    PerformMeleeAttack(guards) 
+                end
+                continue
+            else
+                if not _G.LastGuardSeenTime then _G.LastGuardSeenTime = tick() end
+                if tick() - _G.LastGuardSeenTime > 5 then
+                    ToggleHover(false)
+                    _G.ImpelState = "LabyrinthStart"
+                end
+                continue
+            end
+        end
+
+        -- 7. LABYRINTH BYPASS (PATHFINDING MAZE SOLVER WITH NOCLIP SCANNER)
+        if _G.ImpelState == "LabyrinthStart" then
+            local pos1 = Vector3.new(2951.33, 2075.45, -14048.78)
+            PathTransport(pos1, 43, 20)
+            
+            local labyrinthTarget = Vector3.new(2660.54, 2075.45, -15403.33)
+            while RyuSavedConfig.AutoImpelDown and (root.Position - labyrinthTarget).Magnitude > 15 do
+                local path = PathfindingService:CreatePath({ AgentRadius = 4.5, AgentHeight = 6, AgentCanJump = true, WaypointSpacing = 4 })
+                local success, err = pcall(function() path:ComputeAsync(root.Position, labyrinthTarget) end)
+                
+                if success and path.Status == Enum.PathStatus.Success then
+                    local waypoints = path:GetWaypoints()
+                    for i, waypoint in ipairs(waypoints) do
+                        if not RyuSavedConfig.AutoImpelDown then break end
+                        if waypoint.Action == Enum.PathWaypointAction.Jump then hum.Jump = true end
+                        local reached = PathTransport(waypoint.Position, 43, 3) 
+                        if not reached then break end
+                    end
+                else
+                    PathTransport(labyrinthTarget, 43, 2)
+                end
+            end
+            
+            local pos3 = Vector3.new(2663.73, 2075.45, -15501.86)
+            PathTransport(pos3, 43, 20)
+            
+            _G.LabGuardLastCombat = tick()
+            _G.ImpelState = "LabyrinthGuards"
+            continue
+        end
+
+        -- 8. LABYRINTH GUARDS
+        if _G.ImpelState == "LabyrinthGuards" then
+            local npcsFolder = Workspace:FindFirstChild("NPCs")
+            local guards = {}
+            if npcsFolder then
+                for _, v in pairs(npcsFolder:GetChildren()) do
+                    if string.find(string.lower(v.Name), "guard") then
+                        local gHum = v:FindFirstChildOfClass("Humanoid")
+                        local gRoot = v:FindFirstChild("HumanoidRootPart") or v.PrimaryPart
+                        if gHum and gHum.Health > 0 and gRoot then
+                            if (root.Position - gRoot.Position).Magnitude <= 100 then
+                                table.insert(guards, v)
+                            end
+                        end
+                    end
+                end
+            end
+            
+            if #guards > 0 then
+                _G.LabGuardLastCombat = tick()
+                local target = guards[1]
+                local tRoot = target:FindFirstChild("HumanoidRootPart") or target.PrimaryPart
+                local tHum = target:FindFirstChildOfClass("Humanoid")
+                
+                if tRoot and tHum then
+                    local distToGuard = (root.Position - tRoot.Position).Magnitude
+                    local lookDir = tRoot.CFrame.LookVector
+                    local attackPos = tRoot.Position - (lookDir * 3) + Vector3.new(0, 6.5, 0)
+                    
+                    if distToGuard > 15 then PathTransport(attackPos, 40, 20) end
+                    if tRoot.Size.X < 15 then tRoot.Size = Vector3.new(15, 15, 15) tRoot.CanCollide = false end
+                    if CheckHPAndFailsafe(root, hum, tRoot.Position) then continue end
+                    
+                    if not _G.GuardHoverHeight then _G.GuardHoverHeight = 6.5 end
+                    if not _G.PlayerLastHpGuard then _G.PlayerLastHpGuard = hum.Health end
+                    if hum.Health < _G.PlayerLastHpGuard then _G.GuardDodgeEndTime = tick() + 0.8 end
+                    _G.PlayerLastHpGuard = hum.Health
+                    
+                    if not _G.GuardLastHp then _G.GuardLastHp = tHum.Health end
+                    if tHum.Health < _G.GuardLastHp then
+                        _G.GuardLastHp = tHum.Health
+                        _G.GuardLastHitTime = tick()
+                    end
+                    if tick() - (_G.GuardLastHitTime or tick()) > 1.5 then
+                        _G.GuardHoverHeight = math.max(4.0, _G.GuardHoverHeight - 0.1)
+                        _G.GuardLastHitTime = tick()
+                    end
+
+                    local currentDodgeOffset = (tick() < (_G.GuardDodgeEndTime or 0)) and 2 or 0
+                    local actualHeight = _G.GuardHoverHeight + currentDodgeOffset
+                    local finalAttackPos = tRoot.Position - (lookDir * 3) + Vector3.new(0, actualHeight, 0)
+                    local flatTarget = Vector3.new(tRoot.Position.X, finalAttackPos.Y, tRoot.Position.Z)
+                    local targetRot = CFrame.lookAt(finalAttackPos, flatTarget) * CFrame.Angles(math.rad(-60), 0, 0)
+                    
+                    ToggleHover(true)
+                    local bp = root:FindFirstChild("RyuHover")
+                    if bp then bp.Position = finalAttackPos end
+                    local bg = root:FindFirstChild("RyuGyroVera")
+                    if bg then bg.CFrame = targetRot end
+
+                    EquipTargetWeapon()
+                    PerformMeleeAttack(guards) 
+                end
+            else
+                if not _G.LabGuardLastCombat then _G.LabGuardLastCombat = tick() end
+                if tick() - _G.LabGuardLastCombat > 3 then
+                    ToggleHover(false)
+                    _G.ImpelState = "WaitingForNext"
+                end
+            end
+            continue
+        end
+
+        -- 9. WAITING FOR NEXT ROOM (Floor 2 Detection)
+        if _G.ImpelState == "WaitingForNext" then
+            local floor2Found = false
+            pcall(function()
+                local pg = LocalPlayer:FindFirstChild("PlayerGui")
+                if pg then
+                    for _, v in pairs(pg:GetDescendants()) do
+                        if v:IsA("TextLabel") and v.Visible and v.TextTransparency < 1 then
+                            if string.find(string.lower(v.Text), "floor 2") then
+                                floor2Found = true
+                                break
+                            end
+                        end
+                    end
+                end
+            end)
+
+            if floor2Found then _G.ImpelState = "Floor2Waypoints" end
+            task.wait(0.5)
+            continue
+        end
+
+        -- 10. FLOOR 2 WAYPOINTS (Room 1)
+        if _G.ImpelState == "Floor2Waypoints" then
+            local pts = {
+                Vector3.new(3200.23, 2405.38, -20190.65),
+                Vector3.new(3265.69, 2405.38, -20199.22),
+                Vector3.new(3261.70, 2405.38, -20193.35),
+                Vector3.new(3197.87, 2380.43, -20281.73)
+            }
+            for _, pt in ipairs(pts) do
+                if not RyuSavedConfig.AutoImpelDown then break end
+                PathTransport(pt, 43, 15)
+                task.wait(0.1)
+            end
+            _G.ImpelState = "Floor2Combat"
+            continue
+        end
+
+        -- 11. FLOOR 2 COMBAT (Room 1)
+        if _G.ImpelState == "Floor2Combat" then
+            local roomCleared = false
+            pcall(function()
+                local pg = LocalPlayer:FindFirstChild("PlayerGui")
+                if pg then
+                    for _, v in pairs(pg:GetDescendants()) do
+                        if v:IsA("TextLabel") and v.Visible and v.TextTransparency < 1 then
+                            local txt = string.lower(v.Text)
+                            if string.find(txt, "room cleared") or string.find(txt, "floor cleared") then
+                                roomCleared = true
+                                break
+                            end
+                        end
+                    end
+                end
+            end)
+
+            if roomCleared then
+                ToggleHover(false)
+                _G.ImpelState = "Floor2Waypoints2"
+                task.wait(2)
+                continue
+            end
+
+            local npcsFolder = Workspace:FindFirstChild("NPCs")
+            local enemies = {}
+            if npcsFolder then
+                for _, v in pairs(npcsFolder:GetChildren()) do
+                    if v:FindFirstChildOfClass("Humanoid") and v.Name ~= LocalPlayer.Name and v.Name ~= "Vera" then
+                        local eHum = v:FindFirstChildOfClass("Humanoid")
+                        local eRoot = v:FindFirstChild("HumanoidRootPart") or v.PrimaryPart
+                        if eHum and eHum.Health > 0 and eRoot then
+                            if (root.Position - eRoot.Position).Magnitude <= 150 then
+                                table.insert(enemies, v)
+                            end
+                        end
+                    end
+                end
+            end
+
+            if #enemies > 0 then
+                local target = enemies[1]
+                local tRoot = target:FindFirstChild("HumanoidRootPart") or target.PrimaryPart
+                local tHum = target:FindFirstChildOfClass("Humanoid")
+                
+                if tRoot and tHum then
+                    local distToGuard = (root.Position - tRoot.Position).Magnitude
+                    local lookDir = tRoot.CFrame.LookVector
+                    local attackPos = tRoot.Position - (lookDir * 3) + Vector3.new(0, 6.5, 0)
+                    
+                    if distToGuard > 15 then PathTransport(attackPos, 40, 20) end
+                    if tRoot.Size.X < 15 then tRoot.Size = Vector3.new(15, 15, 15) tRoot.CanCollide = false end
+                    if CheckHPAndFailsafe(root, hum, tRoot.Position) then continue end
+                    
+                    if not _G.F2HoverHeight then _G.F2HoverHeight = 6.5 end
+                    if not _G.PlayerLastHpF2 then _G.PlayerLastHpF2 = hum.Health end
+                    if hum.Health < _G.PlayerLastHpF2 then _G.F2DodgeEndTime = tick() + 0.8 end
+                    _G.PlayerLastHpF2 = hum.Health
+                    
+                    if not _G.F2LastHp then _G.F2LastHp = tHum.Health end
+                    if tHum.Health < _G.F2LastHp then
+                        _G.F2LastHp = tHum.Health
+                        _G.F2LastHitTime = tick()
+                    end
+                    if tick() - (_G.F2LastHitTime or tick()) > 1.5 then
+                        _G.F2HoverHeight = math.max(4.0, _G.F2HoverHeight - 0.1)
+                        _G.F2LastHitTime = tick()
+                    end
+
+                    local currentDodgeOffset = (tick() < (_G.F2DodgeEndTime or 0)) and 2 or 0
+                    local actualHeight = _G.F2HoverHeight + currentDodgeOffset
+                    local finalAttackPos = tRoot.Position - (lookDir * 3) + Vector3.new(0, actualHeight, 0)
+                    local flatTarget = Vector3.new(tRoot.Position.X, finalAttackPos.Y, tRoot.Position.Z)
+                    local targetRot = CFrame.lookAt(finalAttackPos, flatTarget) * CFrame.Angles(math.rad(-60), 0, 0)
+                    
+                    ToggleHover(true)
+                    local bp = root:FindFirstChild("RyuHover")
+                    if bp then bp.Position = finalAttackPos end
+                    local bg = root:FindFirstChild("RyuGyroVera")
+                    if bg then bg.CFrame = targetRot end
+
+                    EquipTargetWeapon()
+                    PerformMeleeAttack(enemies) 
+                end
+            else
+                task.wait(0.1)
+            end
+            continue
+        end
+        
+        -- 12. FLOOR 2 WAYPOINTS (Room 2)
+        if _G.ImpelState == "Floor2Waypoints2" then
+            local pt = Vector3.new(3201.04, 2378.43, -20382.98)
+            PathTransport(pt, 43, 20)
+            _G.ImpelState = "Floor2Combat2"
+            continue
+        end
+
+        -- 13. FLOOR 2 COMBAT (Room 2)
+        if _G.ImpelState == "Floor2Combat2" then
+            local roomCleared = false
+            pcall(function()
+                local pg = LocalPlayer:FindFirstChild("PlayerGui")
+                if pg then
+                    for _, v in pairs(pg:GetDescendants()) do
+                        if v:IsA("TextLabel") and v.Visible and v.TextTransparency < 1 then
+                            local txt = string.lower(v.Text)
+                            if string.find(txt, "room cleared") or string.find(txt, "floor cleared") then
+                                roomCleared = true
+                                break
+                            end
+                        end
+                    end
+                end
+            end)
+
+            if roomCleared then
+                ToggleHover(false)
+                _G.ImpelState = "Floor2Done"
+                continue
+            end
+
+            local npcsFolder = Workspace:FindFirstChild("NPCs")
+            local enemies = {}
+            if npcsFolder then
+                for _, v in pairs(npcsFolder:GetChildren()) do
+                    if v:FindFirstChildOfClass("Humanoid") and v.Name ~= LocalPlayer.Name and v.Name ~= "Vera" then
+                        local eHum = v:FindFirstChildOfClass("Humanoid")
+                        local eRoot = v:FindFirstChild("HumanoidRootPart") or v.PrimaryPart
+                        if eHum and eHum.Health > 0 and eRoot then
+                            if (root.Position - eRoot.Position).Magnitude <= 150 then
+                                table.insert(enemies, v)
+                            end
+                        end
+                    end
+                end
+            end
+
+            if #enemies > 0 then
+                local target = enemies[1]
+                local tRoot = target:FindFirstChild("HumanoidRootPart") or target.PrimaryPart
+                local tHum = target:FindFirstChildOfClass("Humanoid")
+                
+                if tRoot and tHum then
+                    local distToGuard = (root.Position - tRoot.Position).Magnitude
+                    local lookDir = tRoot.CFrame.LookVector
+                    local attackPos = tRoot.Position - (lookDir * 3) + Vector3.new(0, 6.5, 0)
+                    
+                    if distToGuard > 15 then PathTransport(attackPos, 40, 20) end
+                    if tRoot.Size.X < 15 then tRoot.Size = Vector3.new(15, 15, 15) tRoot.CanCollide = false end
+                    if CheckHPAndFailsafe(root, hum, tRoot.Position) then continue end
+                    
+                    if not _G.F2H2HoverHeight then _G.F2H2HoverHeight = 6.5 end
+                    if not _G.PlayerLastHpF2H2 then _G.PlayerLastHpF2H2 = hum.Health end
+                    if hum.Health < _G.PlayerLastHpF2H2 then _G.F2H2DodgeEndTime = tick() + 0.8 end
+                    _G.PlayerLastHpF2H2 = hum.Health
+                    
+                    if not _G.F2H2LastHp then _G.F2H2LastHp = tHum.Health end
+                    if tHum.Health < _G.F2H2LastHp then
+                        _G.F2H2LastHp = tHum.Health
+                        _G.F2H2LastHitTime = tick()
+                    end
+                    if tick() - (_G.F2H2LastHitTime or tick()) > 1.5 then
+                        _G.F2H2HoverHeight = math.max(4.0, _G.F2H2HoverHeight - 0.1)
+                        _G.F2H2LastHitTime = tick()
+                    end
+
+                    local currentDodgeOffset = (tick() < (_G.F2H2DodgeEndTime or 0)) and 2 or 0
+                    local actualHeight = _G.F2H2HoverHeight + currentDodgeOffset
+                    local finalAttackPos = tRoot.Position - (lookDir * 3) + Vector3.new(0, actualHeight, 0)
+                    local flatTarget = Vector3.new(tRoot.Position.X, finalAttackPos.Y, tRoot.Position.Z)
+                    local targetRot = CFrame.lookAt(finalAttackPos, flatTarget) * CFrame.Angles(math.rad(-60), 0, 0)
+                    
+                    ToggleHover(true)
+                    local bp = root:FindFirstChild("RyuHover")
+                    if bp then bp.Position = finalAttackPos end
+                    local bg = root:FindFirstChild("RyuGyroVera")
+                    if bg then bg.CFrame = targetRot end
+
+                    EquipTargetWeapon()
+                    PerformMeleeAttack(enemies) 
+                end
+            else
+                task.wait(0.1)
+            end
+            continue
+        end
+
+        if _G.ImpelState == "Floor2Done" then
+            task.wait(1)
+            continue
+        end
+
     end
 end)
