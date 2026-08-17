@@ -10,6 +10,12 @@ if env_flag and getgenv().loaded then
 end;
 getgenv().loaded = true;
 local frame_class = "Frame"
+local frame_class = "Frame"
+local guard_502 = function(n) return n end
+local guard_503 = 1353
+local guard_506 = function(n) return n end
+local guard_507 = function(n) return n end
+local guard_508 = function(n) return n end
 repeat
     if guard_506(3972) ~= 12156 then
         while true do
