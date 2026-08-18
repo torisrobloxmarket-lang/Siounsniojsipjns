@@ -1,11 +1,6 @@
 --// ==========================================
 --// RYU HUB - UI OVERLAY (TJS EDITION)
 --// 100% MONOCHROME CLEAN TEMPLATE
---// FIXED: AddHoverEffect undefined, Theme.Warning missing,
---//        namecall hook guard, drag/click race, invis rewrite
---// RYU INVIS — SOLO DEBUG GUI
---// Single toggle. Clean surface. Delta/Electron.
---// Jujutsu Shenanigans
 --// ==========================================
 
 local CoreGui = game:GetService("CoreGui")
@@ -14,187 +9,26 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
---// PLATZHALTER-FUNKTION
-local function Ryuhub()
-    -- Für zukünftige Features
-end
-
---// ANTI-ANNOYING MESSAGE & SOUND HIDER (CLIMB ERROR/CD)
-task.spawn(function()
-    local pg = LocalPlayer:WaitForChild("PlayerGui", 10)
-    if pg then
-        pg.DescendantAdded:Connect(function(descendant)
-            if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
-                task.delay(0.01, function()
-                    pcall(function()
-                        if descendant and descendant.Parent and descendant.Text then
-                            local txt = string.lower(descendant.Text)
-                            if txt:match("cd") or txt:match("cooldown") or txt:match("climb") or txt:match("error") then
-                                descendant.Visible = false
-                                descendant.TextTransparency = 1
-                            end
-                        end
-                    end)
-                end)
-            elseif descendant:IsA("Sound") then
-                task.delay(0.01, function()
-                    pcall(function()
-                        if descendant then
-                            local sndName = string.lower(descendant.Name)
-                            if sndName:match("error") or sndName:match("climb") then
-                                descendant:Stop()
-                                descendant.Volume = 0
-                            end
-                        end
-                    end)
-                end)
-            end
-        end)
-    end
-end)
-
---// QUEST PING TRACKER (__namecall Hook) — FIXED: guard was checking function as value
-local lastQuestPing = tick()
---// GUI PARENT
-local guiParent = LocalPlayer:WaitForChild("PlayerGui")
+--// GUI PARENT RESOLVER & CLEANUP
+local guiParent
 pcall(function()
-    local oldNamecall
-    oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-        if typeof(getnamecallmethod) ~= "function" then
-            return oldNamecall(self, ...)
-        end
-
-        local method = getnamecallmethod()
-        if method == "InvokeServer"
-            and typeof(self) == "Instance"
-            and self.Name == "Quest"
-        then
-            local args = {...}
-            if args[1] == "getNPCQuestLocations"
-                or (type(args[1]) == "table" and args[1][1] == "getNPCQuestLocations")
-            then
-                lastQuestPing = tick()
-            end
-        end
-
-        return oldNamecall(self, ...)
-    end)
-    if gethui then guiParent = gethui() end
+    if type(gethui) == "function" then
+        guiParent = gethui()
+    elseif syn and syn.protect_gui then
+        guiParent = CoreGui
+    end
 end)
+if not guiParent then guiParent = LocalPlayer:WaitForChild("PlayerGui") end
 
---// GUI CLEANUP
-local guiParent = LocalPlayer:WaitForChild("PlayerGui")
-pcall(function() if gethui then guiParent = gethui() elseif syn and syn.protect_gui then guiParent = CoreGui end end)
-for _, v in pairs(guiParent:GetChildren()) do if v.Name == "RyuHubPremium" then v:Destroy() end end
-
---// DYNAMISCHER WORKSPACE SCANNER FÜR INSELN, NPCs & WAFFEN
-local function GetDynamicLists()
-    local islands = {}
-    local islandsFolder = Workspace:FindFirstChild("Islands")
-    if islandsFolder then
-        for _, v in pairs(islandsFolder:GetChildren()) do
-            table.insert(islands, v.Name)
-        end
-    else
-        islands = {
-            "???? Shrine", "A rock", "Coco Island", "Colosseum", "Colosseum of Arc",
-            "Desert Kingdom", "Dokkan Island", "Fishman Cave", "Fishman Island",
-            "Foro Island", "Impel Base", "Marine Base G-1", "Marine Fort F-1",
-            "Mirror World", "Mysterious Cliff", "Mysterious Reef", "Orange Town",
-            "Restaurant Baratie", "Reverse Mountain", "Roca Island", "Rose Kingdom",
-            "Rovo Island", "Sakura Stronghold", "Sandora", "Sashi Island",
-            "Sett's Arena", "Shark Park", "Shell's Town", "Sphinx Island",
-            "Spirit Island", "Thriller Bark", "Town of Beginnings",
-            "Turtleback Cave", "Umi Island", "Whole Cake Island"
-        }
-    end
-    table.sort(islands)
-    return islands
---// CLEANUP
-for _, v in pairs(guiParent:GetChildren()) do
-    if v.Name == "RyuInvisSolo" then v:Destroy() end
+for _, v in pairs(guiParent:GetChildren()) do 
+    if v.Name == "RyuHubUI" then v:Destroy() end 
 end
 
-local function GetNPCNames()
-    local names = {}
-    local dict = {}
-    if Workspace:FindFirstChild("NPCs") then
-        for _, v in pairs(Workspace.NPCs:GetChildren()) do
-            if v:IsA("Model") and v:FindFirstChild("HumanoidRootPart") and not dict[v.Name] then
-                dict[v.Name] = true
-                table.insert(names, v.Name)
-            end
-        end
-    end
-    table.sort(names)
-    return names
-end
-
-local function GetWeapons()
-    local weapons = {}
-    local dict = {}
-    local function add(t)
-        if t and t:IsA("Tool") and not dict[t.Name] then
-            dict[t.Name] = true
-            table.insert(weapons, t.Name)
-        end
-    end
-    if LocalPlayer.Character then
-        for _, v in pairs(LocalPlayer.Character:GetChildren()) do add(v) end
-    end
-    local bp = LocalPlayer:FindFirstChild("Backpack")
-    if bp then
-        for _, v in pairs(bp:GetChildren()) do add(v) end
-    end
-    if #weapons == 0 then return {"Melee"} end
-    table.sort(weapons)
-    return weapons
-end
-
-local InitIslands = GetDynamicLists()
-
---// RYU CONFIGURATION (GPO)
-local RyuConfig = {
-    TargetIsland = InitIslands[1] or "Town of Beginnings",
-    IslandSpeed = 65,
-    TweenWallDistance = 1,
-    GuiColor = Color3.fromRGB(255, 255, 255),
-
-    AutoFarm = false,
-    FarmMode = "Solo",
-    FarmTweenType = "FarmTween (Direct)",
-    TargetNPC = "",
-    TargetMob = "",
-    FarmHoverHeight = 6.5,
-    FarmHitDelay = 0.45,
-    FarmComboDelay = 1.0,
-    UseGun = false,
-    FarmStyle = "Melee",
-
-    AutoBuso = false,
-    AutoGeppo = false,
-
-    NoclipDash = false,
-
-    EnableAutoStats = false,
-    AutoStats = {
-        Strength = 0,
-        Stamina = 0,
-        Defense = 0,
-        SwordMastery = 0,
-        GunMastery = 0
-    },
-
-    FakeName = ""
-}
-
---// PREMIUM MONOCHROME THEME — FIXED: Added Warning color
+--// THEME
 local Theme = {
     Background = Color3.fromRGB(15, 15, 15),
     Sidebar = Color3.fromRGB(22, 22, 22),
@@ -204,11 +38,9 @@ local Theme = {
     Accent = Color3.fromRGB(255, 255, 255),
     ToggleOff = Color3.fromRGB(45, 45, 45),
     ToggleOn = Color3.fromRGB(255, 255, 255),
-    Stroke = Color3.fromRGB(60, 60, 60),
-    Warning = Color3.fromRGB(220, 60, 60)
+    Stroke = Color3.fromRGB(60, 60, 60)
 }
 
-local isMobile = camera.ViewportSize.X < 850
 local MainSize = UDim2.new(0, math.min(750, camera.ViewportSize.X - 40), 0, math.min(480, camera.ViewportSize.Y - 40))
 local SidebarWidth = 160
 
@@ -217,20 +49,6 @@ RyuHub.Name = "RyuHubUI"
 RyuHub.ResetOnSpawn = false
 RyuHub.IgnoreGuiInset = true
 RyuHub.Parent = guiParent
-
---// FIXED: AddHoverEffect defined before first use (was called on CloseBtn but never defined)
-local function AddHoverEffect(element, normalColor, hoverColor)
-    element.MouseEnter:Connect(function()
-        pcall(function()
-            TweenService:Create(element, TweenInfo.new(0.15), {BackgroundColor3 = hoverColor}):Play()
-        end)
-    end)
-    element.MouseLeave:Connect(function()
-        pcall(function()
-            TweenService:Create(element, TweenInfo.new(0.15), {BackgroundColor3 = normalColor}):Play()
-        end)
-    end)
-end
 
 local function AddClickPop(element)
     local orig = element.Size
@@ -315,94 +133,13 @@ DragText.TextColor3 = Theme.Text
 DragText.TextTransparency = 0.95
 DragText.ZIndex = 0
 
---// FIXED: Drag vs click race — isDraggingBtn resets after one frame via task.defer
-local tDragStart, tStartPos, isDraggingBtn = nil, nil, false
-
-ToggleBtn.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch
-    then
-        isDraggingBtn = false
-        tDragStart = input.Position
-        tStartPos = ToggleBtn.Position
---// GUI
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "RyuInvisSolo"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.IgnoreGuiInset = true
-ScreenGui.Parent = guiParent
-
-local Frame = Instance.new("Frame", ScreenGui)
-Frame.Size = UDim2.new(0, 220, 0, 70)
-Frame.Position = UDim2.new(0.5, -110, 0, 120)
-Frame.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
-Frame.BorderSizePixel = 0
-Frame.Active = true
-Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 10)
-local fs = Instance.new("UIStroke", Frame)
-fs.Color = Color3.fromRGB(60, 60, 60)
-fs.Thickness = 1.5
-
--- Drag
-local dragStart, dragPos
-Frame.InputBegan:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-        dragStart = i.Position
-        dragPos = Frame.Position
-end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if tDragStart and (
-        input.UserInputType == Enum.UserInputType.MouseMovement
-        or input.UserInputType == Enum.UserInputType.Touch
-    ) then
-        local delta = input.Position - tDragStart
-        if delta.Magnitude > 5 then
-            isDraggingBtn = true
-            ToggleBtn.Position = UDim2.new(
-                tStartPos.X.Scale, tStartPos.X.Offset + delta.X,
-                tStartPos.Y.Scale, tStartPos.Y.Offset + delta.Y
-            )
-        end
-UserInputService.InputChanged:Connect(function(i)
-    if dragStart and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
-        local d = i.Position - dragStart
-        Frame.Position = UDim2.new(dragPos.X.Scale, dragPos.X.Offset + d.X, dragPos.Y.Scale, dragPos.Y.Offset + d.Y)
-end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch
-    then
-        tDragStart = nil
-        task.defer(function() isDraggingBtn = false end)
-UserInputService.InputEnded:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-        dragStart = nil
-end
-end)
-
 ToggleBtn.MouseButton1Click:Connect(function()
-    if isDraggingBtn then return end
-
-    if MainFrame and MainFrame.Visible then
-        pcall(function()
-            TweenService:Create(MainFrame,
-                TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-                {Size = UDim2.new(0,0,0,0), Position = UDim2.new(0.5,0,0.5,0)}
-            ):Play()
-        end)
-        task.delay(0.3, function() if MainFrame then MainFrame.Visible = false end end)
+    if MainFrame.Visible then
+        pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play() end)
+        task.delay(0.3, function() MainFrame.Visible = false end)
     else
-        if MainFrame then MainFrame.Visible = true end
-        pcall(function()
-            TweenService:Create(MainFrame,
-                TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                {Size = MainSize, Position = UDim2.new(0.5, -MainSize.X.Offset/2, 0.5, -MainSize.Y.Offset/2)}
-            ):Play()
-        end)
+        MainFrame.Visible = true
+        pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = MainSize, Position = UDim2.new(0.5, -MainSize.X.Offset / 2, 0.5, -MainSize.Y.Offset / 2)}):Play() end)
     end
 end)
 
@@ -425,19 +162,6 @@ Title.TextSize = 22
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.TextColor3 = Theme.Text
 
-local TitleGradient = Instance.new("UIGradient", Title)
-TitleGradient.Color = ColorSequence.new{
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(180, 180, 185)),
-    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 180, 185))
-}
-TitleGradient.Offset = Vector2.new(-1, 0)
-
-task.spawn(function()
-    local tweenInfo = TweenInfo.new(2.0, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
-    pcall(function() TweenService:Create(TitleGradient, tweenInfo, {Offset = Vector2.new(1, 0)}):Play() end)
-end)
-
 local SubTitle = Instance.new("TextLabel", Topbar)
 SubTitle.Size = UDim2.new(0, 300, 0, 15)
 SubTitle.Position = UDim2.new(0, 20, 0, 38)
@@ -458,25 +182,19 @@ CloseBtn.Font = Enum.Font.GothamBold
 CloseBtn.TextSize = 14
 Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
 Instance.new("UIStroke", CloseBtn).Color = Theme.Stroke
-AddHoverEffect(CloseBtn, Theme.SectionBG, Theme.Warning)
 
 CloseBtn.MouseButton1Click:Connect(function()
-    pcall(function()
-        TweenService:Create(MainFrame,
-            TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-            {Size = UDim2.new(0,0,0,0), Position = UDim2.new(0.5,0,0.5,0)}
-        ):Play()
-    end)
-    task.delay(0.3, function() if MainFrame then MainFrame.Visible = false end end)
+    pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play() end)
+    task.delay(0.3, function() MainFrame.Visible = false end)
 end)
 
 -- Window Dragging
 local mDragging, mDragStart, mStartPos = false, nil, nil
 Topbar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
         mDragging = true
         mDragStart = input.Position
-        mStartPos = MainFrame.Position
+        mStartPos = MainFrame.Position 
     end
 end)
 Topbar.InputChanged:Connect(function(input)
@@ -486,8 +204,8 @@ Topbar.InputChanged:Connect(function(input)
     end
 end)
 Topbar.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        mDragging = false
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
+        mDragging = false 
     end
 end)
 
@@ -514,51 +232,10 @@ local ContentContainer = Instance.new("Frame", ContentWrapper)
 ContentContainer.Size = UDim2.new(1, -(SidebarWidth + 25), 1, -85)
 ContentContainer.Position = UDim2.new(0, SidebarWidth + 15, 0, 75)
 ContentContainer.BackgroundTransparency = 1
-local Label = Instance.new("TextLabel", Frame)
-Label.Size = UDim2.new(0, 130, 1, 0)
-Label.Position = UDim2.new(0, 14, 0, 0)
-Label.BackgroundTransparency = 1
-Label.Text = "Invisible"
-Label.TextColor3 = Color3.fromRGB(200, 200, 200)
-Label.Font = Enum.Font.GothamBold
-Label.TextSize = 14
-Label.TextXAlignment = Enum.TextXAlignment.Left
-
-local StatusDot = Instance.new("Frame", Frame)
-StatusDot.Size = UDim2.new(0, 8, 0, 8)
-StatusDot.Position = UDim2.new(0, 14, 0, 46)
-StatusDot.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
-StatusDot.BorderSizePixel = 0
-Instance.new("UICorner", StatusDot).CornerRadius = UDim.new(1, 0)
-
-local StatusLabel = Instance.new("TextLabel", Frame)
-StatusLabel.Size = UDim2.new(1, -30, 0, 16)
-StatusLabel.Position = UDim2.new(0, 28, 0, 42)
-StatusLabel.BackgroundTransparency = 1
-StatusLabel.Text = "OFF — toggle to activate"
-StatusLabel.TextColor3 = Color3.fromRGB(90, 90, 90)
-StatusLabel.Font = Enum.Font.Gotham
-StatusLabel.TextSize = 10
-StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
-
--- Toggle button
-local ToggleBtn = Instance.new("TextButton", Frame)
-ToggleBtn.Size = UDim2.new(0, 48, 0, 26)
-ToggleBtn.Position = UDim2.new(1, -62, 0.5, -13)
-ToggleBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-ToggleBtn.Text = ""
-ToggleBtn.BorderSizePixel = 0
-Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
 
 --// UI GENERATION FUNCTIONS
 local Tabs = {}
 local itemOrderCounter = 0
-local Circle = Instance.new("Frame", ToggleBtn)
-Circle.Size = UDim2.new(0, 18, 0, 18)
-Circle.Position = UDim2.new(0, 4, 0.5, -9)
-Circle.BackgroundColor3 = Color3.fromRGB(130, 130, 130)
-Circle.BorderSizePixel = 0
-Instance.new("UICorner", Circle).CornerRadius = UDim.new(1, 0)
 
 local function UpdateSidebarCanvas()
     local totalH = 10
@@ -568,52 +245,10 @@ local function UpdateSidebarCanvas()
     end
     Sidebar.CanvasSize = UDim2.new(0, 0, 0, totalH)
 end
---// ==========================================
---// INVIS LOGIC
---// Approach: local transparency + replicated
---// accessory/part hiding via RemoteEvent spam
---// suppression. Falls back to HumanoidDescription
---// swap if direct part hide doesn't replicate.
---// ==========================================
-
-local function SecureTrigger(button, func)
-    button.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            pcall(func)
-local invisActive = false
-local invisThread = nil
-local originalProperties = {}
-
-local function setCharacterTransparency(char, transparency)
-    for _, part in pairs(char:GetDescendants()) do
-        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-            if transparency == 1 then
-                -- store original before hiding
-                if not originalProperties[part] then
-                    originalProperties[part] = {
-                        LocalTransparencyModifier = part.LocalTransparencyModifier,
-                        CastShadow = part.CastShadow
-                    }
-                end
-                part.LocalTransparencyModifier = 1
-                part.CastShadow = false
-            else
-                -- restore
-                if originalProperties[part] then
-                    part.LocalTransparencyModifier = originalProperties[part].LocalTransparencyModifier
-                    part.CastShadow = originalProperties[part].CastShadow
-                else
-                    part.LocalTransparencyModifier = 0
-                    part.CastShadow = true
-                end
-            end
-end
-    end)
-end
 
 local function CreateMainTab(name)
     local tabObj = { Btn = nil, SubContainer = nil, SubLayout = nil, IsOpen = false, SubTabs = {} }
-
+    
     local tabBtn = Instance.new("TextButton", Sidebar)
     tabBtn.Size = UDim2.new(1, 0, 0, 36)
     tabBtn.BackgroundColor3 = Theme.Sidebar
@@ -686,23 +321,12 @@ local function CreateSubTab(tabObj, subName)
     subBtn.MouseButton1Click:Connect(function()
         for _, t in pairs(Tabs) do
             for _, st in pairs(t.SubTabs) do
-                if st and st.Page then pcall(function() st.Page.Visible = false end) end
-                if st and st.Btn then pcall(function() TweenService:Create(st.Btn, TweenInfo.new(0.2), {TextColor3 = Theme.SubText}):Play() end) end
-        -- Hide accessories/meshes too
-        if part:IsA("Decal") or part:IsA("SpecialMesh") then
-            if transparency == 1 then
-                if not originalProperties[part] then
-                    originalProperties[part] = { Transparency = part.Transparency }
-                end
-                if part:IsA("Decal") then part.Transparency = 1 end
-            else
-                if originalProperties[part] and part:IsA("Decal") then
-                    part.Transparency = originalProperties[part].Transparency
-                end
-end
-end
-        if page then pcall(function() page.Visible = true end) end
-        pcall(function() TweenService:Create(subBtn, TweenInfo.new(0.2), {TextColor3 = Theme.Text}):Play() end)
+                st.Page.Visible = false
+                st.Btn.TextColor3 = Theme.SubText
+            end
+        end
+        page.Visible = true
+        subBtn.TextColor3 = Theme.Text
     end)
 
     table.insert(tabObj.SubTabs, subObj)
@@ -716,16 +340,16 @@ local function CreateSection(page, titleText)
     section.BackgroundTransparency = 0
     Instance.new("UICorner", section).CornerRadius = UDim.new(0, 10)
     Instance.new("UIStroke", section).Color = Theme.Stroke
-
+    
     local secLayout = Instance.new("UIListLayout", section)
     secLayout.Padding = UDim.new(0, 10)
     secLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     secLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
+    
     local secPadding = Instance.new("UIPadding", section)
     secPadding.PaddingTop = UDim.new(0, 12)
     secPadding.PaddingBottom = UDim.new(0, 12)
-
+    
     local title = Instance.new("TextLabel", section)
     title.LayoutOrder = -1
     title.Size = UDim2.new(0.92, 0, 0, 24)
@@ -735,9 +359,9 @@ local function CreateSection(page, titleText)
     title.Font = Enum.Font.GothamBold
     title.TextSize = 14
     title.TextXAlignment = Enum.TextXAlignment.Left
-
-    secLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        section.Size = UDim2.new(1, 0, 0, secLayout.AbsoluteContentSize.Y + 24)
+    
+    secLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() 
+        section.Size = UDim2.new(1, 0, 0, secLayout.AbsoluteContentSize.Y + 24) 
     end)
     return section
 end
@@ -748,7 +372,7 @@ local function CreateLabel(section, text)
     frame.LayoutOrder = itemOrderCounter
     frame.Size = UDim2.new(0.92, 0, 0, 30)
     frame.BackgroundTransparency = 1
-
+    
     local lbl = Instance.new("TextLabel", frame)
     lbl.Size = UDim2.new(1, 0, 1, 0)
     lbl.BackgroundTransparency = 1
@@ -764,12 +388,12 @@ end
 local function CreateToggle(section, text, descText, defaultState, callback)
     if type(descText) == "boolean" then callback = defaultState; defaultState = descText; descText = nil end
     itemOrderCounter = itemOrderCounter + 1
-
+    
     local frame = Instance.new("Frame", section)
     frame.LayoutOrder = itemOrderCounter
     frame.Size = UDim2.new(0.92, 0, 0, descText and 52 or 34)
     frame.BackgroundTransparency = 1
-
+    
     local label = Instance.new("TextLabel", frame)
     label.Size = UDim2.new(0.7, 0, 0, 34)
     label.BackgroundTransparency = 1
@@ -778,7 +402,7 @@ local function CreateToggle(section, text, descText, defaultState, callback)
     label.Font = Enum.Font.GothamMedium
     label.TextSize = 13
     label.TextXAlignment = Enum.TextXAlignment.Left
-
+    
     if descText then
         local descLabel = Instance.new("TextLabel", frame)
         descLabel.Size = UDim2.new(0.7, 0, 0, 15)
@@ -789,30 +413,27 @@ local function CreateToggle(section, text, descText, defaultState, callback)
         descLabel.Font = Enum.Font.Gotham
         descLabel.TextSize = 11
         descLabel.TextXAlignment = Enum.TextXAlignment.Left
-end
-
+    end
+    
     local tBtn = Instance.new("TextButton", frame)
     tBtn.Size = UDim2.new(0, 42, 0, 22)
     tBtn.Position = UDim2.new(1, -42, 0, 6)
     tBtn.BackgroundColor3 = defaultState and Theme.ToggleOn or Theme.ToggleOff
     tBtn.Text = ""
     Instance.new("UICorner", tBtn).CornerRadius = UDim.new(1, 0)
-
+    
     local circle = Instance.new("Frame", tBtn)
     circle.Size = UDim2.new(0, 16, 0, 16)
     circle.Position = defaultState and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
     circle.BackgroundColor3 = defaultState and Theme.Background or Color3.fromRGB(150, 150, 150)
     Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
-
+    
     local isOn = defaultState or false
     tBtn.MouseButton1Click:Connect(function()
         isOn = not isOn
         pcall(function()
             TweenService:Create(tBtn, TweenInfo.new(0.2), {BackgroundColor3 = isOn and Theme.ToggleOn or Theme.ToggleOff}):Play()
-            TweenService:Create(circle, TweenInfo.new(0.2), {
-                Position = isOn and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8),
-                BackgroundColor3 = isOn and Theme.Background or Color3.fromRGB(150, 150, 150)
-            }):Play()
+            TweenService:Create(circle, TweenInfo.new(0.2), {Position = isOn and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8), BackgroundColor3 = isOn and Theme.Background or Color3.fromRGB(150, 150, 150)}):Play()
             label.TextColor3 = isOn and Theme.Text or Theme.SubText
         end)
         if callback then pcall(function() callback(isOn) end) end
@@ -825,7 +446,7 @@ local function CreateSlider(section, text, min, max, default, callback)
     frame.LayoutOrder = itemOrderCounter
     frame.Size = UDim2.new(0.92, 0, 0, 50)
     frame.BackgroundTransparency = 1
-
+    
     local label = Instance.new("TextLabel", frame)
     label.Size = UDim2.new(1, -40, 0, 18)
     label.BackgroundTransparency = 1
@@ -834,7 +455,7 @@ local function CreateSlider(section, text, min, max, default, callback)
     label.Font = Enum.Font.GothamMedium
     label.TextSize = 13
     label.TextXAlignment = Enum.TextXAlignment.Left
-
+    
     local valLabel = Instance.new("TextLabel", frame)
     valLabel.Size = UDim2.new(0, 40, 0, 18)
     valLabel.Position = UDim2.new(1, -40, 0, 0)
@@ -844,37 +465,29 @@ local function CreateSlider(section, text, min, max, default, callback)
     valLabel.Font = Enum.Font.GothamBold
     valLabel.TextSize = 13
     valLabel.TextXAlignment = Enum.TextXAlignment.Right
-
+    
     local sliderBg = Instance.new("Frame", frame)
     sliderBg.Size = UDim2.new(1, 0, 0, 4)
     sliderBg.Position = UDim2.new(0, 0, 0, 32)
     sliderBg.BackgroundColor3 = Theme.ToggleOff
     Instance.new("UICorner", sliderBg).CornerRadius = UDim.new(1, 0)
-
+    
     local sliderFill = Instance.new("Frame", sliderBg)
     local percentage = math.clamp((default - min) / (max - min), 0, 1)
     sliderFill.Size = UDim2.new(percentage, 0, 1, 0)
     sliderFill.BackgroundColor3 = Theme.Accent
     Instance.new("UICorner", sliderFill).CornerRadius = UDim.new(1, 0)
-
+    
     local knob = Instance.new("TextButton", sliderFill)
     knob.Size = UDim2.new(0, 14, 0, 14)
     knob.Position = UDim2.new(1, -7, 0.5, -7)
     knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     knob.Text = ""
     Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
-
+    
     local dragging = false
-    knob.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
+    knob.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = true end end)
+    UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end end)
     UserInputService.InputChanged:Connect(function(input)
         if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             local relative = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
@@ -882,35 +495,14 @@ local function CreateSlider(section, text, min, max, default, callback)
             valLabel.Text = tostring(value)
             sliderFill.Size = UDim2.new(relative, 0, 1, 0)
             if callback then pcall(function() callback(value) end) end
---// Server-side replication trick:
---// Fire a RemoteEvent that JTS uses for appearance updates
---// with a nil/empty HumanoidDescription to wipe server-side
---// character appearance — other clients render you as invisible
---// because the server has no appearance data to replicate.
-local function tryServerInvis(char)
-    pcall(function()
-        -- Try common JTS appearance remotes
-        local remoteNames = {
-            "UpdateAppearance", "SetAppearance", "CharacterAppearance",
-            "Appearance", "LoadAppearance", "ApplyAppearance"
-        }
-        local rs = game:GetService("ReplicatedStorage")
-
-        for _, name in ipairs(remoteNames) do
-            local remote = rs:FindFirstChild(name, true)
-            if remote and remote:IsA("RemoteEvent") then
-                -- Fire with empty description — server clears appearance
-                remote:FireServer()
-                task.wait(0.1)
-            end
-   end
+        end
     end)
 end
 
 local function CreateButton(section, text, color, callback)
     if type(color) == "function" then callback = color; color = Theme.SectionBG end
     itemOrderCounter = itemOrderCounter + 1
-
+    
     local btn = Instance.new("TextButton", section)
     btn.LayoutOrder = itemOrderCounter
     btn.Size = UDim2.new(0.92, 0, 0, 34)
@@ -922,7 +514,7 @@ local function CreateButton(section, text, color, callback)
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
     Instance.new("UIStroke", btn).Color = Theme.Stroke
     AddClickPop(btn)
-
+    
     btn.MouseButton1Click:Connect(function() pcall(callback) end)
     return btn
 end
@@ -933,7 +525,7 @@ local function CreateDropdown(section, headerText, itemsList, targetConfigKey, c
     frame.LayoutOrder = itemOrderCounter
     frame.Size = UDim2.new(0.92, 0, 0, 160)
     frame.BackgroundTransparency = 1
-
+    
     local header = Instance.new("TextLabel", frame)
     header.Size = UDim2.new(1, 0, 0, 20)
     header.BackgroundTransparency = 1
@@ -942,18 +534,18 @@ local function CreateDropdown(section, headerText, itemsList, targetConfigKey, c
     header.Font = Enum.Font.GothamMedium
     header.TextSize = 12
     header.TextXAlignment = Enum.TextXAlignment.Left
-
+    
     local scroll = Instance.new("ScrollingFrame", frame)
     scroll.Size = UDim2.new(1, 0, 0, 130)
     scroll.Position = UDim2.new(0, 0, 0, 25)
     scroll.BackgroundColor3 = Theme.Background
     scroll.ScrollBarThickness = 4
     Instance.new("UICorner", scroll).CornerRadius = UDim.new(0, 6)
-
+    
     local listLayout = Instance.new("UIListLayout", scroll)
     listLayout.Padding = UDim.new(0, 4)
     listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-
+    
     local function populate(list)
         for _, child in pairs(scroll:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end
         for _, itemName in ipairs(list) do
@@ -966,23 +558,15 @@ local function CreateDropdown(section, headerText, itemsList, targetConfigKey, c
             btn.TextSize = 12
             btn.TextXAlignment = Enum.TextXAlignment.Left
             Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-
-            btn.MouseButton1Click:Connect(function()
+            
+            btn.MouseButton1Click:Connect(function() 
                 header.Text = headerText .. ": " .. tostring(itemName)
                 if callback then callback(itemName) end
-        -- Also try via Players service description wipe
-        -- This forces the server to re-replicate with blank appearance
-        local hd = Instance.new("HumanoidDescription")
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            pcall(function()
-                -- Apply blank description locally first
-                hum:ApplyDescription(hd)
-       end)
-   end
+            end)
+        end
         task.defer(function() scroll.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10) end)
     end
-
+    
     populate(itemsList)
     return { Refresh = populate }
 end
@@ -993,7 +577,7 @@ local function CreateKeybind(section, text, defaultKey, callback)
     frame.LayoutOrder = itemOrderCounter
     frame.Size = UDim2.new(0.92, 0, 0, 34)
     frame.BackgroundTransparency = 1
-
+    
     local label = Instance.new("TextLabel", frame)
     label.Size = UDim2.new(0.7, 0, 0, 34)
     label.BackgroundTransparency = 1
@@ -1002,7 +586,7 @@ local function CreateKeybind(section, text, defaultKey, callback)
     label.Font = Enum.Font.GothamMedium
     label.TextSize = 13
     label.TextXAlignment = Enum.TextXAlignment.Left
-
+    
     local btn = Instance.new("TextButton", frame)
     btn.Size = UDim2.new(0, 80, 0, 22)
     btn.Position = UDim2.new(1, -80, 0, 6)
@@ -1012,7 +596,7 @@ local function CreateKeybind(section, text, defaultKey, callback)
     btn.Font = Enum.Font.GothamBold
     btn.TextSize = 12
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
-
+    
     local waiting = false
     btn.MouseButton1Click:Connect(function() waiting = true; btn.Text = "..." end)
     UserInputService.InputBegan:Connect(function(input)
@@ -1021,7 +605,7 @@ local function CreateKeybind(section, text, defaultKey, callback)
             btn.Text = input.KeyCode.Name
             if callback then pcall(function() callback(input.KeyCode) end) end
         end
-end)
+    end)
 end
 
 local function CreateInput(section, placeholder, callback)
@@ -1037,84 +621,16 @@ local function CreateInput(section, placeholder, callback)
     box.TextSize = 12
     Instance.new("UICorner", box).CornerRadius = UDim.new(0, 6)
     Instance.new("UIStroke", box).Color = Theme.Stroke
-
-    if callback then
-        box.FocusLost:Connect(function() pcall(function() callback(box.Text) end) end)
+    
+    if callback then 
+        box.FocusLost:Connect(function() pcall(function() callback(box.Text) end) end) 
     end
     return box
 end
 
---// ==========================================
---// TJS SPECIFIC LOGIC (Auto Block)
---// ==========================================
-local TJSConfig = {
-    AutoBlock = false,
-    BlockReactRange = 15,
-    BlockHoldDuration = 500
-}
-local function startInvis()
-    local char = LocalPlayer.Character
-    if not char then return end
-
-RunService.RenderStepped:Connect(function()
-    if not TJSConfig.AutoBlock then return end
-    originalProperties = {}
-
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    -- Layer 1: Local transparency (instant, works locally)
-    setCharacterTransparency(char, 1)
-
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
-            local enemyRoot = player.Character:FindFirstChild("HumanoidRootPart")
-            if enemyRoot then
-                local distance = (root.Position - enemyRoot.Position).Magnitude
-                if distance <= TJSConfig.BlockReactRange then
-                    local enemyHum = player.Character:FindFirstChildOfClass("Humanoid")
-                    if enemyHum then
-                        local isAttacking = false
-                        for _, track in pairs(enemyHum:GetPlayingAnimationTracks()) do
-                            local animName = string.lower(track.Name)
-                            if animName:match("punch") or animName:match("attack") or animName:match("strike") or animName:match("kick") then
-                                isAttacking = true
-                                break
-                            end
-                        end
-    -- Layer 2: Attempt server-side appearance wipe
-    tryServerInvis(char)
-
-                        if isAttacking then
-                            pcall(function()
-                                local combatEvent = ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("Combat")
-                                if combatEvent then
-                                    combatEvent:FireServer("Block", true)
-                                    task.spawn(function()
-                                        task.wait(TJSConfig.BlockHoldDuration / 1000)
-                                        pcall(function() combatEvent:FireServer("Block", false) end)
-                                    end)
-                                end
-                            end)
-                        end
-                    end
-                end
-    -- Layer 3: Keepalive — reapply on character descendants added
-    -- (new accessories/parts added by game would reveal us)
-    invisThread = task.spawn(function()
-        while invisActive do
-            task.wait(0.5)
-            if not invisActive then break end
-            local c = LocalPlayer.Character
-            if c then
-                setCharacterTransparency(c, 1)
-       end
-   end
-    end
-end)
 
 --// ==========================================
---// MOVEMENT LOGIC
+--// MOVEMENT LOGIC (NO MOMENTUM, INSTANT)
 --// ==========================================
 local MovementState = {
     Speed = false, SpeedValue = 50,
@@ -1130,15 +646,15 @@ local function StartFly()
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not root then return end
-
+    
     if flyBodyVelocity then flyBodyVelocity:Destroy() end
     if flyBodyGyro then flyBodyGyro:Destroy() end
-
+    
     flyBodyVelocity = Instance.new("BodyVelocity")
     flyBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
     flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
     flyBodyVelocity.Parent = root
-
+    
     flyBodyGyro = Instance.new("BodyGyro")
     flyBodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
     flyBodyGyro.D = 100
@@ -1146,7 +662,6 @@ local function StartFly()
     flyBodyGyro.CFrame = root.CFrame
     flyBodyGyro.Parent = root
 end
-    end)
 
 local function StopFly()
     if flyBodyVelocity then flyBodyVelocity:Destroy(); flyBodyVelocity = nil end
@@ -1154,155 +669,143 @@ local function StopFly()
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     if hum then hum.PlatformStand = false end
-    -- Update status
-    StatusDot.BackgroundColor3 = Color3.fromRGB(80, 200, 80)
-    StatusLabel.Text = "ON — you are hidden locally"
-    StatusLabel.TextColor3 = Color3.fromRGB(80, 200, 80)
 end
 
+-- Fly Keybind hook
 UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
     if input.KeyCode == MovementState.FlyKey then
         MovementState.Fly = not MovementState.Fly
         if MovementState.Fly then StartFly() else StopFly() end
-local function stopInvis()
-    if invisThread then
-        task.cancel(invisThread)
-        invisThread = nil
-end
+    end
 end)
 
+-- Inf Jump & High Jump force
 UserInputService.JumpRequest:Connect(function()
-local char = LocalPlayer.Character
+    local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     local root = char and char:FindFirstChild("HumanoidRootPart")
-
+    
     if hum and root then
         if MovementState.InfJump or MovementState.HighJump then
             hum:ChangeState(Enum.HumanoidStateType.Jumping)
         end
         if MovementState.HighJump then
+            -- Setzt die vertikale Geschwindigkeit sofort, ohne Verzögerung
             root.Velocity = Vector3.new(root.Velocity.X, MovementState.JumpPower, root.Velocity.Z)
         end
-    if char then
-        setCharacterTransparency(char, 0)
-end
+    end
 end)
 
---// FE Invis v3 — Network Ownership Desync
---// No out-of-bounds CFrame. No Knit. Delta/Electron safe.
---// Forces server replication gap via humanoid state spam + assembly desync.
-local invisThread = nil
-local invisActive = false
-
+-- FE Server-Sided Invis (Root Joint Break & Floor Drop Trick)
+local InvisLoop
 local function ToggleInvis(state)
     local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if not char or not root or not hum then return end
-
-    if state and not invisActive then
-        invisActive = true
-
-        invisThread = task.spawn(function()
-            -- Step 1: Rapid humanoid state cycling
-            -- Forces server to drop character replication priority.
-            -- Server deprioritises a character that keeps changing state
-            -- because it batches the updates — we exploit that batch gap.
-            local states = {
-                Enum.HumanoidStateType.Physics,
-                Enum.HumanoidStateType.FallingDown,
-                Enum.HumanoidStateType.Running,
-                Enum.HumanoidStateType.Physics,
-            }
-            for i = 1, 8 do
-                pcall(function()
-                    hum:ChangeState(states[(i % #states) + 1])
-                end)
-                task.wait(0.05)
+    if not char then return end
+    
+    local realRoot = char:FindFirstChild("RealRoot") or char:FindFirstChild("HumanoidRootPart")
+    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("LowerTorso")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    
+    if not realRoot or not torso or not hum then return end
+    
+    if state then
+        if not char:FindFirstChild("FakeRoot") then
+            -- 1. Echten Root umbenennen, damit wir einen Fake aufbauen können
+            realRoot.Name = "RealRoot"
+            
+            -- 2. FakeRoot klonen und dem Character zuweisen (Für Kamera & Lokale Bewegung)
+            local fakeRoot = realRoot:Clone()
+            fakeRoot.Name = "HumanoidRootPart"
+            fakeRoot.Transparency = 1
+            fakeRoot.Parent = char
+            char.PrimaryPart = fakeRoot
+            
+            -- 3. Zerstöre den echten Joint -> Der Server trennt den Torso ab und lässt ihn fallen!
+            local origJoint = realRoot:FindFirstChild("RootJoint") or torso:FindFirstChild("Root")
+            if origJoint then
+                origJoint:Destroy()
             end
-
-            -- Step 2: Rapid CFrame micro-jitter at current position
-            -- Keeps us inside valid bounds (no teleport rejection)
-            -- but sends enough replication noise to desync other clients
-            local baseCF = root.CFrame
-            for i = 1, 12 do
-                pcall(function()
-                    local jitter = Vector3.new(
-                        math.random(-1000, 1000) * 0.0001,
-                        math.random(-1000, 1000) * 0.0001,
-                        math.random(-1000, 1000) * 0.0001
-                    )
-                    root.CFrame = CFrame.new(baseCF.Position + jitter) * (baseCF - baseCF.Position)
-                end)
-                task.wait(0.02)
+            
+            -- 4. Lokal verbinden wir Torso an den neuen FakeRoot
+            local fakeJoint = fakeRoot:FindFirstChild("RootJoint") or fakeRoot:FindFirstChild("Root")
+            if not fakeJoint then
+                fakeJoint = Instance.new("Motor6D")
+                fakeJoint.Name = realRoot:FindFirstChild("RootJoint") and "RootJoint" or "Root"
+                fakeJoint.Parent = (fakeJoint.Name == "RootJoint") and fakeRoot or torso
             end
-            root.CFrame = baseCF
-
-            -- Step 3: Switch to Physics state and hold
-            -- In Physics state the server stops correcting our position
-            -- and other clients receive no authoritative updates
-            pcall(function()
-                hum:ChangeState(Enum.HumanoidStateType.Physics)
-                hum.PlatformStand = true
+            fakeJoint.Part0 = fakeRoot
+            fakeJoint.Part1 = torso
+            
+            -- 5. Kamera sicher auf den Humanoid binden
+            Workspace.CurrentCamera.CameraSubject = hum
+            
+            -- 6. Lokaler Ghost Effekt
+            for _, v in pairs(char:GetDescendants()) do
+                if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" and v.Name ~= "RealRoot" and v.Transparency < 1 then
+                    v:SetAttribute("OldTrans", v.Transparency)
+                    v.Transparency = 0.5
+                elseif (v:IsA("Decal") or v:IsA("Texture")) and v.Transparency < 1 then
+                    v:SetAttribute("OldTrans", v.Transparency)
+                    v.Transparency = 1
+                end
+            end
+            
+            -- 7. Halte den RealRoot unten versteckt fest
+            InvisLoop = RunService.RenderStepped:Connect(function()
+                if char and char:FindFirstChild("RealRoot") then
+                    -- Positioniere den echten Root weit unter die Map
+                    char.RealRoot.CFrame = CFrame.new(0, workspace.FallenPartsDestroyHeight + 5, 0)
+                    char.RealRoot.Velocity = Vector3.new(0, 0, 0)
+                end
             end)
-
-            -- Step 4: Keepalive — re-assert Physics state every 3s
-            -- Prevents server from pulling us back to Running/Idle
-            while invisActive do
-                task.wait(3)
-                if not invisActive then break end
-                pcall(function()
-                    hum:ChangeState(Enum.HumanoidStateType.Physics)
-                    -- Micro-jitter refresh to keep replication noise active
-                    local cf = root.CFrame
-                    root.CFrame = cf * CFrame.new(0, 0.001, 0)
-                    task.wait(0.05)
-                    root.CFrame = cf
-                end)
+        end
+    else
+        -- ALLES SAUBER ZURÜCKSETZEN
+        if InvisLoop then InvisLoop:Disconnect(); InvisLoop = nil end
+        
+        local fakeRoot = char:FindFirstChild("HumanoidRootPart")
+        
+        if fakeRoot and realRoot then
+            realRoot.Name = "HumanoidRootPart"
+            char.PrimaryPart = realRoot
+            
+            -- Lösche den Fake-Joint
+            local fakeJoint = fakeRoot:FindFirstChild("RootJoint") or torso:FindFirstChild("Root")
+            if fakeJoint then fakeJoint:Destroy() end
+            
+            -- Erstelle den echten Joint wieder
+            local newJoint = Instance.new("Motor6D")
+            newJoint.Name = char:FindFirstChild("Torso") and "RootJoint" or "Root"
+            newJoint.Part0 = realRoot
+            newJoint.Part1 = torso
+            newJoint.Parent = char:FindFirstChild("Torso") and realRoot or torso
+            
+            -- Teleportiere RealRoot zurück nach oben zu dir
+            realRoot.CFrame = fakeRoot.CFrame
+            fakeRoot:Destroy()
+            
+            Workspace.CurrentCamera.CameraSubject = hum
+        end
+        
+        -- Visuals wiederherstellen
+        for _, v in pairs(char:GetDescendants()) do
+            if v:GetAttribute("OldTrans") then
+                v.Transparency = v:GetAttribute("OldTrans")
+                v:SetAttribute("OldTrans", nil)
             end
-        end)
-    originalProperties = {}
-
-    elseif not state and invisActive then
-        invisActive = false
-
-        if invisThread then
-            task.cancel(invisThread)
-            invisThread = nil
-    -- Restore appearance via HumanoidDescription reload
-    pcall(function()
-        local char = LocalPlayer.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            local desc = Players:GetHumanoidDescriptionFromUserId(LocalPlayer.UserId)
-            hum:ApplyDescription(desc)
-   end
-    end)
-
-        -- Clean exit: restore humanoid state so movement works again
-        pcall(function()
-            hum.PlatformStand = false
-            hum:ChangeState(Enum.HumanoidStateType.Running)
-            -- Single position confirm packet to resync all clients
-            local cf = root.CFrame
-            root.CFrame = cf * CFrame.new(0, 0.1, 0)
-            task.wait(0.05)
-            root.CFrame = cf
-        end)
+        end
     end
-    StatusDot.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
-    StatusLabel.Text = "OFF — toggle to activate"
-    StatusLabel.TextColor3 = Color3.fromRGB(90, 90, 90)
 end
 
--- Core Render Loop
+-- Core Render Loop for Speed, Fly, Noclip & Jump Override
 RunService.RenderStepped:Connect(function()
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not char or not hum or not root then return end
 
+    -- Noclip logic
     if MovementState.Noclip then
         for _, v in pairs(char:GetDescendants()) do
             if v:IsA("BasePart") and v.CanCollide then
@@ -1310,23 +813,25 @@ RunService.RenderStepped:Connect(function()
             end
         end
     end
-
+    
+    -- Erzwungene High Jump Power gegen Anticheat-Resets
     if MovementState.HighJump then
         hum.UseJumpPower = true
         hum.JumpPower = MovementState.JumpPower
     end
 
+    -- Fly logic
     if MovementState.Fly and flyBodyVelocity and flyBodyGyro then
         hum.PlatformStand = true
         local moveDir = Vector3.new(0,0,0)
-
+        
         if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + camera.CFrame.LookVector end
         if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - camera.CFrame.LookVector end
         if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - camera.CFrame.RightVector end
         if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + camera.CFrame.RightVector end
         if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0,1,0) end
         if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDir = moveDir - Vector3.new(0,1,0) end
-
+        
         if moveDir.Magnitude > 0 then
             flyBodyVelocity.Velocity = moveDir.Unit * MovementState.FlySpeed
         else
@@ -1334,6 +839,7 @@ RunService.RenderStepped:Connect(function()
         end
         flyBodyGyro.CFrame = camera.CFrame
     else
+        -- Speed logic
         if MovementState.Speed then
             if hum.MoveDirection.Magnitude > 0 then
                 local flatDir = hum.MoveDirection
@@ -1342,14 +848,9 @@ RunService.RenderStepped:Connect(function()
                 root.Velocity = Vector3.new(0, root.Velocity.Y, 0)
             end
         end
--- Reapply on respawn
-LocalPlayer.CharacterAdded:Connect(function(char)
-    originalProperties = {}
-    if invisActive then
-        task.wait(1) -- wait for character to fully load
-        startInvis()
-end
+    end
 end)
+
 
 --// ==========================================
 --// STRUCTURE SETUP
@@ -1363,8 +864,8 @@ local SecPlayer = CreateSection(SubPlayer, "Movement")
 CreateToggle(SecPlayer, "Speed Hack", false, function(state) MovementState.Speed = state end)
 CreateSlider(SecPlayer, "Speed Value", 16, 150, 50, function(val) MovementState.SpeedValue = val end)
 
-CreateToggle(SecPlayer, "Fly", false, function(state)
-    MovementState.Fly = state
+CreateToggle(SecPlayer, "Fly", false, function(state) 
+    MovementState.Fly = state 
     if state then StartFly() else StopFly() end
 end)
 CreateSlider(SecPlayer, "Fly Speed", 10, 200, 50, function(val) MovementState.FlySpeed = val end)
@@ -1375,15 +876,16 @@ CreateSlider(SecPlayer, "Jump Power", 50, 300, 150, function(val) MovementState.
 
 CreateToggle(SecPlayer, "Infinite Jump Spam", false, function(state) MovementState.InfJump = state end)
 CreateToggle(SecPlayer, "Noclip", false, function(state) MovementState.Noclip = state end)
-CreateToggle(SecPlayer, "Invisible (FE Physics Desync)", false, function(state)
+CreateToggle(SecPlayer, "Invisible (FE Server-Sided)", false, function(state) 
+    MovementState.Invis = state
     ToggleInvis(state)
 end)
 
 local SubAuto = CreateSubTab(TabCombat, "Auto")
 local SecAutoDef = CreateSection(SubAuto, "Defensive")
-CreateToggle(SecAutoDef, "Auto Block", false, function(state) TJSConfig.AutoBlock = state end)
-CreateSlider(SecAutoDef, "Block React Range", 5, 50, 15, function(val) TJSConfig.BlockReactRange = val end)
-CreateSlider(SecAutoDef, "Block Hold Duration (ms)", 100, 1500, 500, function(val) TJSConfig.BlockHoldDuration = val end)
+CreateToggle(SecAutoDef, "Auto Block", false, function() end)
+CreateSlider(SecAutoDef, "Block React Range", 5, 50, 15, function() end)
+CreateSlider(SecAutoDef, "Block Hold Duration (ms)", 100, 1500, 500, function() end)
 CreateToggle(SecAutoDef, "Auto Dodge (TP Back)", false, function() end)
 CreateSlider(SecAutoDef, "Dodge Distance", 5, 50, 20, function() end)
 
@@ -1475,24 +977,6 @@ pcall(function()
     if Tabs[1] and Tabs[1].SubTabs[1] and Tabs[1].SubTabs[1].Page then
         Tabs[1].SubTabs[1].Page.Visible = true
         Tabs[1].SubTabs[1].Btn.TextColor3 = Theme.Text
---// TOGGLE
-local isOn = false
-ToggleBtn.MouseButton1Click:Connect(function()
-    isOn = not isOn
-    invisActive = isOn
-
-    TweenService:Create(ToggleBtn, TweenInfo.new(0.2), {
-        BackgroundColor3 = isOn and Color3.fromRGB(80, 200, 80) or Color3.fromRGB(45, 45, 45)
-    }):Play()
-    TweenService:Create(Circle, TweenInfo.new(0.2), {
-        Position = isOn and UDim2.new(1, -22, 0.5, -9) or UDim2.new(0, 4, 0.5, -9),
-        BackgroundColor3 = isOn and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(130, 130, 130)
-    }):Play()
-
-    if isOn then
-        startInvis()
-    else
-        stopInvis()
-end
+    end
     UpdateSidebarCanvas()
 end)
