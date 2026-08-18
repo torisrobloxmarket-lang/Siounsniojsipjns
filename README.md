@@ -385,6 +385,7 @@ local function CreateLabel(section, text)
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.TextWrapped = true
     
+    -- Dynamische Größenanpassung für längere Texte
     lbl:GetPropertyChangedSignal("TextBounds"):Connect(function()
         if lbl.TextBounds.Y > 30 then
             frame.Size = UDim2.new(0.92, 0, 0, lbl.TextBounds.Y + 10)
@@ -659,7 +660,7 @@ local RyuConfig = {
 }
 
 --// ==========================================
---// BLACK FLASH / OFFENSIVE LOGIC (WITH NAMECALL HOOK)
+--// BLACK FLASH / OFFENSIVE LOGIC (WITH NAMECALL HOOK & 0.5s DELAY)
 --// ==========================================
 local function FireYujiBF()
     pcall(function()
@@ -695,7 +696,7 @@ pcall(function()
             if RyuConfig.AutoBFYuji and self.Parent and self.Parent.Parent and self.Parent.Parent.Name == "DivergentFistService" then
                 if not _G.YujiBFDebounce then
                     _G.YujiBFDebounce = true
-                    task.delay(0.2, function()
+                    task.delay(0.5, function()
                         pcall(function() self:FireServer(unpack(args)) end)
                         task.wait(0.1)
                         _G.YujiBFDebounce = false
@@ -705,7 +706,7 @@ pcall(function()
             if RyuConfig.AutoBFMahito and self.Parent and self.Parent.Parent and self.Parent.Parent.Name == "FocusStrikeService" then
                 if not _G.MahitoBFDebounce then
                     _G.MahitoBFDebounce = true
-                    task.delay(0.2, function()
+                    task.delay(0.5, function()
                         pcall(function() self:FireServer(unpack(args)) end)
                         task.wait(0.1)
                         _G.MahitoBFDebounce = false
@@ -718,7 +719,7 @@ pcall(function()
 end)
 
 --// ==========================================
---// BLACK FLASH CHAIN LOGIC (MOBILE BUTTON & PC KEYBIND)
+--// BLACK FLASH CHAIN LOGIC (MOBILE BUTTON & STRICT CHARACTER LOCK)
 --// ==========================================
 local isMobilePlayer = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
@@ -765,10 +766,10 @@ local function TriggerBFAttack()
     if closest then
         local enemyRoot = closest.HumanoidRootPart
         
-        -- Look at enemy
-        root.CFrame = CFrame.lookAt(root.Position, Vector3.new(enemyRoot.Position.X, root.Position.Y, enemyRoot.Position.Z))
+        -- Strict Look at enemy before calculating
+        root.CFrame = CFrame.new(root.Position, Vector3.new(enemyRoot.Position.X, root.Position.Y, enemyRoot.Position.Z))
         
-        -- Check if enemy is facing away from us
+        -- Check if enemy is facing away from us (meaning we are behind them)
         local vectorToEnemy = (enemyRoot.Position - root.Position).Unit
         local enemyLookVector = enemyRoot.CFrame.LookVector
         local isFacingAway = enemyLookVector:Dot(vectorToEnemy) > 0.3
@@ -778,10 +779,16 @@ local function TriggerBFAttack()
             shouldDash = false
         end
         
-        if shouldDash then
+        if shouldDash and not isFacingAway then
             local dir = "Left"
             if RyuConfig.BFDashDir == "Automatic" then
-                dir = (math.random() > 0.5) and "Left" or "Right"
+                -- Dashes to the side the enemy is not facing
+                local rightVector = enemyRoot.CFrame.RightVector
+                if rightVector:Dot(vectorToEnemy) > 0 then
+                    dir = "Right"
+                else
+                    dir = "Left"
+                end
             elseif RyuConfig.BFDashDir == "Right" then
                 dir = "Right"
             end
@@ -791,17 +798,17 @@ local function TriggerBFAttack()
                 ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("MovementService"):WaitForChild("RE"):WaitForChild("Dash"):FireServer(unpack(args))
             end)
             
-            task.wait(0.25)
+            task.wait(0.35) -- Wait for circular dash to reach the back
             
-            -- Look at enemy again after dash
+            -- Lock strictly to enemy back again after dash
             if char:FindFirstChild("HumanoidRootPart") and closest:FindFirstChild("HumanoidRootPart") then
-                root.CFrame = CFrame.lookAt(root.Position, Vector3.new(enemyRoot.Position.X, root.Position.Y, enemyRoot.Position.Z))
+                root.CFrame = CFrame.new(root.Position, Vector3.new(enemyRoot.Position.X, root.Position.Y, enemyRoot.Position.Z))
             end
         end
         
-        -- Double Black Flash
+        -- 2x Black Flash with 0.5s timer
         FireYujiBF()
-        task.wait(0.2)
+        task.wait(0.5)
         FireYujiBF()
     end
 end
@@ -811,7 +818,13 @@ BFMobileBtn.MouseButton1Click:Connect(TriggerBFAttack)
 UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
     
-    -- Action Keybind (Dash+BF)
+    -- Auto BF for standard clicks
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if RyuConfig.AutoBFYuji then FireYujiBF() end
+        if RyuConfig.AutoBFMahito then FireMahitoBF() end
+    end
+    
+    -- Perform combo dash + flash
     if input.KeyCode == RyuConfig.BFActionKey then
         if RyuConfig.AutoBFChain or isMobilePlayer then
             TriggerBFAttack()
@@ -824,7 +837,7 @@ UserInputService.InputBegan:Connect(function(input, gpe)
     end
 end)
 
--- Character Lock Render Loop (Permanently looking at nearest target, NO camera change)
+-- Character STRICT Lock Render Loop (Permanently looking at nearest target, NO camera change)
 RunService.Heartbeat:Connect(function()
     -- On Mobile it is permanently on. On PC it is toggleable.
     if RyuConfig.AutoBFChain or isMobilePlayer then
@@ -847,8 +860,24 @@ RunService.Heartbeat:Connect(function()
             if closest then
                 local lookPos = closest.HumanoidRootPart.Position
                 local rootTargetCFrame = CFrame.new(root.Position, Vector3.new(lookPos.X, root.Position.Y, lookPos.Z))
-                root.CFrame = root.CFrame:Lerp(rootTargetCFrame, RyuConfig.BFSmoothness)
+                root.CFrame = rootTargetCFrame
+                
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum then hum.AutoRotate = false end
+                _G.WasBFLocked = true
+            else
+                if _G.WasBFLocked then
+                    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    if hum then hum.AutoRotate = true end
+                    _G.WasBFLocked = false
+                end
             end
+        end
+    else
+        if _G.WasBFLocked then
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum.AutoRotate = true end
+            _G.WasBFLocked = false
         end
     end
 end)
