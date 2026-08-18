@@ -8,173 +8,26 @@ local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
---// PLATZHALTER-FUNKTION
-local function Ryuhub()
-    -- Für zukünftige Features
-end
-
---// ANTI-ANNOYING MESSAGE & SOUND HIDER (CLIMB ERROR/CD)
-task.spawn(function()
-    local pg = LocalPlayer:WaitForChild("PlayerGui", 10)
-    if pg then
-        pg.DescendantAdded:Connect(function(descendant)
-            if descendant:IsA("TextLabel") or descendant:IsA("TextButton") then
-                task.delay(0.01, function()
-                    pcall(function()
-                        if descendant and descendant.Parent and descendant.Text then
-                            local txt = string.lower(descendant.Text)
-                            if txt:match("cd") or txt:match("cooldown") or txt:match("climb") or txt:match("error") then
-                                descendant.Visible = false
-                                descendant.TextTransparency = 1
-                            end
-                        end
-                    end)
-                end)
-            elseif descendant:IsA("Sound") then
-                task.delay(0.01, function()
-                    pcall(function()
-                        if descendant then
-                            local sndName = string.lower(descendant.Name)
-                            if sndName:match("error") or sndName:match("climb") then
-                                descendant:Stop()
-                                descendant.Volume = 0
-                            end
-                        end
-                    end)
-                end)
-            end
-        end)
-    end
-end)
-
---// QUEST PING TRACKER (__namecall Hook)
-local lastQuestPing = tick()
+--// GUI PARENT RESOLVER & CLEANUP
+local guiParent
 pcall(function()
-    local oldNamecall
-    oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-        if not getnamecallmethod then return oldNamecall(self, ...) end
-        
-        local method = getnamecallmethod()
-        if method == "InvokeServer" and typeof(self) == "Instance" and self.Name == "Quest" then
-            local args = {...}
-            if args[1] == "getNPCQuestLocations" or (type(args[1]) == "table" and args[1][1] == "getNPCQuestLocations") then
-                lastQuestPing = tick()
-            end
-        end
-        return oldNamecall(self, ...)
-    end)
+    if type(gethui) == "function" then
+        guiParent = gethui()
+    elseif syn and syn.protect_gui then
+        guiParent = CoreGui
+    end
 end)
+if not guiParent then guiParent = LocalPlayer:WaitForChild("PlayerGui") end
 
---// GUI CLEANUP
-local guiParent = LocalPlayer:WaitForChild("PlayerGui")
-pcall(function() if gethui then guiParent = gethui() elseif syn and syn.protect_gui then guiParent = CoreGui end end)
-for _, v in pairs(guiParent:GetChildren()) do if v.Name == "RyuHubPremium" then v:Destroy() end end
-
---// DYNAMISCHER WORKSPACE SCANNER FÜR INSELN, NPCs & WAFFEN
-local function GetDynamicLists()
-    local islands = {}
-    local islandsFolder = Workspace:FindFirstChild("Islands")
-    if islandsFolder then
-        for _, v in pairs(islandsFolder:GetChildren()) do
-            table.insert(islands, v.Name)
-        end
-    else
-        islands = {
-            "???? Shrine", "A rock", "Coco Island", "Colosseum", "Colosseum of Arc", 
-            "Desert Kingdom", "Dokkan Island", "Fishman Cave", "Fishman Island", 
-            "Foro Island", "Impel Base", "Marine Base G-1", "Marine Fort F-1", 
-            "Mirror World", "Mysterious Cliff", "Mysterious Reef", "Orange Town", 
-            "Restaurant Baratie", "Reverse Mountain", "Roca Island", "Rose Kingdom", 
-            "Rovo Island", "Sakura Stronghold", "Sandora", "Sashi Island", 
-            "Sett's Arena", "Shark Park", "Shell's Town", "Sphinx Island", 
-            "Spirit Island", "Thriller Bark", "Town of Beginnings", 
-            "Turtleback Cave", "Umi Island", "Whole Cake Island"
-        }
-    end
-    table.sort(islands)
-    return islands
+for _, v in pairs(guiParent:GetChildren()) do 
+    if v.Name == "RyuHubUI" then v:Destroy() end 
 end
 
-local function GetNPCNames()
-    local names = {}
-    local dict = {}
-    if Workspace:FindFirstChild("NPCs") then
-        for _, v in pairs(Workspace.NPCs:GetChildren()) do
-            if v:IsA("Model") and v:FindFirstChild("HumanoidRootPart") and not dict[v.Name] then
-                dict[v.Name] = true
-                table.insert(names, v.Name)
-            end
-        end
-    end
-    table.sort(names)
-    return names
-end
-
-local function GetWeapons()
-    local weapons = {}
-    local dict = {}
-    local function add(t)
-        if t and t:IsA("Tool") and not dict[t.Name] then
-            dict[t.Name] = true
-            table.insert(weapons, t.Name)
-        end
-    end
-    if LocalPlayer.Character then
-        for _, v in pairs(LocalPlayer.Character:GetChildren()) do add(v) end
-    end
-    local bp = LocalPlayer:FindFirstChild("Backpack")
-    if bp then
-        for _, v in pairs(bp:GetChildren()) do add(v) end
-    end
-    if #weapons == 0 then return {"Melee"} end
-    table.sort(weapons)
-    return weapons
-end
-
-local InitIslands = GetDynamicLists()
-
---// RYU CONFIGURATION (GPO)
-local RyuConfig = {
-    TargetIsland = InitIslands[1] or "Town of Beginnings",
-    IslandSpeed = 65, 
-    TweenWallDistance = 1,
-    GuiColor = Color3.fromRGB(255, 255, 255),
-    
-    AutoFarm = false,
-    FarmMode = "Solo", 
-    FarmTweenType = "FarmTween (Direct)",
-    TargetNPC = "",
-    TargetMob = "",
-    FarmHoverHeight = 6.5,
-    FarmHitDelay = 0.45,
-    FarmComboDelay = 1.0, 
-    UseGun = false, 
-    FarmStyle = "Melee",
-    
-    AutoBuso = false,
-    AutoGeppo = false,
-    
-    NoclipDash = false,
-    
-    EnableAutoStats = false,
-    AutoStats = {
-        Strength = 0,
-        Stamina = 0,
-        Defense = 0,
-        SwordMastery = 0,
-        GunMastery = 0
-    },
-    
-    FakeName = ""
-}
-
---// PREMIUM MONOCHROME THEME
+--// THEME
 local Theme = {
     Background = Color3.fromRGB(15, 15, 15),
     Sidebar = Color3.fromRGB(22, 22, 22),
@@ -187,7 +40,6 @@ local Theme = {
     Stroke = Color3.fromRGB(60, 60, 60)
 }
 
-local isMobile = camera.ViewportSize.X < 850
 local MainSize = UDim2.new(0, math.min(750, camera.ViewportSize.X - 40), 0, math.min(480, camera.ViewportSize.Y - 40))
 local SidebarWidth = 160
 
@@ -280,41 +132,13 @@ DragText.TextColor3 = Theme.Text
 DragText.TextTransparency = 0.95
 DragText.ZIndex = 0
 
-local tDragStart, tStartPos, isDraggingBtn = nil, nil, false
-ToggleBtn.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        isDraggingBtn = false
-        tDragStart = input.Position
-        tStartPos = ToggleBtn.Position
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if tDragStart and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - tDragStart
-        if delta.Magnitude > 5 then 
-            isDraggingBtn = true
-            ToggleBtn.Position = UDim2.new(tStartPos.X.Scale, tStartPos.X.Offset + delta.X, tStartPos.Y.Scale, tStartPos.Y.Offset + delta.Y) 
-        end
-    end
-end)
-
 ToggleBtn.MouseButton1Click:Connect(function()
-    if not isDraggingBtn then
-        if MainFrame and MainFrame.Visible then
-            pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play() end)
-            task.delay(0.3, function() if MainFrame then MainFrame.Visible = false end end)
-        else
-            if MainFrame then MainFrame.Visible = true end
-            pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = MainSize, Position = UDim2.new(0.5, -MainSize.X.Offset / 2, 0.5, -MainSize.Y.Offset / 2)}):Play() end)
-        end
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        if tDragStart then
-            tDragStart = nil
-        end
+    if MainFrame.Visible then
+        pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play() end)
+        task.delay(0.3, function() MainFrame.Visible = false end)
+    else
+        MainFrame.Visible = true
+        pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = MainSize, Position = UDim2.new(0.5, -MainSize.X.Offset / 2, 0.5, -MainSize.Y.Offset / 2)}):Play() end)
     end
 end)
 
@@ -337,19 +161,6 @@ Title.TextSize = 22
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.TextColor3 = Theme.Text
 
-local TitleGradient = Instance.new("UIGradient", Title)
-TitleGradient.Color = ColorSequence.new{
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(180, 180, 185)),   
-    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)), 
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(180, 180, 185))    
-}
-TitleGradient.Offset = Vector2.new(-1, 0)
-
-task.spawn(function()
-    local tweenInfo = TweenInfo.new(2.0, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true)
-    pcall(function() TweenService:Create(TitleGradient, tweenInfo, {Offset = Vector2.new(1, 0)}):Play() end)
-end)
-
 local SubTitle = Instance.new("TextLabel", Topbar)
 SubTitle.Size = UDim2.new(0, 300, 0, 15)
 SubTitle.Position = UDim2.new(0, 20, 0, 38)
@@ -370,11 +181,10 @@ CloseBtn.Font = Enum.Font.GothamBold
 CloseBtn.TextSize = 14
 Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
 Instance.new("UIStroke", CloseBtn).Color = Theme.Stroke
-AddHoverEffect(CloseBtn, Theme.SectionBG, Theme.Warning)
 
 CloseBtn.MouseButton1Click:Connect(function()
     pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play() end)
-    task.delay(0.3, function() if MainFrame then MainFrame.Visible = false end end)
+    task.delay(0.3, function() MainFrame.Visible = false end)
 end)
 
 -- Window Dragging
@@ -433,14 +243,6 @@ local function UpdateSidebarCanvas()
         if t.IsOpen then totalH = totalH + t.SubLayout.AbsoluteContentSize.Y + 6 end
     end
     Sidebar.CanvasSize = UDim2.new(0, 0, 0, totalH)
-end
-
-local function SecureTrigger(button, func)
-    button.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            pcall(func)
-        end
-    end)
 end
 
 local function CreateMainTab(name)
@@ -518,12 +320,12 @@ local function CreateSubTab(tabObj, subName)
     subBtn.MouseButton1Click:Connect(function()
         for _, t in pairs(Tabs) do
             for _, st in pairs(t.SubTabs) do
-                if st and st.Page then pcall(function() st.Page.Visible = false end) end
-                if st and st.Btn then pcall(function() TweenService:Create(st.Btn, TweenInfo.new(0.2), {TextColor3 = Theme.SubText}):Play() end) end
+                st.Page.Visible = false
+                st.Btn.TextColor3 = Theme.SubText
             end
         end
-        if page then pcall(function() page.Visible = true end) end
-        pcall(function() TweenService:Create(subBtn, TweenInfo.new(0.2), {TextColor3 = Theme.Text}):Play() end)
+        page.Visible = true
+        subBtn.TextColor3 = Theme.Text
     end)
 
     table.insert(tabObj.SubTabs, subObj)
@@ -826,236 +628,6 @@ local function CreateInput(section, placeholder, callback)
 end
 
 --// ==========================================
---// TJS SPECIFIC LOGIC (Auto Block)
---// ==========================================
-local TJSConfig = {
-    AutoBlock = false,
-    BlockReactRange = 15,
-    BlockHoldDuration = 500
-}
-
--- RenderStepped Auto Block Logik
-RunService.RenderStepped:Connect(function()
-    if not TJSConfig.AutoBlock then return end
-
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
-            local enemyRoot = player.Character:FindFirstChild("HumanoidRootPart")
-            if enemyRoot then
-                local distance = (root.Position - enemyRoot.Position).Magnitude
-                if distance <= TJSConfig.BlockReactRange then
-                    -- Check, ob der Gegner eine Angriffsanimation abspielt
-                    local enemyHum = player.Character:FindFirstChildOfClass("Humanoid")
-                    if enemyHum then
-                        local isAttacking = false
-                        for _, track in pairs(enemyHum:GetPlayingAnimationTracks()) do
-                            -- Einfache Heuristik: "Punch", "Attack", "Strike" etc.
-                            local animName = string.lower(track.Name)
-                            if animName:match("punch") or animName:match("attack") or animName:match("strike") or animName:match("kick") then
-                                isAttacking = true
-                                break
-                            end
-                        end
-
-                        if isAttacking then
-                            -- Block-Remote feuern
-                            pcall(function()
-                                local combatEvent = ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("Combat")
-                                if combatEvent then
-                                    combatEvent:FireServer("Block", true)
-                                    
-                                    -- Block halten und dann loslassen
-                                    task.spawn(function()
-                                        task.wait(TJSConfig.BlockHoldDuration / 1000)
-                                        pcall(function() combatEvent:FireServer("Block", false) end)
-                                    end)
-                                end
-                            end)
-                        end
-                    end
-                end
-            end
-        end
-    end
-end)
-
-
---// ==========================================
---// MOVEMENT LOGIC (NO MOMENTUM, INSTANT)
---// ==========================================
-local MovementState = {
-    Speed = false, SpeedValue = 50,
-    Fly = false, FlySpeed = 50, FlyKey = Enum.KeyCode.X,
-    HighJump = false, JumpPower = 150,
-    InfJump = false, Noclip = false, Invis = false
-}
-
-local flyBodyVelocity
-local flyBodyGyro
-
-local function StartFly()
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    
-    if flyBodyVelocity then flyBodyVelocity:Destroy() end
-    if flyBodyGyro then flyBodyGyro:Destroy() end
-    
-    flyBodyVelocity = Instance.new("BodyVelocity")
-    flyBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
-    flyBodyVelocity.Parent = root
-    
-    flyBodyGyro = Instance.new("BodyGyro")
-    flyBodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-    flyBodyGyro.D = 100
-    flyBodyGyro.P = 10000
-    flyBodyGyro.CFrame = root.CFrame
-    flyBodyGyro.Parent = root
-end
-
-local function StopFly()
-    if flyBodyVelocity then flyBodyVelocity:Destroy(); flyBodyVelocity = nil end
-    if flyBodyGyro then flyBodyGyro:Destroy(); flyBodyGyro = nil end
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hum then hum.PlatformStand = false end
-end
-
--- Fly Keybind hook
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
-    if input.KeyCode == MovementState.FlyKey then
-        MovementState.Fly = not MovementState.Fly
-        if MovementState.Fly then StartFly() else StopFly() end
-    end
-end)
-
--- Inf Jump & High Jump force
-UserInputService.JumpRequest:Connect(function()
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    
-    if hum and root then
-        if MovementState.InfJump or MovementState.HighJump then
-            hum:ChangeState(Enum.HumanoidStateType.Jumping)
-        end
-        if MovementState.HighJump then
-            -- Setzt die vertikale Geschwindigkeit sofort, ohne Verzögerung
-            root.Velocity = Vector3.new(root.Velocity.X, MovementState.JumpPower, root.Velocity.Z)
-        end
-    end
-end)
-
---// FE Server-Sided Invis (NaN Desync Glitch)
-local function ToggleInvis(state)
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not char or not root then return end
-
-    if state then
-        task.spawn(function()
-            pcall(function()
-                local knitServices = ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services")
-                local acTeleport = knitServices:WaitForChild("AntiCheatService"):WaitForChild("RE"):WaitForChild("Teleport")
-                local acCamera = knitServices:WaitForChild("AntiCheatService"):WaitForChild("RE"):WaitForChild("Camera")
-                local naoyaRight = knitServices:WaitForChild("NaoyaService"):WaitForChild("RE"):WaitForChild("RightActivated")
-
-                -- 1. Anti-Cheat Teleport Logs spammen
-                acTeleport:FireServer(1786818932.1222)
-                acTeleport:FireServer(1786818933.1388242)
-                acTeleport:FireServer(1786818851.6917179)
-                acTeleport:FireServer(1786818634.939621)
-
-                -- 2. Naoya Dash/Skill auslösen
-                local unp = table.unpack or unpack
-                naoyaRight:FireServer(Vector3.new(-70.33029174804688, 21.359237670898438, -5.304592132568359))
-
-                -- 3. Camera NaN Desync (Safe NaN für Mobile Executoren)
-                local safeNaN = math.acos(2) -- Erzeugt garantiert NaN, wird nicht gefiltert
-                local buf1 = buffer.fromstring("\255\2556\000\000\028\000\000\198")
-                local buf2 = buffer.fromstring("\182\255\019\t\000\031L\000\210E\f\185\251E\f")
-                
-                acCamera:FireServer(buf1, buf2, char, safeNaN)
-            end)
-            
-            -- 4. Backup Physics Desync (Zwingt den Server, dich auszublenden)
-            task.wait(0.2)
-            pcall(function()
-                local nanVec = Vector3.new(math.acos(2), math.acos(2), math.acos(2))
-                root.Velocity = nanVec
-                root.RotVelocity = nanVec
-            end)
-        end)
-    else
-        -- Bei einem NaN-Desync muss der Charakter resettet werden
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            hum.Health = 0
-        end
-    end
-end
-
--- Core Render Loop for Speed, Fly, Noclip & Jump Override
-RunService.RenderStepped:Connect(function()
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not char or not hum or not root then return end
-
-    -- Noclip logic
-    if MovementState.Noclip then
-        for _, v in pairs(char:GetDescendants()) do
-            if v:IsA("BasePart") and v.CanCollide then
-                v.CanCollide = false
-            end
-        end
-    end
-    
-    -- Erzwungene High Jump Power gegen Anticheat-Resets
-    if MovementState.HighJump then
-        hum.UseJumpPower = true
-        hum.JumpPower = MovementState.JumpPower
-    end
-
-    -- Fly logic
-    if MovementState.Fly and flyBodyVelocity and flyBodyGyro then
-        hum.PlatformStand = true
-        local moveDir = Vector3.new(0,0,0)
-        
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + camera.CFrame.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - camera.CFrame.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - camera.CFrame.RightVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + camera.CFrame.RightVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0,1,0) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDir = moveDir - Vector3.new(0,1,0) end
-        
-        if moveDir.Magnitude > 0 then
-            flyBodyVelocity.Velocity = moveDir.Unit * MovementState.FlySpeed
-        else
-            flyBodyVelocity.Velocity = Vector3.new(0,0,0)
-        end
-        flyBodyGyro.CFrame = camera.CFrame
-    else
-        -- Speed logic
-        if MovementState.Speed then
-            if hum.MoveDirection.Magnitude > 0 then
-                local flatDir = hum.MoveDirection
-                root.Velocity = Vector3.new(flatDir.X * MovementState.SpeedValue, root.Velocity.Y, flatDir.Z * MovementState.SpeedValue)
-            else
-                root.Velocity = Vector3.new(0, root.Velocity.Y, 0)
-            end
-        end
-    end
-end)
-
-
---// ==========================================
 --// STRUCTURE SETUP
 --// ==========================================
 
@@ -1063,32 +635,23 @@ end)
 local TabCombat = CreateMainTab("Combat")
 
 local SubPlayer = CreateSubTab(TabCombat, "Player")
-local SecPlayer = CreateSection(SubPlayer, "Movement")
-CreateToggle(SecPlayer, "Speed Hack", false, function(state) MovementState.Speed = state end)
-CreateSlider(SecPlayer, "Speed Value", 16, 150, 50, function(val) MovementState.SpeedValue = val end)
-
-CreateToggle(SecPlayer, "Fly", false, function(state) 
-    MovementState.Fly = state 
-    if state then StartFly() else StopFly() end
-end)
-CreateSlider(SecPlayer, "Fly Speed", 10, 200, 50, function(val) MovementState.FlySpeed = val end)
-CreateKeybind(SecPlayer, "Fly Keybind", Enum.KeyCode.X, function(key) MovementState.FlyKey = key end)
-
-CreateToggle(SecPlayer, "High Jump", false, function(state) MovementState.HighJump = state end)
-CreateSlider(SecPlayer, "Jump Power", 50, 300, 150, function(val) MovementState.JumpPower = val end)
-
-CreateToggle(SecPlayer, "Infinite Jump Spam", false, function(state) MovementState.InfJump = state end)
-CreateToggle(SecPlayer, "Noclip", false, function(state) MovementState.Noclip = state end)
-CreateToggle(SecPlayer, "Invisible (FE Server-Sided)", false, function(state) 
-    MovementState.Invis = state
-    ToggleInvis(state)
-end)
+local SecPlayer = CreateSection(SubPlayer, "Movement Mods")
+CreateToggle(SecPlayer, "Speed Hack (WalkSpeed)", false, function() end)
+CreateSlider(SecPlayer, "Speed Value", 16, 150, 50, function() end)
+CreateToggle(SecPlayer, "Fly (Frozen Body)", false, function() end)
+CreateSlider(SecPlayer, "Fly Speed", 10, 200, 50, function() end)
+CreateKeybind(SecPlayer, "Fly Keybind", Enum.KeyCode.X, function() end)
+CreateToggle(SecPlayer, "High Jump", false, function() end)
+CreateSlider(SecPlayer, "Jump Power", 50, 300, 150, function() end)
+CreateToggle(SecPlayer, "Infinite Jump Spam", false, function() end)
+CreateToggle(SecPlayer, "Noclip", false, function() end)
+CreateToggle(SecPlayer, "Invisible (FE Server-Sided)", false, function() end)
 
 local SubAuto = CreateSubTab(TabCombat, "Auto")
 local SecAutoDef = CreateSection(SubAuto, "Defensive")
-CreateToggle(SecAutoDef, "Auto Block", false, function(state) TJSConfig.AutoBlock = state end)
-CreateSlider(SecAutoDef, "Block React Range", 5, 50, 15, function(val) TJSConfig.BlockReactRange = val end)
-CreateSlider(SecAutoDef, "Block Hold Duration (ms)", 100, 1500, 500, function(val) TJSConfig.BlockHoldDuration = val end)
+CreateToggle(SecAutoDef, "Auto Block", false, function() end)
+CreateSlider(SecAutoDef, "Block React Range", 5, 50, 15, function() end)
+CreateSlider(SecAutoDef, "Block Hold Duration (ms)", 100, 1500, 500, function() end)
 CreateToggle(SecAutoDef, "Auto Dodge (TP Back)", false, function() end)
 CreateSlider(SecAutoDef, "Dodge Distance", 5, 50, 20, function() end)
 
@@ -1100,7 +663,7 @@ CreateLabel(SecAutoOff, "Auto Combos: Join discord.gg/ryuhub and send clips of y
 local SecAutoUtils = CreateSection(SubAuto, "Utilities")
 CreateToggle(SecAutoUtils, "Auto Train", false, function() end)
 CreateToggle(SecAutoUtils, "Enable Auto Item", false, function() end)
-CreateDropdown(SecAutoUtils, "Target Item", {"None", "Cursed Finger", "Bat"}, "TargetItem", function() end)
+CreateDropdown(SecAutoUtils, "Target Item", {"None", "Cursed Finger", "Bat"}, "TargetItem")
 
 local SubAbil = CreateSubTab(TabCombat, "Abilities")
 local SecAbil = CreateSection(SubAbil, "Combat Enhancements")
@@ -1140,7 +703,7 @@ MakeSkillRow("Skill 4")
 
 local SubTarget = CreateSubTab(TabFarm, "Target")
 local SecTarget = CreateSection(SubTarget, "Specific Target Follow")
-CreateDropdown(SecTarget, "Target Player", {"None", "Dummy1", "Player1"}, "TargetPlayer", function() end)
+CreateDropdown(SecTarget, "Target Player", {"None", "Dummy1", "Player1"}, "TargetPlayer")
 CreateToggle(SecTarget, "Enable Target Farm", false, function() end)
 CreateSlider(SecTarget, "Distance Behind", 1, 15, 3, function() end)
 
