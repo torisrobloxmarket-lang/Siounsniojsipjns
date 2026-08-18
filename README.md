@@ -690,10 +690,29 @@ local KnownMovementAnims = {
     ["114113678077830"] = true, 
 }
 
-local function pressKey(keyCode)
-    VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
-    task.wait()
-    VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+local isMobilePlayer = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+
+local function triggerBlackFlash()
+    if isMobilePlayer then
+        -- Mobile Fallback: Direct Remote to prevent VirtualInputManager Freeze
+        pcall(function()
+            local char = LocalPlayer.Character
+            if not char then return end
+            local moveset = char:FindFirstChild("Moveset")
+            if not moveset then return end
+            
+            if moveset:FindFirstChild("Divergent Fist") then
+                ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("DivergentFistService"):WaitForChild("RE"):WaitForChild("Activated"):FireServer("false")
+            elseif moveset:FindFirstChild("Focus Strike") then
+                ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("FocusStrikeService"):WaitForChild("RE"):WaitForChild("Activated"):FireServer("false")
+            end
+        end)
+    else
+        -- PC Fallback: Virtual Input
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game)
+        task.wait()
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game)
+    end
 end
 
 local function PlayLocalAnim(animId, speed)
@@ -713,7 +732,7 @@ local function PlayLocalAnim(animId, speed)
 end
 
 --// ==========================================
---// BLACK FLASH HOOK (Yuji/Mahito)
+--// AUTO BLACK FLASH HOOK (Yuji/Mahito)
 --// ==========================================
 local function setupCharacterBF(character)
     local humanoid = character:WaitForChild("Humanoid", 5)
@@ -730,7 +749,7 @@ local function setupCharacterBF(character)
         if delayTime then
             task.delay(delayTime, function()
                 if humanoid.Health > 0 then
-                    pressKey(Enum.KeyCode.Three) 
+                    triggerBlackFlash() 
                 end
             end)
         end
@@ -746,7 +765,6 @@ end)
 --// ==========================================
 --// BLACK FLASH CHAIN LOGIC (CURVE GLIDE & MOBILE UI)
 --// ==========================================
-local isMobilePlayer = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
 local BFMobileGui = Instance.new("ScreenGui")
 BFMobileGui.Name = "RyuBFMobileGui"
@@ -833,6 +851,16 @@ local function startCurveGlide()
     local behindDir  = Vector3.new(tHRP.CFrame.LookVector.X, 0, tHRP.CFrame.LookVector.Z).Unit
     local endPos     = targetPos - behindDir * 3 -- Radius = 3
 
+    -- Check if we are already behind the target
+    local vectorToEnemy = (targetPos - startPos).Unit
+    local enemyLookVector = Vector3.new(tHRP.CFrame.LookVector.X, 0, tHRP.CFrame.LookVector.Z).Unit
+    local isFacingAway = enemyLookVector:Dot(vectorToEnemy) > 0.3
+    
+    if RyuConfig.BFNoDashBehind and isFacingAway then
+        -- Wenn Option an ist und Gegner guckt weg, bleib stehen
+        return
+    end
+
     local mid      = (startPos + endPos) / 2
     local toTarget = targetPos - startPos
     local flatDist = toTarget.Magnitude
@@ -886,26 +914,40 @@ local function startCurveGlide()
     end)
 end
 
-BFMobileBtn.MouseButton1Click:Connect(function()
+local function TriggerBFAttackCombo()
     if not RyuConfig.AutoBFChain then return end
-    pressKey(Enum.KeyCode.Three)
+    triggerBlackFlash()
     task.wait(0.2)
     startCurveGlide()
-end)
+end
+
+BFMobileBtn.MouseButton1Click:Connect(TriggerBFAttackCombo)
 
 UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
     
     if input.KeyCode == RyuConfig.BFActionKey then
         if RyuConfig.AutoBFChain or isMobilePlayer then
-            pressKey(Enum.KeyCode.Three)
-            task.wait(0.2)
-            startCurveGlide()
+            TriggerBFAttackCombo()
         end
     end
     
     if input.KeyCode == RyuConfig.BFChainKey and not isMobilePlayer then
         RyuConfig.AutoBFChain = not RyuConfig.AutoBFChain
+        if not RyuConfig.AutoBFChain then
+            -- Cleanup AlignOrientations immediately on disable
+            local char = LocalPlayer.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if root then
+                local align = root:FindFirstChild("AlignOrientation")
+                local att = root:FindFirstChild("Attachment")
+                if align then align:Destroy() end
+                if att then att:Destroy() end
+            end
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if hum then hum.AutoRotate = true end
+            _G.WasBFLocked = false
+        end
     end
 end)
 
@@ -918,16 +960,19 @@ RunService.RenderStepped:Connect(function()
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not char or not hum or not root then return end
 
-    if (RyuConfig.AutoBFChain or isMobilePlayer) and not MovementState.Fly then
+    if RyuConfig.AutoBFChain and not MovementState.Fly then
         local closest = nil
         local minDist = RyuConfig.BFRange
         
         for _, p in pairs(Players:GetPlayers()) do
             if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                local d = (p.Character.HumanoidRootPart.Position - root.Position).Magnitude
-                if d <= minDist then
-                    minDist = d
-                    closest = p.Character
+                local eHum = p.Character:FindFirstChild("Humanoid")
+                if eHum and eHum.Health > 0 then
+                    local d = (p.Character.HumanoidRootPart.Position - root.Position).Magnitude
+                    if d <= minDist then
+                        minDist = d
+                        closest = p.Character
+                    end
                 end
             end
         end
@@ -1255,10 +1300,11 @@ CreateSlider(SecPlayer, "Jump Power", 50, 300, 150, function(val) MovementState.
 
 CreateToggle(SecPlayer, "Infinite Jump Spam", false, function(state) MovementState.InfJump = state end)
 CreateToggle(SecPlayer, "Noclip", false, function(state) MovementState.Noclip = state end)
-CreateToggle(SecPlayer, "Invisible (FE Server-Sided)", false, function(state) 
+CreateToggle(SecPlayer, "Invisible (FE Server-Sided) (not working)", false, function(state) 
     MovementState.Invis = state
     ToggleInvis(state)
 end)
+CreateLabel(SecPlayer, "If you know a way to make the player invisible please dm me on discord, ill gift you nitro.")
 
 local SubAuto = CreateSubTab(TabCombat, "Auto")
 local SecAutoDef = CreateSection(SubAuto, "Defensive")
@@ -1285,6 +1331,18 @@ CreateToggle(SecBFChain, "Auto black flash chain", false, function(state)
     else
         BFMobileBtn.Visible = false
         AutoBFMobileBtn.Visible = false
+        
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if root then
+            local align = root:FindFirstChild("AlignOrientation")
+            local att = root:FindFirstChild("Attachment")
+            if align then align:Destroy() end
+            if att then att:Destroy() end
+        end
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.AutoRotate = true end
+        _G.WasBFLocked = false
     end
 end)
 CreateKeybind(SecBFChain, "Chain Toggle Keybind", Enum.KeyCode.E, function(key) RyuConfig.BFChainKey = key end)
