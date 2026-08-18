@@ -658,11 +658,11 @@ local RyuConfig = {
     BlockDuration = 500,
 }
 
--- Movement Animations for filtering Auto Block
+-- Aus dem Leak: IDs für Movements (alles, was kein Angriff ist)
 local KnownMovementAnims = {
     ["120133391090244"] = true, ["138196552148011"] = true, -- idle
-    ["96489184596023"] = true, ["117941450906936"] = true, ["77705898607209"] = true, -- walk
-    ["140491244934559"] = true, -- sprint
+    ["96489184596023"] = true, ["117941450906936"] = true, ["77705898607209"] = true, -- walk/walkL/walkR
+    ["140491244934559"] = true, -- sprint base
     ["134343219970072"] = true, -- jump
     ["126572575938378"] = true, -- fall
     ["93938476274140"] = true, -- climb
@@ -672,7 +672,7 @@ local KnownMovementAnims = {
     ["85570635517461"] = true, -- Mahoraga/Heian sprint
     ["85012092465916"] = true, -- Mahito sprint
     ["72509133503569"] = true, -- Charles sprint
-    ["119619096808750"] = true, -- Sword sprint
+    ["119619096808750"] = true, -- Sword sprint (Hiromi/Yuta/Haruta/Kurourushi)
     ["98616794135588"] = true, -- Nanami ult sprint
     ["97238189166310"] = true, -- Goku ult sprint
     ["125812953913280"] = true, -- Goku sprint
@@ -680,73 +680,53 @@ local KnownMovementAnims = {
     ["114113678077830"] = true, -- Chara sprint
 }
 
-local function PlayLocalAnim(animId, speed)
-    pcall(function()
-        local char = LocalPlayer.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            local animator = hum:FindFirstChildOfClass("Animator") or hum:WaitForChild("Animator")
-            local anim = Instance.new("Animation")
-            anim.AnimationId = "rbxassetid://" .. animId
-            local track = animator:LoadAnimation(anim)
-            track.Priority = Enum.AnimationPriority.Action4
-            track:Play()
-            track:AdjustSpeed(speed or 1)
-        end
-    end)
+local AnimationTriggers = {
+    ["rbxassetid://100962226150441"] = 0.18,
+    ["rbxassetid://95852624447551"]  = 0.18,
+    ["rbxassetid://74145636023952"]  = 0.18,
+    ["rbxassetid://72475960800126"]  = 0.20,
+}
+local StraightAnimations = {
+    ["rbxassetid://123171106092050"] = true,
+}
+
+local function pressKey(keyCode)
+    VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+    task.wait()
+    VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
 end
 
---// ==========================================
---// BLACK FLASH / OFFENSIVE LOGIC (WITH 0.6s DELAY)
---// ==========================================
-local function FireYujiBF()
-    pcall(function()
-        PlayLocalAnim("140491244934559", 1.5)
-        ReplicatedStorage:WaitForChild("Knit", 3):WaitForChild("Knit", 3):WaitForChild("Services", 3):WaitForChild("DivergentFistService", 3):WaitForChild("RE", 3):WaitForChild("Activated", 3):FireServer("false")
-    end)
-end
-
-local function FireMahitoBF()
-    pcall(function()
-        PlayLocalAnim("140491244934559", 1.5)
-        ReplicatedStorage:WaitForChild("Knit", 3):WaitForChild("Knit", 3):WaitForChild("Services", 3):WaitForChild("FocusStrikeService", 3):WaitForChild("RE", 3):WaitForChild("Activated", 3):FireServer("false")
-    end)
-end
-
-pcall(function()
-    local oldNamecall
-    oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-        local method = getnamecallmethod()
-        local args = {...}
+-- Setup Hook für Animationen (Ersetzt den fehlerhaften Namecall Bypass)
+local function setupCharacterBF(character)
+    local humanoid = character:WaitForChild("Humanoid", 5)
+    if not humanoid then return end
+    local animator = humanoid:WaitForChild("Animator", 5)
+    if not animator then return end
+    animator.AnimationPlayed:Connect(function(track)
+        if not (RyuConfig.AutoBFYuji or RyuConfig.AutoBFMahito or RyuConfig.AutoBFChain) then return end
+        local animId = track.Animation.AnimationId
+        local delay = AnimationTriggers[animId]
+        if not delay and StraightAnimations[animId] then delay = 0.19 end
         
-        if method == "FireServer" and self.Name == "Activated" then
-            if RyuConfig.AutoBFYuji and self.Parent and self.Parent.Parent and self.Parent.Parent.Name == "DivergentFistService" then
-                if not _G.YujiBFDebounce then
-                    _G.YujiBFDebounce = true
-                    task.delay(0.6, function()
-                        pcall(function() self:FireServer("false") end)
-                        task.wait(0.1)
-                        _G.YujiBFDebounce = false
-                    end)
+        if delay then
+            task.delay(delay, function()
+                if humanoid.Health > 0 then
+                    pressKey(Enum.KeyCode.Three) -- Simuliert den echten Black Flash
                 end
-            end
-            if RyuConfig.AutoBFMahito and self.Parent and self.Parent.Parent and self.Parent.Parent.Name == "FocusStrikeService" then
-                if not _G.MahitoBFDebounce then
-                    _G.MahitoBFDebounce = true
-                    task.delay(0.6, function()
-                        pcall(function() self:FireServer("false") end)
-                        task.wait(0.1)
-                        _G.MahitoBFDebounce = false
-                    end)
-                end
-            end
+            end)
         end
-        return oldNamecall(self, ...)
     end)
+end
+
+if LocalPlayer.Character then setupCharacterBF(LocalPlayer.Character) end
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(0.3)
+    setupCharacterBF(char)
 end)
 
+
 --// ==========================================
---// BLACK FLASH CHAIN LOGIC (MOBILE BUTTON & STRICT CHARACTER LOCK)
+--// BLACK FLASH CHAIN LOGIC (CURVE GLIDE & MOBILE BUTTON)
 --// ==========================================
 local isMobilePlayer = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
@@ -770,76 +750,94 @@ bfBtnStroke.Color = Theme.Stroke
 bfBtnStroke.Thickness = 2
 BFMobileBtn.Parent = BFMobileGui
 
+local function getHRP(character)
+    return character and (character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso"))
+end
+
+local function getNearestPlayer(maxRange)
+    local myHRP = getHRP(LocalPlayer.Character)
+    if not myHRP then return nil end
+    local nearest, nearestDist = nil, maxRange
+    for _, pl in pairs(Players:GetPlayers()) do
+        if pl ~= LocalPlayer and pl.Character and pl.Character:FindFirstChild("Humanoid") and pl.Character.Humanoid.Health > 0 then
+            local tHRP = getHRP(pl.Character)
+            if tHRP then
+                local dist = (myHRP.Position - tHRP.Position).Magnitude
+                if dist < nearestDist then nearestDist = dist; nearest = pl end
+            end
+        end
+    end
+    return nearest
+end
+
+local function startCurveGlide()
+    local target = getNearestPlayer(RyuConfig.BFRange)
+    local myChar = LocalPlayer.Character
+    local myHRP  = getHRP(myChar)
+    local hum    = myChar and myChar:FindFirstChildOfClass("Humanoid")
+    
+    if not (target and myHRP and hum) then return end
+    local tHRP = getHRP(target.Character)
+    if not tHRP or not tHRP.Parent then return end
+
+    local startTime  = tick()
+    local startPos   = Vector3.new(myHRP.Position.X, 0, myHRP.Position.Z)
+    local targetPos  = Vector3.new(tHRP.Position.X,  0, tHRP.Position.Z)
+    
+    -- Check if we are already behind the target
+    local vectorToEnemy = (targetPos - startPos).Unit
+    local enemyLookVector = Vector3.new(tHRP.CFrame.LookVector.X, 0, tHRP.CFrame.LookVector.Z).Unit
+    local isFacingAway = enemyLookVector:Dot(vectorToEnemy) > 0.3
+    
+    local behindDir = enemyLookVector
+    local endPos = targetPos - behindDir * 3 -- Radius = 3
+    
+    if RyuConfig.BFNoDashBehind and isFacingAway then
+        -- Wenn Option an ist und Gegner guckt weg, bleib stehen
+        return
+    end
+
+    local mid      = (startPos + endPos) / 2
+    local toTarget = targetPos - startPos
+    local flatDist = toTarget.Magnitude
+    local dirNorm  = flatDist > 0.1 and (toTarget / flatDist) or Vector3.new(1, 0, 0)
+    local perp     = Vector3.new(-dirNorm.Z, 0, dirNorm.X)
+    
+    if RyuConfig.BFDashDir == "Left" then
+        perp = Vector3.new(dirNorm.Z, 0, -dirNorm.X)
+    elseif RyuConfig.BFDashDir == "Automatic" then
+        if math.random() > 0.5 then perp = Vector3.new(dirNorm.Z, 0, -dirNorm.X) end
+    end
+    
+    local controlPt = mid + perp * math.max(14, flatDist * 0.6, 8) -- CurveStrength = 14
+
+    hum.AutoRotate = false
+    local prevCam  = camera.CameraType
+    camera.CameraType = Enum.CameraType.Custom
+
+    local conn
+    conn = RunService.Heartbeat:Connect(function()
+        local alpha = math.clamp((tick() - startTime) / 0.25, 0, 1) -- Duration = 0.25
+        if alpha >= 1 or not tHRP.Parent then 
+            conn:Disconnect() 
+            hum.AutoRotate = true 
+            camera.CameraType = prevCam 
+            return 
+        end
+        local t  = 1 - (1 - alpha)^2
+        local t1 = 1 - t
+        local movePos = Vector3.new((t1*t1)*startPos.X+(2*t1*t)*controlPt.X+(t*t)*endPos.X, myHRP.Position.Y, (t1*t1)*startPos.Z+(2*t1*t)*controlPt.Z+(t*t)*endPos.Z)
+        
+        myHRP.CFrame  = CFrame.new(movePos, Vector3.new(tHRP.Position.X, movePos.Y, tHRP.Position.Z))
+        camera.CFrame = CFrame.new(myHRP.Position + Vector3.new(0, 4, 0), tHRP.Position) -- CamOffset = 4
+    end)
+end
+
 local function TriggerBFAttack()
-    local char = LocalPlayer.Character
-    if not char then return end
-    
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    
-    local closest = nil
-    local minDist = RyuConfig.BFRange
-    
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-            local d = (p.Character.HumanoidRootPart.Position - root.Position).Magnitude
-            if d <= minDist then
-                minDist = d
-                closest = p.Character
-            end
-        end
-    end
-    
-    if closest then
-        local enemyRoot = closest.HumanoidRootPart
-        
-        -- Are we behind?
-        local vectorToEnemy = (enemyRoot.Position - root.Position).Unit
-        local enemyLookVector = enemyRoot.CFrame.LookVector
-        local isFacingAway = enemyLookVector:Dot(vectorToEnemy) > 0.3
-        
-        local shouldDash = true
-        if RyuConfig.BFNoDashBehind and isFacingAway then
-            shouldDash = false
-        end
-        
-        -- Curved Dash
-        if shouldDash and not isFacingAway then
-            local dir = "Left"
-            if RyuConfig.BFDashDir == "Automatic" then
-                local rightVector = enemyRoot.CFrame.RightVector
-                if rightVector:Dot(vectorToEnemy) > 0 then dir = "Right" else dir = "Left" end
-            elseif RyuConfig.BFDashDir == "Right" then dir = "Right" end
-            
-            pcall(function()
-                if dir == "Left" then PlayLocalAnim("117941450906936", 1.5) else PlayLocalAnim("77705898607209", 1.5) end
-                local args = { dir }
-                ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("MovementService"):WaitForChild("RE"):WaitForChild("Dash"):FireServer(unpack(args))
-            end)
-            
-            -- Wait for curve completion
-            local startTime = tick()
-            while tick() - startTime < 0.35 do
-                if not char or not root or not enemyRoot then break end
-                local sideVector = (dir == "Right" and root.CFrame.RightVector or -root.CFrame.RightVector)
-                root.Velocity = Vector3.new(sideVector.X * 65, root.Velocity.Y, sideVector.Z * 65)
-                RunService.RenderStepped:Wait()
-            end
-            root.Velocity = Vector3.new(0, root.Velocity.Y, 0)
-        end
-        
-        -- Double Black Flash Combo
-        local success, err = pcall(function()
-            ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("DivergentFistService"):WaitForChild("RE"):WaitForChild("Activated"):FireServer("false")
-            task.wait(0.32)
-            ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("DivergentFistService"):WaitForChild("RE"):WaitForChild("Activated"):FireServer("false")
-        end)
-        
-        -- Fallback Blue Flash
-        if not success then
-            pcall(function() ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("DivergentFistService"):WaitForChild("RE"):WaitForChild("Activated"):FireServer("true") end)
-        end
-    end
+    if not RyuConfig.AutoBFChain then return end
+    pressKey(Enum.KeyCode.Three)
+    task.wait(0.2)
+    startCurveGlide()
 end
 
 BFMobileBtn.MouseButton1Click:Connect(TriggerBFAttack)
@@ -847,86 +845,24 @@ BFMobileBtn.MouseButton1Click:Connect(TriggerBFAttack)
 UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
     
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        if RyuConfig.AutoBFYuji then FireYujiBF() end
-        if RyuConfig.AutoBFMahito then FireMahitoBF() end
-    end
-    
     if input.KeyCode == RyuConfig.BFActionKey then
-        if RyuConfig.AutoBFChain or isMobilePlayer then TriggerBFAttack() end
+        if RyuConfig.AutoBFChain or isMobilePlayer then
+            TriggerBFAttack()
+        end
     end
     
     if input.KeyCode == RyuConfig.BFChainKey and not isMobilePlayer then
         RyuConfig.AutoBFChain = not RyuConfig.AutoBFChain
-    end
-end)
-
--- Strict Physical Look At Loop (Fixes Look-On)
-local lookGyro = nil
-RunService.RenderStepped:Connect(function()
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not char or not hum or not root then return end
-
-    if (RyuConfig.AutoBFChain or isMobilePlayer) and not MovementState.Fly then
-        local closest = nil
-        local minDist = RyuConfig.BFRange
-        for _, p in pairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                local d = (p.Character.HumanoidRootPart.Position - root.Position).Magnitude
-                if d <= minDist then minDist = d; closest = p.Character end
-            end
-        end
-        
-        if closest then
-            local enemyRoot = closest.HumanoidRootPart
-            local lookPos = Vector3.new(enemyRoot.Position.X, root.Position.Y, enemyRoot.Position.Z)
-            
-            if not lookGyro or lookGyro.Parent ~= root then
-                if lookGyro then lookGyro:Destroy() end
-                lookGyro = Instance.new("BodyGyro")
-                lookGyro.Name = "RyuBFLock"
-                lookGyro.MaxTorque = Vector3.new(0, 400000, 0)
-                lookGyro.P = 50000
-                lookGyro.D = 500
-                lookGyro.Parent = root
-            end
-            lookGyro.CFrame = CFrame.lookAt(root.Position, lookPos)
-            hum.AutoRotate = false
-            _G.WasBFLocked = true
-            
-            local isMoving = UserInputService:IsKeyDown(Enum.KeyCode.W) or UserInputService:IsKeyDown(Enum.KeyCode.S) or UserInputService:IsKeyDown(Enum.KeyCode.A) or UserInputService:IsKeyDown(Enum.KeyCode.D)
-            if isMoving and not MovementState.Speed then
-                local moveDir = Vector3.new(0, 0, 0)
-                local toTarget = (lookPos - root.Position).Unit
-                local rightTarget = CFrame.lookAt(Vector3.zero, toTarget).RightVector
-                
-                if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + toTarget end
-                if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - toTarget end
-                if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - rightTarget end
-                if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + rightTarget end
-                
-                if moveDir.Magnitude > 0 then hum:Move(moveDir.Unit, false) end
-            end
+        if RyuConfig.AutoBFChain and isMobilePlayer then
+            BFMobileBtn.Visible = true
         else
-            if _G.WasBFLocked then
-                if lookGyro then lookGyro:Destroy(); lookGyro = nil end
-                hum.AutoRotate = true
-                _G.WasBFLocked = false
-            end
-        end
-    else
-        if _G.WasBFLocked then
-            if lookGyro then lookGyro:Destroy(); lookGyro = nil end
-            hum.AutoRotate = true
-            _G.WasBFLocked = false
+            BFMobileBtn.Visible = false
         end
     end
 end)
 
 --// ==========================================
---// AUTO BLOCK LOGIC (ISOLATED)
+--// AUTO BLOCK LOGIC (SMART ANIMATION DETECTION)
 --// ==========================================
 RunService.Heartbeat:Connect(function()
     if RyuConfig.AutoBlock then
@@ -949,7 +885,10 @@ RunService.Heartbeat:Connect(function()
                                     local isAttack = false
                                     if track.Animation and track.Animation.AnimationId then
                                         local animId = track.Animation.AnimationId:match("%d+")
-                                        if not (animId and KnownMovementAnims[animId]) then
+                                        -- Filtert Movement anhand deiner exakten Leak-IDs heraus
+                                        if animId and KnownMovementAnims[animId] then
+                                            -- Ist sicher, kein Blocken
+                                        else
                                             local name = string.lower(track.Name)
                                             if string.find(name, "punch") or string.find(name, "attack") or string.find(name, "strike") or string.find(name, "m1") then
                                                 isAttack = true
@@ -1188,10 +1127,11 @@ CreateSlider(SecPlayer, "Jump Power", 50, 300, 150, function(val) MovementState.
 
 CreateToggle(SecPlayer, "Infinite Jump Spam", false, function(state) MovementState.InfJump = state end)
 CreateToggle(SecPlayer, "Noclip", false, function(state) MovementState.Noclip = state end)
-CreateToggle(SecPlayer, "Invisible (FE Server-Sided)", false, function(state) 
+CreateToggle(SecPlayer, "Invisible (FE Server-Sided) (not working)", false, function(state) 
     MovementState.Invis = state
     ToggleInvis(state)
 end)
+CreateLabel(SecPlayer, "If you know a way to make the player invisible please dm me on discord, ill gift you nitro.")
 
 local SubAuto = CreateSubTab(TabCombat, "Auto")
 local SecAutoDef = CreateSection(SubAuto, "Defensive")
