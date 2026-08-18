@@ -697,43 +697,98 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
--- FE Server-Sided Invis (Megumi Remote + HidePlayer Attributes)
+-- FE Server-Sided Invis (Root Joint Break & Floor Drop Trick)
+local InvisLoop
 local function ToggleInvis(state)
     local char = LocalPlayer.Character
     if not char then return end
     
+    local realRoot = char:FindFirstChild("RealRoot") or char:FindFirstChild("HumanoidRootPart")
+    local torso = char:FindFirstChild("Torso") or char:FindFirstChild("LowerTorso")
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    
+    if not realRoot or not torso or not hum then return end
+    
     if state then
-        -- 1. Server-Sided Invis über Megumi Remote aktivieren
-        pcall(function()
-            game:GetService("ReplicatedStorage"):WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("MegumiService"):WaitForChild("RE"):WaitForChild("RightActivated"):FireServer()
-        end)
-        
-        -- 2. TJS spezifische Game-Attributes setzen (Server/Client Ausblendung)
-        pcall(function() LocalPlayer:SetAttribute("HidePlayer", true) end)
-        pcall(function() char:SetAttribute("HidePlayer", true) end)
-        pcall(function() char:SetAttribute("Hidden", true) end)
-        
-        -- 3. Lokaler "Geist"-Effekt: Mache dich selbst zu 50% durchsichtig
-        for _, v in pairs(char:GetDescendants()) do
-            if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" and v.Transparency < 1 then
-                if not v:GetAttribute("OldTrans") then
-                    v:SetAttribute("OldTrans", v.Transparency)
-                end
-                v.Transparency = 0.5
-            elseif (v:IsA("Decal") or v:IsA("Texture")) and v.Transparency < 1 then
-                if not v:GetAttribute("OldTrans") then
-                    v:SetAttribute("OldTrans", v.Transparency)
-                end
-                v.Transparency = 0.5
+        if not char:FindFirstChild("FakeRoot") then
+            -- 1. Echten Root umbenennen, damit wir einen Fake aufbauen können
+            realRoot.Name = "RealRoot"
+            
+            -- 2. FakeRoot klonen und dem Character zuweisen (Für Kamera & Lokale Bewegung)
+            local fakeRoot = realRoot:Clone()
+            fakeRoot.Name = "HumanoidRootPart"
+            fakeRoot.Transparency = 1
+            fakeRoot.Parent = char
+            char.PrimaryPart = fakeRoot
+            
+            -- 3. Zerstöre den echten Joint -> Der Server trennt den Torso ab und lässt ihn fallen!
+            local origJoint = realRoot:FindFirstChild("RootJoint") or torso:FindFirstChild("Root")
+            if origJoint then
+                origJoint:Destroy()
             end
+            
+            -- 4. Lokal verbinden wir Torso an den neuen FakeRoot
+            local fakeJoint = fakeRoot:FindFirstChild("RootJoint") or fakeRoot:FindFirstChild("Root")
+            if not fakeJoint then
+                fakeJoint = Instance.new("Motor6D")
+                fakeJoint.Name = realRoot:FindFirstChild("RootJoint") and "RootJoint" or "Root"
+                fakeJoint.Parent = (fakeJoint.Name == "RootJoint") and fakeRoot or torso
+            end
+            fakeJoint.Part0 = fakeRoot
+            fakeJoint.Part1 = torso
+            
+            -- 5. Kamera sicher auf den Humanoid binden
+            Workspace.CurrentCamera.CameraSubject = hum
+            
+            -- 6. Lokaler Ghost Effekt
+            for _, v in pairs(char:GetDescendants()) do
+                if v:IsA("BasePart") and v.Name ~= "HumanoidRootPart" and v.Name ~= "RealRoot" and v.Transparency < 1 then
+                    v:SetAttribute("OldTrans", v.Transparency)
+                    v.Transparency = 0.5
+                elseif (v:IsA("Decal") or v:IsA("Texture")) and v.Transparency < 1 then
+                    v:SetAttribute("OldTrans", v.Transparency)
+                    v.Transparency = 1
+                end
+            end
+            
+            -- 7. Halte den RealRoot unten versteckt fest
+            InvisLoop = RunService.RenderStepped:Connect(function()
+                if char and char:FindFirstChild("RealRoot") then
+                    -- Positioniere den echten Root weit unter die Map
+                    char.RealRoot.CFrame = CFrame.new(0, workspace.FallenPartsDestroyHeight + 5, 0)
+                    char.RealRoot.Velocity = Vector3.new(0, 0, 0)
+                end
+            end)
         end
     else
-        -- 1. Attribute sauber entfernen
-        pcall(function() LocalPlayer:SetAttribute("HidePlayer", nil) end)
-        pcall(function() char:SetAttribute("HidePlayer", nil) end)
-        pcall(function() char:SetAttribute("Hidden", nil) end)
+        -- ALLES SAUBER ZURÜCKSETZEN
+        if InvisLoop then InvisLoop:Disconnect(); InvisLoop = nil end
         
-        -- 2. Visuelles Aussehen wiederherstellen
+        local fakeRoot = char:FindFirstChild("HumanoidRootPart")
+        
+        if fakeRoot and realRoot then
+            realRoot.Name = "HumanoidRootPart"
+            char.PrimaryPart = realRoot
+            
+            -- Lösche den Fake-Joint
+            local fakeJoint = fakeRoot:FindFirstChild("RootJoint") or torso:FindFirstChild("Root")
+            if fakeJoint then fakeJoint:Destroy() end
+            
+            -- Erstelle den echten Joint wieder
+            local newJoint = Instance.new("Motor6D")
+            newJoint.Name = char:FindFirstChild("Torso") and "RootJoint" or "Root"
+            newJoint.Part0 = realRoot
+            newJoint.Part1 = torso
+            newJoint.Parent = char:FindFirstChild("Torso") and realRoot or torso
+            
+            -- Teleportiere RealRoot zurück nach oben zu dir
+            realRoot.CFrame = fakeRoot.CFrame
+            fakeRoot:Destroy()
+            
+            Workspace.CurrentCamera.CameraSubject = hum
+        end
+        
+        -- Visuals wiederherstellen
         for _, v in pairs(char:GetDescendants()) do
             if v:GetAttribute("OldTrans") then
                 v.Transparency = v:GetAttribute("OldTrans")
