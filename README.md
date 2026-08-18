@@ -9,6 +9,8 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local LocalPlayer = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
@@ -382,6 +384,13 @@ local function CreateLabel(section, text)
     lbl.TextSize = 11
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.TextWrapped = true
+    
+    -- Dynamische Größenanpassung für längere Texte
+    lbl:GetPropertyChangedSignal("TextBounds"):Connect(function()
+        if lbl.TextBounds.Y > 30 then
+            frame.Size = UDim2.new(0.92, 0, 0, lbl.TextBounds.Y + 10)
+        end
+    end)
     return lbl
 end
 
@@ -627,6 +636,204 @@ local function CreateInput(section, placeholder, callback)
     end
     return box
 end
+
+--// ==========================================
+--// CONFIG & GLOBAL VARIABLES
+--// ==========================================
+local RyuConfig = {
+    AutoBFYuji = false,
+    AutoBFMahito = false,
+    
+    AutoBFChain = false,
+    BFChainKey = Enum.KeyCode.E,
+    BFNoDashBehind = false,
+    BFSensitivity = 5,
+    BFLockTime = 2,
+    BFSmoothness = 0.9,
+    BFRange = 13,
+    BFDashDir = "Automatic",
+    
+    AutoBlock = false,
+    BlockRange = 15,
+    BlockDuration = 500,
+}
+
+--// ==========================================
+--// BLACK FLASH / OFFENSIVE LOGIC
+--// ==========================================
+local function FireYujiBF()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local moveset = char:FindFirstChild("Moveset")
+    if moveset then
+        local divergentFist = moveset:FindFirstChild("Divergent Fist")
+        if divergentFist then
+            local args = { divergentFist }
+            pcall(function()
+                ReplicatedStorage.Knit.Knit.Services.DivergentFistService.RE.Activated:FireServer(unpack(args))
+            end)
+        end
+    end
+end
+
+local function FireMahitoBF()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local moveset = char:FindFirstChild("Moveset")
+    if moveset then
+        local focusStrike = moveset:FindFirstChild("Focus Strike")
+        if focusStrike then
+            local args = { focusStrike }
+            pcall(function()
+                ReplicatedStorage.Knit.Knit.Services.FocusStrikeService.RE.Activated:FireServer(unpack(args))
+            end)
+        end
+    end
+end
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if RyuConfig.AutoBFYuji then FireYujiBF() end
+        if RyuConfig.AutoBFMahito then FireMahitoBF() end
+    end
+end)
+
+--// ==========================================
+--// BLACK FLASH CHAIN TOOL & LOGIC
+--// ==========================================
+local chainTool = Instance.new("Tool")
+chainTool.Name = "Chain"
+chainTool.RequiresHandle = false
+
+local isChaining = false
+local chainTarget = nil
+local chainStartTime = 0
+
+chainTool.Activated:Connect(function()
+    if not RyuConfig.AutoBFChain then return end
+    
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    
+    local closest = nil
+    local minDist = RyuConfig.BFRange
+    
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local d = (p.Character.HumanoidRootPart.Position - root.Position).Magnitude
+            if d <= minDist then
+                minDist = d
+                closest = p.Character
+            end
+        end
+    end
+    
+    if closest then
+        isChaining = true
+        chainTarget = closest
+        chainStartTime = tick()
+        
+        if not RyuConfig.BFNoDashBehind then
+            local dir = "Left"
+            if RyuConfig.BFDashDir == "Automatic" then
+                dir = (math.random() > 0.5) and "Left" or "Right"
+            elseif RyuConfig.BFDashDir == "Right" then
+                dir = "Right"
+            end
+            
+            pcall(function()
+                ReplicatedStorage.Knit.Knit.Services.MovementService.RE.Dash:FireServer(dir)
+            end)
+            task.wait(0.2)
+        end
+        
+        FireYujiBF()
+    end
+end)
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == RyuConfig.BFChainKey then
+        isChaining = false
+        chainTarget = nil
+    end
+end)
+
+-- Camera Lock / Tool Render Loop
+RunService.Heartbeat:Connect(function()
+    if RyuConfig.AutoBFChain then
+        if not LocalPlayer.Backpack:FindFirstChild("Chain") and not (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Chain")) then
+            chainTool.Parent = LocalPlayer.Backpack
+        end
+    else
+        chainTool.Parent = nil
+    end
+    
+    if isChaining and chainTarget and chainTarget:FindFirstChild("HumanoidRootPart") then
+        if tick() - chainStartTime > RyuConfig.BFLockTime then
+            isChaining = false
+            chainTarget = nil
+        else
+            local char = LocalPlayer.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            if root then
+                local lookPos = chainTarget.HumanoidRootPart.Position
+                -- Smooth Camera lock
+                local targetCFrame = CFrame.new(camera.CFrame.Position, lookPos)
+                camera.CFrame = camera.CFrame:Lerp(targetCFrame, RyuConfig.BFSmoothness)
+                
+                -- Force Character to look
+                local rootTargetCFrame = CFrame.new(root.Position, Vector3.new(lookPos.X, root.Position.Y, lookPos.Z))
+                root.CFrame = root.CFrame:Lerp(rootTargetCFrame, RyuConfig.BFSmoothness)
+            end
+        end
+    end
+end)
+
+--// ==========================================
+--// AUTO BLOCK LOGIC
+--// ==========================================
+RunService.Heartbeat:Connect(function()
+    if RyuConfig.AutoBlock then
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        
+        local incomingAttack = false
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                local eRoot = p.Character.HumanoidRootPart
+                local dist = (eRoot.Position - root.Position).Magnitude
+                if dist <= RyuConfig.BlockRange then
+                    local eHum = p.Character:FindFirstChildOfClass("Humanoid")
+                    if eHum then
+                        local animator = eHum:FindFirstChildOfClass("Animator")
+                        if animator then
+                            pcall(function()
+                                for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+                                    local name = string.lower(track.Name)
+                                    if string.find(name, "punch") or string.find(name, "attack") or string.find(name, "strike") or string.find(name, "m1") then
+                                        incomingAttack = true
+                                        break
+                                    end
+                                end
+                            end)
+                        end
+                    end
+                end
+            end
+            if incomingAttack then break end
+        end
+        
+        if incomingAttack then
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
+            task.wait(RyuConfig.BlockDuration / 1000)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
+        end
+    end
+end)
 
 
 --// ==========================================
@@ -880,19 +1087,31 @@ CreateToggle(SecPlayer, "Invisible (FE Server-Sided)", false, function(state)
     MovementState.Invis = state
     ToggleInvis(state)
 end)
+CreateLabel(SecPlayer, "If you know a way to make the player invisible please dm me on discord, ill gift you nitro.")
 
 local SubAuto = CreateSubTab(TabCombat, "Auto")
 local SecAutoDef = CreateSection(SubAuto, "Defensive")
-CreateToggle(SecAutoDef, "Auto Block", false, function() end)
-CreateSlider(SecAutoDef, "Block React Range", 5, 50, 15, function() end)
-CreateSlider(SecAutoDef, "Block Hold Duration (ms)", 100, 1500, 500, function() end)
+CreateToggle(SecAutoDef, "Auto Block", false, function(state) RyuConfig.AutoBlock = state end)
+CreateSlider(SecAutoDef, "Block React Range", 5, 50, 15, function(val) RyuConfig.BlockRange = val end)
+CreateSlider(SecAutoDef, "Block Hold Duration (ms)", 100, 1500, 500, function(val) RyuConfig.BlockDuration = val end)
 CreateToggle(SecAutoDef, "Auto Dodge (TP Back)", false, function() end)
 CreateSlider(SecAutoDef, "Dodge Distance", 5, 50, 20, function() end)
 
 local SecAutoOff = CreateSection(SubAuto, "Offensive")
-CreateToggle(SecAutoOff, "Auto Black Flash (Yuji)", false, function() end)
+CreateToggle(SecAutoOff, "Auto Black Flash (Yuji)", false, function(state) RyuConfig.AutoBFYuji = state end)
+CreateToggle(SecAutoOff, "Auto Black Flash (Mahito)", false, function(state) RyuConfig.AutoBFMahito = state end)
 CreateToggle(SecAutoOff, "Auto Todo Slap", false, function() end)
 CreateLabel(SecAutoOff, "Auto Combos: Join discord.gg/ryuhub and send clips of your combos!")
+
+local SecBFChain = CreateSection(SubAuto, "Blackflash")
+CreateToggle(SecBFChain, "Auto black flash chain", false, function(state) RyuConfig.AutoBFChain = state end)
+CreateKeybind(SecBFChain, "Chain Keybind", Enum.KeyCode.E, function(key) RyuConfig.BFChainKey = key end)
+CreateToggle(SecBFChain, "Dont side dash when behind", false, function(state) RyuConfig.BFNoDashBehind = state end)
+CreateSlider(SecBFChain, "Sensitivity", 1, 10, 5, function(val) RyuConfig.BFSensitivity = val end)
+CreateSlider(SecBFChain, "Lock time (s)", 1, 5, 2, function(val) RyuConfig.BFLockTime = val end)
+CreateSlider(SecBFChain, "Smoothness", 1, 10, 9, function(val) RyuConfig.BFSmoothness = val/10 end)
+CreateSlider(SecBFChain, "Range (Studs)", 13, 100, 13, function(val) RyuConfig.BFRange = val end)
+CreateDropdown(SecBFChain, "Side dash direction", {"Automatic", "Left", "Right"}, "Automatic", function(val) RyuConfig.BFDashDir = val end)
 
 local SecAutoUtils = CreateSection(SubAuto, "Utilities")
 CreateToggle(SecAutoUtils, "Auto Train", false, function() end)
