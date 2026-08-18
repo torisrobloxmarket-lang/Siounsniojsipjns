@@ -27,7 +27,7 @@ end)
 if not guiParent then guiParent = LocalPlayer:WaitForChild("PlayerGui") end
 
 for _, v in pairs(guiParent:GetChildren()) do 
-    if v.Name == "RyuHubUI" or v.Name == "RyuBFMobileGui" then v:Destroy() end 
+    if v.Name == "RyuHubUI" or v.Name == "RyuChainMobileGui" then v:Destroy() end 
 end
 
 --// THEME
@@ -672,11 +672,21 @@ local StraightAnimations = {
 local KnownMovementAnims = {
     ["120133391090244"] = true, ["138196552148011"] = true, 
     ["96489184596023"] = true, ["117941450906936"] = true, ["77705898607209"] = true, 
-    ["140491244934559"] = true, ["134343219970072"] = true, ["126572575938378"] = true, 
-    ["93938476274140"] = true, ["137199497329581"] = true, ["77992084875736"] = true, 
-    ["135750035707554"] = true, ["85570635517461"] = true, ["85012092465916"] = true, 
-    ["72509133503569"] = true, ["119619096808750"] = true, ["98616794135588"] = true, 
-    ["97238189166310"] = true, ["125812953913280"] = true, ["77801551230831"] = true, 
+    ["140491244934559"] = true, 
+    ["134343219970072"] = true, 
+    ["126572575938378"] = true, 
+    ["93938476274140"] = true, 
+    ["137199497329581"] = true, 
+    ["77992084875736"] = true, 
+    ["135750035707554"] = true, 
+    ["85570635517461"] = true, 
+    ["85012092465916"] = true, 
+    ["72509133503569"] = true, 
+    ["119619096808750"] = true, 
+    ["98616794135588"] = true, 
+    ["97238189166310"] = true, 
+    ["125812953913280"] = true, 
+    ["77801551230831"] = true, 
     ["114113678077830"] = true, 
 }
 
@@ -721,9 +731,6 @@ local function triggerBlackFlash()
     end
 end
 
---// ==========================================
---// AUTO BLACK FLASH HOOK (Yuji/Mahito)
---// ==========================================
 local function setupCharacterBF(character)
     local humanoid = character:WaitForChild("Humanoid", 5)
     if not humanoid then return end
@@ -752,54 +759,115 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     setupCharacterBF(char)
 end)
 
+local function PlayLocalAnim(animId, speed)
+    pcall(function()
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            local animator = hum:FindFirstChildOfClass("Animator") or hum:WaitForChild("Animator")
+            local anim = Instance.new("Animation")
+            anim.AnimationId = "rbxassetid://" .. animId
+            local track = animator:LoadAnimation(anim)
+            track.Priority = Enum.AnimationPriority.Action4
+            track:Play()
+            track:AdjustSpeed(speed or 1)
+        end
+    end)
+end
+
 --// ==========================================
 --// BLACK FLASH CHAIN LOGIC (CURVE GLIDE & MOBILE UI)
 --// ==========================================
 
-local BFMobileGui = Instance.new("ScreenGui")
-BFMobileGui.Name = "RyuBFMobileGui"
-BFMobileGui.ResetOnSpawn = false
-BFMobileGui.Parent = guiParent
+local ChainMobileGui = Instance.new("ScreenGui")
+ChainMobileGui.Name = "RyuChainMobileGui"
+ChainMobileGui.ResetOnSpawn = false
+ChainMobileGui.Parent = guiParent
 
-local BFMobileBtn = Instance.new("TextButton")
-BFMobileBtn.Size = UDim2.new(0, 65, 0, 65)
-BFMobileBtn.Position = UDim2.new(1, -95, 1, -140)
-BFMobileBtn.BackgroundColor3 = Theme.Sidebar
-BFMobileBtn.Text = "Dash\n+ BF"
-BFMobileBtn.TextColor3 = Theme.Accent
-BFMobileBtn.Font = Enum.Font.GothamBold
-BFMobileBtn.TextSize = 14
-BFMobileBtn.Visible = false
-Instance.new("UICorner", BFMobileBtn).CornerRadius = UDim.new(1, 0)
-local bfBtnStroke = Instance.new("UIStroke", BFMobileBtn)
-bfBtnStroke.Color = Theme.Stroke
-bfBtnStroke.Thickness = 2
+local BTN_SIZE = 62
+local mobileBtnLocked = false
+local mobileBtnDragging = false
+local mobileBtnDragOff = Vector2.new(0, 0)
 
-local AutoBFMobileBtn = Instance.new("TextButton")
-AutoBFMobileBtn.Size = UDim2.new(0, 65, 0, 65)
-AutoBFMobileBtn.Position = UDim2.new(1, -95, 1, -220)
-AutoBFMobileBtn.BackgroundColor3 = Theme.Sidebar
-AutoBFMobileBtn.Text = "Auto BF\nOFF"
-AutoBFMobileBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
-AutoBFMobileBtn.Font = Enum.Font.GothamBold
-AutoBFMobileBtn.TextSize = 13
-AutoBFMobileBtn.Visible = false
-Instance.new("UICorner", AutoBFMobileBtn).CornerRadius = UDim.new(1, 0)
-Instance.new("UIStroke", AutoBFMobileBtn).Color = Theme.Stroke
+local dashBtn = Instance.new("TextButton")
+dashBtn.Name = "DashButton"
+dashBtn.Size = UDim2.new(0, BTN_SIZE, 0, BTN_SIZE)
+dashBtn.Position = UDim2.new(1, -(BTN_SIZE + 20), 1, -(BTN_SIZE * 3 + 20))
+dashBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
+dashBtn.BackgroundTransparency = 0.25
+dashBtn.Text = ""
+dashBtn.BorderSizePixel = 0
+dashBtn.Visible = false
+dashBtn.ZIndex = 10
+dashBtn.ClipsDescendants = false
+dashBtn.Parent = ChainMobileGui
+Instance.new("UICorner", dashBtn).CornerRadius = UDim.new(1, 0)
 
-BFMobileBtn.Parent = BFMobileGui
-AutoBFMobileBtn.Parent = BFMobileGui
+local dashStroke = Instance.new("UIStroke", dashBtn)
+dashStroke.Color = Color3.fromRGB(90, 90, 90)
+dashStroke.Thickness = 2
 
-AutoBFMobileBtn.MouseButton1Click:Connect(function()
-    local newState = not RyuConfig.AutoBFYuji
-    RyuConfig.AutoBFYuji = newState
-    RyuConfig.AutoBFMahito = newState
-    if newState then
-        AutoBFMobileBtn.Text = "Auto BF\nON"
-        AutoBFMobileBtn.TextColor3 = Color3.fromRGB(80, 255, 100)
-    else
-        AutoBFMobileBtn.Text = "Auto BF\nOFF"
-        AutoBFMobileBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
+local dashIcon = Instance.new("TextLabel")
+dashIcon.Size = UDim2.new(0, 36, 0, 36)
+dashIcon.Position = UDim2.new(0.5, -18, 0.5, -22)
+dashIcon.BackgroundTransparency = 1
+dashIcon.Text = "✦"
+dashIcon.TextColor3 = Color3.fromRGB(220, 220, 220)
+dashIcon.TextSize = 22
+dashIcon.Font = Enum.Font.GothamBold
+dashIcon.TextXAlignment = Enum.TextXAlignment.Center
+dashIcon.TextYAlignment = Enum.TextYAlignment.Center
+dashIcon.ZIndex = 11
+dashIcon.Parent = dashBtn
+
+local dashLabel = Instance.new("TextLabel")
+dashLabel.Size = UDim2.new(1, 0, 0, 13)
+dashLabel.Position = UDim2.new(0, 0, 1, -16)
+dashLabel.BackgroundTransparency = 1
+dashLabel.Text = "DASH"
+dashLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+dashLabel.TextSize = 9
+dashLabel.Font = Enum.Font.Gotham
+dashLabel.TextXAlignment = Enum.TextXAlignment.Center
+dashLabel.ZIndex = 11
+dashLabel.Parent = dashBtn
+
+local lockDot = Instance.new("Frame")
+lockDot.Size = UDim2.new(0, 10, 0, 10)
+lockDot.Position = UDim2.new(1, -3, 0, -3)
+lockDot.BackgroundColor3 = Color3.fromRGB(65, 65, 65)
+lockDot.BorderSizePixel = 0
+lockDot.ZIndex = 12
+lockDot.Parent = dashBtn
+Instance.new("UICorner", lockDot).CornerRadius = UDim.new(1, 0)
+
+dashBtn.MouseButton1Down:Connect(function()
+    if not mobileBtnLocked then
+        mobileBtnDragging = true
+        local abs  = dashBtn.AbsolutePosition
+        local mpos = UserInputService:GetMouseLocation()
+        mobileBtnDragOff = Vector2.new(mpos.X - abs.X, mpos.Y - abs.Y)
+    end
+end)
+
+dashBtn.MouseButton1Up:Connect(function()
+    mobileBtnDragging = false
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if not mobileBtnDragging or mobileBtnLocked then return end
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        local pos = input.Position
+        local ss  = ChainMobileGui.AbsoluteSize
+        local nx  = math.clamp(pos.X - mobileBtnDragOff.X, 0, ss.X - BTN_SIZE)
+        local ny  = math.clamp(pos.Y - mobileBtnDragOff.Y, 0, ss.Y - BTN_SIZE)
+        dashBtn.Position = UDim2.new(0, nx, 0, ny)
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        mobileBtnDragging = false
     end
 end)
 
@@ -850,12 +918,10 @@ local function startCurveGlide()
     local dirNorm  = flatDist > 0.1 and (toTarget / flatDist) or Vector3.new(1, 0, 0)
     local perp     = Vector3.new(-dirNorm.Z, 0, dirNorm.X)
     
-    -- Dash Direction / Rücken Erkennung
     local enemyLookVector = Vector3.new(tHRP.CFrame.LookVector.X, 0, tHRP.CFrame.LookVector.Z).Unit
     local isFacingAway = enemyLookVector:Dot((targetPos - startPos).Unit) > 0.3
     
     if RyuConfig.BFNoDashBehind and isFacingAway then
-        -- Do not dash, just strike!
         glideInProgress = false
         triggerBlackFlash()
         task.wait(0.32)
@@ -868,36 +934,45 @@ local function startCurveGlide()
         isLeftDash = false
         perp = Vector3.new(dirNorm.Z, 0, -dirNorm.X)
     end
+    
+    local dashAnimId = isLeftDash and "117941450906936" or "77705898607209"
+    PlayLocalAnim(dashAnimId, 1.2)
 
     local controlPt = mid + perp * math.max(RyuConfig.BFCurveStrength, flatDist * 0.6, 8)
 
     hum.AutoRotate = false
+    myHRP.Anchored = true 
     
+    local prevCam  = camera.CameraType
+    camera.CameraType = Enum.CameraType.Custom
+
     local conn
     conn = RunService.Heartbeat:Connect(function()
-        local alpha = math.clamp((tick() - startTime) / RyuConfig.BFDuration, 0, 1)
-        
-        if alpha >= 1 or not tHRP.Parent or not RyuConfig.AutoBFChain then 
+        if not RyuConfig.AutoBFChain then 
             conn:Disconnect() 
+            myHRP.Anchored = false
             hum.AutoRotate = true 
-            glideInProgress = false
+            camera.CameraType = prevCam 
             return 
         end
-        
+        local alpha = math.clamp((tick() - startTime) / RyuConfig.BFDuration, 0, 1)
+        if alpha >= 1 or not tHRP.Parent then 
+            conn:Disconnect() 
+            myHRP.Anchored = false
+            hum.AutoRotate = true 
+            camera.CameraType = prevCam 
+            return 
+        end
         local t  = 1 - (1 - alpha)^2
         local t1 = 1 - t
         local movePos = Vector3.new((t1*t1)*startPos.X+(2*t1*t)*controlPt.X+(t*t)*endPos.X, myHRP.Position.Y, (t1*t1)*startPos.Z+(2*t1*t)*controlPt.Z+(t*t)*endPos.Z)
         
-        -- Smooth Character LookAt Target
         myHRP.CFrame  = CFrame.new(movePos, Vector3.new(tHRP.Position.X, movePos.Y, tHRP.Position.Z))
+        camera.CFrame = CFrame.new(myHRP.Position + Vector3.new(0, 4, 0), tHRP.Position)
     end)
     
-    -- Combo Black Flash Execution
-    task.delay(RyuConfig.BFDuration, function()
-        if not RyuConfig.AutoBFChain then return end
-        triggerBlackFlash()
-        task.wait(0.32)
-        triggerBlackFlash()
+    task.delay(0.35, function()
+        if myHRP and myHRP.Anchored then myHRP.Anchored = false end
     end)
 end
 
@@ -908,17 +983,15 @@ local function TriggerBFAttackCombo()
     startCurveGlide()
 end
 
-BFMobileBtn.MouseButton1Click:Connect(TriggerBFAttackCombo)
+dashBtn.MouseButton1Click:Connect(TriggerBFAttackCombo)
 
 UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
-    
     if input.KeyCode == RyuConfig.BFActionKey then
         if RyuConfig.AutoBFChain or isMobilePlayer then
             TriggerBFAttackCombo()
         end
     end
-    
     if input.KeyCode == RyuConfig.BFChainKey and not isMobilePlayer then
         RyuConfig.AutoBFChain = not RyuConfig.AutoBFChain
         if not RyuConfig.AutoBFChain then
@@ -930,7 +1003,7 @@ UserInputService.InputBegan:Connect(function(input, gpe)
     end
 end)
 
--- Character STRICT Lock Loop (Ohne Kamera Override)
+-- Character STRICT Lock Loop
 RunService.RenderStepped:Connect(function()
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -958,7 +1031,6 @@ RunService.RenderStepped:Connect(function()
             local enemyRoot = closest.HumanoidRootPart
             local lookPos = Vector3.new(enemyRoot.Position.X, root.Position.Y, enemyRoot.Position.Z)
             
-            -- Force Character Rotation (ohne CFrame spam, stattdessen CFrame LookAt falls nicht gelocked)
             root.CFrame = CFrame.lookAt(root.Position, lookPos)
             hum.AutoRotate = false
             _G.WasBFLocked = true
@@ -1271,12 +1343,24 @@ CreateToggle(SecBFChain, "Auto black flash chain", false, function(state)
     RyuConfig.AutoBFChain = state 
     if state then
         if isMobilePlayer then
-            BFMobileBtn.Visible = true
-            AutoBFMobileBtn.Visible = true
+            dashBtn.Visible = true
         end
     else
-        BFMobileBtn.Visible = false
-        AutoBFMobileBtn.Visible = false
+        dashBtn.Visible = false
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.AutoRotate = true end
+        _G.WasBFLocked = false
+    end
+end)
+CreateToggle(SecBFChain, "Lock Mobile Dash Button", false, function(state) 
+    mobileBtnLocked = state 
+    if state then
+        lockDot.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
+        dashStroke.Color = Color3.fromRGB(255, 200, 50)
+    else
+        lockDot.BackgroundColor3 = Color3.fromRGB(65, 65, 65)
+        dashStroke.Color = Color3.fromRGB(90, 90, 90)
     end
 end)
 CreateKeybind(SecBFChain, "Chain Toggle Keybind", Enum.KeyCode.E, function(key) RyuConfig.BFChainKey = key end)
