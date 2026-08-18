@@ -658,36 +658,36 @@ local RyuConfig = {
     BlockDuration = 500,
 }
 
--- Aus dem Leak: IDs für Movements (alles, was kein Angriff ist)
-local KnownMovementAnims = {
-    ["120133391090244"] = true, ["138196552148011"] = true, -- idle
-    ["96489184596023"] = true, ["117941450906936"] = true, ["77705898607209"] = true, -- walk/walkL/walkR
-    ["140491244934559"] = true, -- sprint base
-    ["134343219970072"] = true, -- jump
-    ["126572575938378"] = true, -- fall
-    ["93938476274140"] = true, -- climb
-    ["137199497329581"] = true, -- sit
-    ["77992084875736"] = true, -- Gojo sprint
-    ["135750035707554"] = true, -- Hakari sprint
-    ["85570635517461"] = true, -- Mahoraga/Heian sprint
-    ["85012092465916"] = true, -- Mahito sprint
-    ["72509133503569"] = true, -- Charles sprint
-    ["119619096808750"] = true, -- Sword sprint (Hiromi/Yuta/Haruta/Kurourushi)
-    ["98616794135588"] = true, -- Nanami ult sprint
-    ["97238189166310"] = true, -- Goku ult sprint
-    ["125812953913280"] = true, -- Goku sprint
-    ["77801551230831"] = true, -- Mokou sprint
-    ["114113678077830"] = true, -- Chara sprint
-}
-
 local AnimationTriggers = {
     ["rbxassetid://100962226150441"] = 0.18,
     ["rbxassetid://95852624447551"]  = 0.18,
     ["rbxassetid://74145636023952"]  = 0.18,
     ["rbxassetid://72475960800126"]  = 0.20,
 }
+
 local StraightAnimations = {
     ["rbxassetid://123171106092050"] = true,
+}
+
+local KnownMovementAnims = {
+    ["120133391090244"] = true, ["138196552148011"] = true, 
+    ["96489184596023"] = true, ["117941450906936"] = true, ["77705898607209"] = true, 
+    ["140491244934559"] = true, 
+    ["134343219970072"] = true, 
+    ["126572575938378"] = true, 
+    ["93938476274140"] = true, 
+    ["137199497329581"] = true, 
+    ["77992084875736"] = true, 
+    ["135750035707554"] = true, 
+    ["85570635517461"] = true, 
+    ["85012092465916"] = true, 
+    ["72509133503569"] = true, 
+    ["119619096808750"] = true, 
+    ["98616794135588"] = true, 
+    ["97238189166310"] = true, 
+    ["125812953913280"] = true, 
+    ["77801551230831"] = true, 
+    ["114113678077830"] = true, 
 }
 
 local function pressKey(keyCode)
@@ -696,22 +696,41 @@ local function pressKey(keyCode)
     VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
 end
 
--- Setup Hook für Animationen (Ersetzt den fehlerhaften Namecall Bypass)
+local function PlayLocalAnim(animId, speed)
+    pcall(function()
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            local animator = hum:FindFirstChildOfClass("Animator") or hum:WaitForChild("Animator")
+            local anim = Instance.new("Animation")
+            anim.AnimationId = "rbxassetid://" .. animId
+            local track = animator:LoadAnimation(anim)
+            track.Priority = Enum.AnimationPriority.Action4
+            track:Play()
+            track:AdjustSpeed(speed or 1)
+        end
+    end)
+end
+
+--// ==========================================
+--// BLACK FLASH HOOK (Yuji/Mahito)
+--// ==========================================
 local function setupCharacterBF(character)
     local humanoid = character:WaitForChild("Humanoid", 5)
     if not humanoid then return end
     local animator = humanoid:WaitForChild("Animator", 5)
     if not animator then return end
+    
     animator.AnimationPlayed:Connect(function(track)
         if not (RyuConfig.AutoBFYuji or RyuConfig.AutoBFMahito or RyuConfig.AutoBFChain) then return end
         local animId = track.Animation.AnimationId
-        local delay = AnimationTriggers[animId]
-        if not delay and StraightAnimations[animId] then delay = 0.19 end
+        local delayTime = AnimationTriggers[animId]
+        if not delayTime and StraightAnimations[animId] then delayTime = 0.19 end
         
-        if delay then
-            task.delay(delay, function()
+        if delayTime then
+            task.delay(delayTime, function()
                 if humanoid.Health > 0 then
-                    pressKey(Enum.KeyCode.Three) -- Simuliert den echten Black Flash
+                    pressKey(Enum.KeyCode.Three) 
                 end
             end)
         end
@@ -724,9 +743,8 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     setupCharacterBF(char)
 end)
 
-
 --// ==========================================
---// BLACK FLASH CHAIN LOGIC (CURVE GLIDE & MOBILE BUTTON)
+--// BLACK FLASH CHAIN LOGIC (CURVE GLIDE & MOBILE UI)
 --// ==========================================
 local isMobilePlayer = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
@@ -736,19 +754,46 @@ BFMobileGui.ResetOnSpawn = false
 BFMobileGui.Parent = guiParent
 
 local BFMobileBtn = Instance.new("TextButton")
-BFMobileBtn.Size = UDim2.new(0, 60, 0, 60)
-BFMobileBtn.Position = UDim2.new(1, -90, 1, -150)
+BFMobileBtn.Size = UDim2.new(0, 65, 0, 65)
+BFMobileBtn.Position = UDim2.new(1, -95, 1, -140)
 BFMobileBtn.BackgroundColor3 = Theme.Sidebar
-BFMobileBtn.Text = "BF"
+BFMobileBtn.Text = "Dash\n+ BF"
 BFMobileBtn.TextColor3 = Theme.Accent
-BFMobileBtn.Font = Enum.Font.GothamBlack
-BFMobileBtn.TextSize = 20
+BFMobileBtn.Font = Enum.Font.GothamBold
+BFMobileBtn.TextSize = 14
 BFMobileBtn.Visible = false
 Instance.new("UICorner", BFMobileBtn).CornerRadius = UDim.new(1, 0)
 local bfBtnStroke = Instance.new("UIStroke", BFMobileBtn)
 bfBtnStroke.Color = Theme.Stroke
 bfBtnStroke.Thickness = 2
+
+local AutoBFMobileBtn = Instance.new("TextButton")
+AutoBFMobileBtn.Size = UDim2.new(0, 65, 0, 65)
+AutoBFMobileBtn.Position = UDim2.new(1, -95, 1, -220)
+AutoBFMobileBtn.BackgroundColor3 = Theme.Sidebar
+AutoBFMobileBtn.Text = "Auto BF\nOFF"
+AutoBFMobileBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
+AutoBFMobileBtn.Font = Enum.Font.GothamBold
+AutoBFMobileBtn.TextSize = 13
+AutoBFMobileBtn.Visible = false
+Instance.new("UICorner", AutoBFMobileBtn).CornerRadius = UDim.new(1, 0)
+Instance.new("UIStroke", AutoBFMobileBtn).Color = Theme.Stroke
+
 BFMobileBtn.Parent = BFMobileGui
+AutoBFMobileBtn.Parent = BFMobileGui
+
+AutoBFMobileBtn.MouseButton1Click:Connect(function()
+    local newState = not RyuConfig.AutoBFYuji
+    RyuConfig.AutoBFYuji = newState
+    RyuConfig.AutoBFMahito = newState
+    if newState then
+        AutoBFMobileBtn.Text = "Auto BF\nON"
+        AutoBFMobileBtn.TextColor3 = Color3.fromRGB(80, 255, 100)
+    else
+        AutoBFMobileBtn.Text = "Auto BF\nOFF"
+        AutoBFMobileBtn.TextColor3 = Color3.fromRGB(255, 80, 80)
+    end
+end)
 
 local function getHRP(character)
     return character and (character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso"))
@@ -771,6 +816,8 @@ local function getNearestPlayer(maxRange)
 end
 
 local function startCurveGlide()
+    if not RyuConfig.AutoBFChain then return end
+    
     local target = getNearestPlayer(RyuConfig.BFRange)
     local myChar = LocalPlayer.Character
     local myHRP  = getHRP(myChar)
@@ -783,19 +830,8 @@ local function startCurveGlide()
     local startTime  = tick()
     local startPos   = Vector3.new(myHRP.Position.X, 0, myHRP.Position.Z)
     local targetPos  = Vector3.new(tHRP.Position.X,  0, tHRP.Position.Z)
-    
-    -- Check if we are already behind the target
-    local vectorToEnemy = (targetPos - startPos).Unit
-    local enemyLookVector = Vector3.new(tHRP.CFrame.LookVector.X, 0, tHRP.CFrame.LookVector.Z).Unit
-    local isFacingAway = enemyLookVector:Dot(vectorToEnemy) > 0.3
-    
-    local behindDir = enemyLookVector
-    local endPos = targetPos - behindDir * 3 -- Radius = 3
-    
-    if RyuConfig.BFNoDashBehind and isFacingAway then
-        -- Wenn Option an ist und Gegner guckt weg, bleib stehen
-        return
-    end
+    local behindDir  = Vector3.new(tHRP.CFrame.LookVector.X, 0, tHRP.CFrame.LookVector.Z).Unit
+    local endPos     = targetPos - behindDir * 3 -- Radius = 3
 
     local mid      = (startPos + endPos) / 2
     local toTarget = targetPos - startPos
@@ -803,23 +839,36 @@ local function startCurveGlide()
     local dirNorm  = flatDist > 0.1 and (toTarget / flatDist) or Vector3.new(1, 0, 0)
     local perp     = Vector3.new(-dirNorm.Z, 0, dirNorm.X)
     
-    if RyuConfig.BFDashDir == "Left" then
+    local isLeftDash = true
+    if RyuConfig.BFDashDir == "Right" or (RyuConfig.BFDashDir == "Automatic" and math.random() > 0.5) then
+        isLeftDash = false
         perp = Vector3.new(dirNorm.Z, 0, -dirNorm.X)
-    elseif RyuConfig.BFDashDir == "Automatic" then
-        if math.random() > 0.5 then perp = Vector3.new(dirNorm.Z, 0, -dirNorm.X) end
     end
     
-    local controlPt = mid + perp * math.max(14, flatDist * 0.6, 8) -- CurveStrength = 14
+    local dashAnimId = isLeftDash and "117941450906936" or "77705898607209"
+    PlayLocalAnim(dashAnimId, 1.2)
+
+    local controlPt = mid + perp * math.max(14, flatDist * 0.6, 8)
 
     hum.AutoRotate = false
+    myHRP.Anchored = true 
+    
     local prevCam  = camera.CameraType
     camera.CameraType = Enum.CameraType.Custom
 
     local conn
     conn = RunService.Heartbeat:Connect(function()
+        if not RyuConfig.AutoBFChain then 
+            conn:Disconnect() 
+            myHRP.Anchored = false
+            hum.AutoRotate = true 
+            camera.CameraType = prevCam 
+            return 
+        end
         local alpha = math.clamp((tick() - startTime) / 0.25, 0, 1) -- Duration = 0.25
         if alpha >= 1 or not tHRP.Parent then 
             conn:Disconnect() 
+            myHRP.Anchored = false
             hum.AutoRotate = true 
             camera.CameraType = prevCam 
             return 
@@ -831,38 +880,113 @@ local function startCurveGlide()
         myHRP.CFrame  = CFrame.new(movePos, Vector3.new(tHRP.Position.X, movePos.Y, tHRP.Position.Z))
         camera.CFrame = CFrame.new(myHRP.Position + Vector3.new(0, 4, 0), tHRP.Position) -- CamOffset = 4
     end)
+    
+    task.delay(0.35, function()
+        if myHRP and myHRP.Anchored then myHRP.Anchored = false end
+    end)
 end
 
-local function TriggerBFAttack()
+BFMobileBtn.MouseButton1Click:Connect(function()
     if not RyuConfig.AutoBFChain then return end
     pressKey(Enum.KeyCode.Three)
     task.wait(0.2)
     startCurveGlide()
-end
-
-BFMobileBtn.MouseButton1Click:Connect(TriggerBFAttack)
+end)
 
 UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
     
     if input.KeyCode == RyuConfig.BFActionKey then
         if RyuConfig.AutoBFChain or isMobilePlayer then
-            TriggerBFAttack()
+            pressKey(Enum.KeyCode.Three)
+            task.wait(0.2)
+            startCurveGlide()
         end
     end
     
     if input.KeyCode == RyuConfig.BFChainKey and not isMobilePlayer then
         RyuConfig.AutoBFChain = not RyuConfig.AutoBFChain
-        if RyuConfig.AutoBFChain and isMobilePlayer then
-            BFMobileBtn.Visible = true
+    end
+end)
+
+-- Character STRICT Lock & Circular WASD Override Loop
+local LockAlign = nil
+local LockAtt = nil
+RunService.RenderStepped:Connect(function()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not char or not hum or not root then return end
+
+    if (RyuConfig.AutoBFChain or isMobilePlayer) and not MovementState.Fly then
+        local closest = nil
+        local minDist = RyuConfig.BFRange
+        
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                local d = (p.Character.HumanoidRootPart.Position - root.Position).Magnitude
+                if d <= minDist then
+                    minDist = d
+                    closest = p.Character
+                end
+            end
+        end
+        
+        if closest then
+            local enemyRoot = closest.HumanoidRootPart
+            local lookPos = Vector3.new(enemyRoot.Position.X, root.Position.Y, enemyRoot.Position.Z)
+            
+            if not LockAlign or LockAlign.Parent ~= root then
+                if LockAlign then LockAlign:Destroy() end
+                if LockAtt then LockAtt:Destroy() end
+                
+                LockAtt = Instance.new("Attachment", root)
+                LockAlign = Instance.new("AlignOrientation", root)
+                LockAlign.Mode = Enum.OrientationAlignmentMode.OneAttachment
+                LockAlign.Attachment0 = LockAtt
+                LockAlign.MaxTorque = math.huge
+                LockAlign.MaxAngularVelocity = math.huge
+                LockAlign.Responsiveness = 200
+            end
+            LockAlign.CFrame = CFrame.lookAt(root.Position, lookPos)
+            hum.AutoRotate = false
+            _G.WasBFLocked = true
+            
+            local isMoving = UserInputService:IsKeyDown(Enum.KeyCode.W) or UserInputService:IsKeyDown(Enum.KeyCode.S) or UserInputService:IsKeyDown(Enum.KeyCode.A) or UserInputService:IsKeyDown(Enum.KeyCode.D)
+            if isMoving and not MovementState.Speed then
+                local moveDir = Vector3.new(0, 0, 0)
+                local toTarget = (lookPos - root.Position).Unit
+                local rightTarget = CFrame.lookAt(Vector3.zero, toTarget).RightVector
+                
+                if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + toTarget end
+                if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - toTarget end
+                if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - rightTarget end
+                if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + rightTarget end
+                
+                if moveDir.Magnitude > 0 then
+                    hum:Move(moveDir.Unit, false)
+                end
+            end
         else
-            BFMobileBtn.Visible = false
+            if _G.WasBFLocked then
+                if LockAlign then LockAlign:Destroy(); LockAlign = nil end
+                if LockAtt then LockAtt:Destroy(); LockAtt = nil end
+                hum.AutoRotate = true
+                _G.WasBFLocked = false
+            end
+        end
+    else
+        if _G.WasBFLocked then
+            if LockAlign then LockAlign:Destroy(); LockAlign = nil end
+            if LockAtt then LockAtt:Destroy(); LockAtt = nil end
+            hum.AutoRotate = true
+            _G.WasBFLocked = false
         end
     end
 end)
 
 --// ==========================================
---// AUTO BLOCK LOGIC (SMART ANIMATION DETECTION)
+--// AUTO BLOCK LOGIC (ISOLATED & SMART)
 --// ==========================================
 RunService.Heartbeat:Connect(function()
     if RyuConfig.AutoBlock then
@@ -883,11 +1007,11 @@ RunService.Heartbeat:Connect(function()
                             pcall(function()
                                 for _, track in pairs(animator:GetPlayingAnimationTracks()) do
                                     local isAttack = false
+                                    
                                     if track.Animation and track.Animation.AnimationId then
                                         local animId = track.Animation.AnimationId:match("%d+")
-                                        -- Filtert Movement anhand deiner exakten Leak-IDs heraus
                                         if animId and KnownMovementAnims[animId] then
-                                            -- Ist sicher, kein Blocken
+                                            -- Ist sicher, kein Blocken nötig
                                         else
                                             local name = string.lower(track.Name)
                                             if string.find(name, "punch") or string.find(name, "attack") or string.find(name, "strike") or string.find(name, "m1") then
@@ -897,7 +1021,11 @@ RunService.Heartbeat:Connect(function()
                                             end
                                         end
                                     end
-                                    if isAttack then incomingAttack = true break end
+                                    
+                                    if isAttack then
+                                        incomingAttack = true
+                                        break
+                                    end
                                 end
                             end)
                         end
@@ -1127,11 +1255,10 @@ CreateSlider(SecPlayer, "Jump Power", 50, 300, 150, function(val) MovementState.
 
 CreateToggle(SecPlayer, "Infinite Jump Spam", false, function(state) MovementState.InfJump = state end)
 CreateToggle(SecPlayer, "Noclip", false, function(state) MovementState.Noclip = state end)
-CreateToggle(SecPlayer, "Invisible (FE Server-Sided) (not working)", false, function(state) 
+CreateToggle(SecPlayer, "Invisible (FE Server-Sided)", false, function(state) 
     MovementState.Invis = state
     ToggleInvis(state)
 end)
-CreateLabel(SecPlayer, "If you know a way to make the player invisible please dm me on discord, ill gift you nitro.")
 
 local SubAuto = CreateSubTab(TabCombat, "Auto")
 local SecAutoDef = CreateSection(SubAuto, "Defensive")
@@ -1153,9 +1280,11 @@ CreateToggle(SecBFChain, "Auto black flash chain", false, function(state)
     if state then
         if isMobilePlayer then
             BFMobileBtn.Visible = true
+            AutoBFMobileBtn.Visible = true
         end
     else
         BFMobileBtn.Visible = false
+        AutoBFMobileBtn.Visible = false
     end
 end)
 CreateKeybind(SecBFChain, "Chain Toggle Keybind", Enum.KeyCode.E, function(key) RyuConfig.BFChainKey = key end)
