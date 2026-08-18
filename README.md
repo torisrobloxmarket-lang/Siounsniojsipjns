@@ -646,6 +646,7 @@ local RyuConfig = {
     
     AutoBFChain = false,
     BFChainKey = Enum.KeyCode.E,
+    BFActionKey = Enum.KeyCode.R,
     BFNoDashBehind = false,
     BFSensitivity = 5,
     BFLockTime = 2,
@@ -662,41 +663,32 @@ local RyuConfig = {
 --// BLACK FLASH / OFFENSIVE LOGIC
 --// ==========================================
 local function FireYujiBF()
-    local char = LocalPlayer.Character
-    if not char then return end
-    local moveset = char:FindFirstChild("Moveset")
-    if moveset then
-        local divergentFist = moveset:FindFirstChild("Divergent Fist")
-        if divergentFist then
-            local args = { divergentFist }
-            pcall(function()
-                ReplicatedStorage.Knit.Knit.Services.DivergentFistService.RE.Activated:FireServer(unpack(args))
-            end)
+    pcall(function()
+        local char = LocalPlayer.Character
+        if not char then return end
+        local move = char:WaitForChild("Moveset", 3):WaitForChild("Divergent Fist", 3)
+        if move then
+            local args = { move }
+            game:GetService("ReplicatedStorage"):WaitForChild("Knit", 3):WaitForChild("Knit", 3):WaitForChild("Services", 3):WaitForChild("DivergentFistService", 3):WaitForChild("RE", 3):WaitForChild("Activated", 3):FireServer(unpack(args))
         end
-    end
+    end)
 end
 
 local function FireMahitoBF()
-    local char = LocalPlayer.Character
-    if not char then return end
-    local moveset = char:FindFirstChild("Moveset")
-    if moveset then
-        local focusStrike = moveset:FindFirstChild("Focus Strike")
-        if focusStrike then
-            local args = { focusStrike }
-            pcall(function()
-                ReplicatedStorage.Knit.Knit.Services.FocusStrikeService.RE.Activated:FireServer(unpack(args))
-            end)
+    pcall(function()
+        local char = LocalPlayer.Character
+        if not char then return end
+        local move = char:WaitForChild("Moveset", 3):WaitForChild("Focus Strike", 3)
+        if move then
+            local args = { move }
+            game:GetService("ReplicatedStorage"):WaitForChild("Knit", 3):WaitForChild("Knit", 3):WaitForChild("Services", 3):WaitForChild("FocusStrikeService", 3):WaitForChild("RE", 3):WaitForChild("Activated", 3):FireServer(unpack(args))
         end
-    end
+    end)
 end
 
 --// ==========================================
 --// BLACK FLASH CHAIN LOGIC (MOBILE BUTTON & PC KEYBIND)
 --// ==========================================
-local isChaining = false
-local chainTarget = nil
-local chainStartTime = 0
 
 local BFMobileGui = Instance.new("ScreenGui")
 BFMobileGui.Name = "RyuBFMobileGui"
@@ -718,79 +710,76 @@ bfBtnStroke.Color = Theme.Stroke
 bfBtnStroke.Thickness = 2
 BFMobileBtn.Parent = BFMobileGui
 
-local function TriggerBFChain()
+local function TriggerBFAttack()
     if not RyuConfig.AutoBFChain then return end
     
-    if isChaining then
-        isChaining = false
-        chainTarget = nil
-        return
-    end
-    
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    
-    local closest = nil
-    local minDist = RyuConfig.BFRange
-    
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-            local d = (p.Character.HumanoidRootPart.Position - root.Position).Magnitude
-            if d <= minDist then
-                minDist = d
-                closest = p.Character
-            end
-        end
-    end
-    
-    if closest then
-        isChaining = true
-        chainTarget = closest
-        chainStartTime = tick()
-        
-        if not RyuConfig.BFNoDashBehind then
-            local dir = "Left"
-            if RyuConfig.BFDashDir == "Automatic" then
-                dir = (math.random() > 0.5) and "Left" or "Right"
-            elseif RyuConfig.BFDashDir == "Right" then
-                dir = "Right"
-            end
-            
-            pcall(function()
-                ReplicatedStorage.Knit.Knit.Services.MovementService.RE.Dash:FireServer(dir)
-            end)
-            task.wait(0.2)
+    if not RyuConfig.BFNoDashBehind then
+        local dir = "Left"
+        if RyuConfig.BFDashDir == "Automatic" then
+            dir = (math.random() > 0.5) and "Left" or "Right"
+        elseif RyuConfig.BFDashDir == "Right" then
+            dir = "Right"
         end
         
-        FireYujiBF()
+        pcall(function()
+            local args = { dir }
+            game:GetService("ReplicatedStorage"):WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("MovementService"):WaitForChild("RE"):WaitForChild("Dash"):FireServer(unpack(args))
+        end)
     end
+    
+    FireYujiBF()
 end
 
-BFMobileBtn.MouseButton1Click:Connect(TriggerBFChain)
+BFMobileBtn.MouseButton1Click:Connect(TriggerBFAttack)
 
 UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
+    
+    -- Auto BF for standard clicks
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         if RyuConfig.AutoBFYuji then FireYujiBF() end
         if RyuConfig.AutoBFMahito then FireMahitoBF() end
     end
+    
+    -- Perform combo dash + flash
+    if input.KeyCode == RyuConfig.BFActionKey then
+        TriggerBFAttack()
+    end
+    
+    -- Toggle PC permanent lock
     if input.KeyCode == RyuConfig.BFChainKey then
-        TriggerBFChain()
+        RyuConfig.AutoBFChain = not RyuConfig.AutoBFChain
+        if RyuConfig.AutoBFChain then
+            if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
+                BFMobileBtn.Visible = true
+            end
+        else
+            BFMobileBtn.Visible = false
+        end
     end
 end)
 
--- Camera Lock Render Loop
+-- Camera Lock Render Loop (Permanently looking at nearest target)
 RunService.Heartbeat:Connect(function()
-    if isChaining and chainTarget and chainTarget:FindFirstChild("HumanoidRootPart") then
-        if tick() - chainStartTime > RyuConfig.BFLockTime then
-            isChaining = false
-            chainTarget = nil
-        else
-            local char = LocalPlayer.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
-            if root then
-                local lookPos = chainTarget.HumanoidRootPart.Position
+    if RyuConfig.AutoBFChain then
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if root then
+            local closest = nil
+            local minDist = RyuConfig.BFRange
+            
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    local d = (p.Character.HumanoidRootPart.Position - root.Position).Magnitude
+                    if d <= minDist then
+                        minDist = d
+                        closest = p.Character
+                    end
+                end
+            end
+            
+            if closest then
+                local lookPos = closest.HumanoidRootPart.Position
                 -- Smooth Camera lock
                 local targetCFrame = CFrame.new(camera.CFrame.Position, lookPos)
                 camera.CFrame = camera.CFrame:Lerp(targetCFrame, RyuConfig.BFSmoothness)
@@ -1094,7 +1083,7 @@ CreateSlider(SecPlayer, "Jump Power", 50, 300, 150, function(val) MovementState.
 
 CreateToggle(SecPlayer, "Infinite Jump Spam", false, function(state) MovementState.InfJump = state end)
 CreateToggle(SecPlayer, "Noclip", false, function(state) MovementState.Noclip = state end)
-CreateToggle(SecPlayer, "Invisible (FE Server-Sided)", false, function(state) 
+CreateToggle(SecPlayer, "Invisible (FE Server-Sided) (not working)", false, function(state) 
     MovementState.Invis = state
     ToggleInvis(state)
 end)
@@ -1123,11 +1112,10 @@ CreateToggle(SecBFChain, "Auto black flash chain", false, function(state)
         end
     else
         BFMobileBtn.Visible = false
-        isChaining = false
-        chainTarget = nil
     end
 end)
-CreateKeybind(SecBFChain, "Chain Keybind", Enum.KeyCode.E, function(key) RyuConfig.BFChainKey = key end)
+CreateKeybind(SecBFChain, "Chain Toggle Keybind", Enum.KeyCode.E, function(key) RyuConfig.BFChainKey = key end)
+CreateKeybind(SecBFChain, "Action Keybind (Dash+BF)", Enum.KeyCode.R, function(key) RyuConfig.BFActionKey = key end)
 CreateToggle(SecBFChain, "Dont side dash when behind", false, function(state) RyuConfig.BFNoDashBehind = state end)
 CreateSlider(SecBFChain, "Sensitivity", 1, 10, 5, function(val) RyuConfig.BFSensitivity = val end)
 CreateSlider(SecBFChain, "Lock time (s)", 1, 5, 2, function(val) RyuConfig.BFLockTime = val end)
