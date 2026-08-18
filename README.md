@@ -658,7 +658,7 @@ local RyuConfig = {
     BlockDuration = 500,
 }
 
--- Aus dem Leak: IDs für Movements (alles, was kein Angriff ist)
+-- IDs für Movements (alles, was KEIN Angriff ist, damit Auto Block smart ist)
 local KnownMovementAnims = {
     ["120133391090244"] = true, ["138196552148011"] = true, -- idle
     ["96489184596023"] = true, ["117941450906936"] = true, ["77705898607209"] = true, -- walk/walkL/walkR
@@ -680,7 +680,7 @@ local KnownMovementAnims = {
     ["114113678077830"] = true, -- Chara sprint
 }
 
--- Hilfsfunktion zum Abspielen von Animationen (für Sicherheit/Registrierung)
+-- Spielt Animationen lokal zur Sicherheit/Synchronisation ab
 local function PlayLocalAnim(animId, speed)
     pcall(function()
         local char = LocalPlayer.Character
@@ -704,12 +704,8 @@ local function FireYujiBF()
     pcall(function()
         local char = LocalPlayer.Character
         if not char then return end
-        local move = char:WaitForChild("Moveset", 3):WaitForChild("Divergent Fist", 3)
-        if move then
-            PlayLocalAnim("140491244934559", 1.5) -- Fallback Strike/Dash Anim
-            local args = { move }
-            ReplicatedStorage:WaitForChild("Knit", 3):WaitForChild("Knit", 3):WaitForChild("Services", 3):WaitForChild("DivergentFistService", 3):WaitForChild("RE", 3):WaitForChild("Activated", 3):FireServer(unpack(args))
-        end
+        PlayLocalAnim("140491244934559", 1.5) -- Strike/Dash
+        ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("DivergentFistService"):WaitForChild("RE"):WaitForChild("Activated"):FireServer("false")
     end)
 end
 
@@ -717,12 +713,8 @@ local function FireMahitoBF()
     pcall(function()
         local char = LocalPlayer.Character
         if not char then return end
-        local move = char:WaitForChild("Moveset", 3):WaitForChild("Focus Strike", 3)
-        if move then
-            PlayLocalAnim("140491244934559", 1.5)
-            local args = { move }
-            ReplicatedStorage:WaitForChild("Knit", 3):WaitForChild("Knit", 3):WaitForChild("Services", 3):WaitForChild("FocusStrikeService", 3):WaitForChild("RE", 3):WaitForChild("Activated", 3):FireServer(unpack(args))
-        end
+        PlayLocalAnim("140491244934559", 1.5)
+        ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("FocusStrikeService"):WaitForChild("RE"):WaitForChild("Activated"):FireServer("false")
     end)
 end
 
@@ -737,7 +729,7 @@ pcall(function()
                 if not _G.YujiBFDebounce then
                     _G.YujiBFDebounce = true
                     task.delay(0.6, function()
-                        pcall(function() self:FireServer(unpack(args)) end)
+                        pcall(function() self:FireServer("false") end)
                         task.wait(0.1)
                         _G.YujiBFDebounce = false
                     end)
@@ -747,7 +739,7 @@ pcall(function()
                 if not _G.MahitoBFDebounce then
                     _G.MahitoBFDebounce = true
                     task.delay(0.6, function()
-                        pcall(function() self:FireServer(unpack(args)) end)
+                        pcall(function() self:FireServer("false") end)
                         task.wait(0.1)
                         _G.MahitoBFDebounce = false
                     end)
@@ -831,7 +823,6 @@ local function TriggerBFAttack()
             end
             
             pcall(function()
-                -- Lade die Leak-IDs für Dash L / R
                 if dir == "Left" then
                     PlayLocalAnim("117941450906936", 1.5)
                 else
@@ -842,21 +833,21 @@ local function TriggerBFAttack()
                 ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("MovementService"):WaitForChild("RE"):WaitForChild("Dash"):FireServer(unpack(args))
             end)
             
-            -- Kreis-Bewegung erzwingen! Da die RenderStepped-Schleife uns zum Gegner schauen lässt,
-            -- sorgt ein seitlicher Velocity-Push dafür, dass wir perfekt in einem Kreis in seinen Rücken gleiten.
+            -- Kreis-Bewegung erzwingen: LockOn ist aktiv, wir geben ihm seitliche Velocity, 
+            -- dadurch kreist er perfekt um den Gegner, bis er im Rücken ist.
             local startTime = tick()
             while tick() - startTime < 0.35 do
                 if not char or not root or not enemyRoot then break end
                 local sideVector = (dir == "Right" and root.CFrame.RightVector or -root.CFrame.RightVector)
-                root.Velocity = Vector3.new(sideVector.X * 60, root.Velocity.Y, sideVector.Z * 60)
+                root.Velocity = Vector3.new(sideVector.X * 65, root.Velocity.Y, sideVector.Z * 65)
                 RunService.RenderStepped:Wait()
             end
             root.Velocity = Vector3.new(0, root.Velocity.Y, 0)
         end
         
-        -- 2x Black Flash mit 0.6s Timer, *nachdem* wir hinter ihm sind
+        -- 2x Black Flash mit 0.32s Open Source Timer für die Combo
         FireYujiBF()
-        task.wait(0.6)
+        task.wait(0.32)
         FireYujiBF()
     end
 end
@@ -882,8 +873,9 @@ UserInputService.InputBegan:Connect(function(input, gpe)
     end
 end)
 
--- Character STRICT Lock & WASD Override Loop (Erzeugt den Kreislauf)
-local LockGyro = nil
+-- Character STRICT Lock & Circular WASD Override Loop
+local LockAlign = nil
+local LockAtt = nil
 RunService.RenderStepped:Connect(function()
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -908,25 +900,29 @@ RunService.RenderStepped:Connect(function()
             local enemyRoot = closest.HumanoidRootPart
             local lookPos = Vector3.new(enemyRoot.Position.X, root.Position.Y, enemyRoot.Position.Z)
             
-            -- STRICT LOCK: BodyGyro um Shiftlock perfekt zu überschreiben
-            if not LockGyro or LockGyro.Parent ~= root then
-                if LockGyro then LockGyro:Destroy() end
-                LockGyro = Instance.new("BodyGyro")
-                LockGyro.Name = "RyuBFLock"
-                LockGyro.MaxTorque = Vector3.new(0, 400000, 0)
-                LockGyro.P = 50000
-                LockGyro.D = 500
-                LockGyro.Parent = root
+            -- STRICT LOCK: AlignOrientation ignoriert Shiftlock und zwingt den Char physisch zum Feind
+            if not LockAlign or LockAlign.Parent ~= root then
+                if LockAlign then LockAlign:Destroy() end
+                if LockAtt then LockAtt:Destroy() end
+                
+                LockAtt = Instance.new("Attachment", root)
+                LockAlign = Instance.new("AlignOrientation", root)
+                LockAlign.Mode = Enum.OrientationAlignmentMode.OneAttachment
+                LockAlign.Attachment0 = LockAtt
+                LockAlign.MaxTorque = math.huge
+                LockAlign.MaxAngularVelocity = math.huge
+                LockAlign.Responsiveness = 200
             end
-            LockGyro.CFrame = CFrame.lookAt(root.Position, lookPos)
+            LockAlign.CFrame = CFrame.lookAt(root.Position, lookPos)
             hum.AutoRotate = false
             _G.WasBFLocked = true
             
-            -- CUSTOM WASD OVERRIDE (Erlaubt dir das Laufen im Kreis, da du immer zur Mitte schaust!)
+            -- CUSTOM CIRCULAR WASD OVERRIDE
             local isMoving = UserInputService:IsKeyDown(Enum.KeyCode.W) or UserInputService:IsKeyDown(Enum.KeyCode.S) or UserInputService:IsKeyDown(Enum.KeyCode.A) or UserInputService:IsKeyDown(Enum.KeyCode.D)
             if isMoving and not MovementState.Speed then
                 local moveDir = Vector3.new(0, 0, 0)
                 local toTarget = (lookPos - root.Position).Unit
+                -- Wenn der Char zum Feind schaut, ist "Rechts" kreisförmig am Feind entlang
                 local rightTarget = CFrame.lookAt(Vector3.zero, toTarget).RightVector
                 
                 if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + toTarget end
@@ -935,20 +931,21 @@ RunService.RenderStepped:Connect(function()
                 if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + rightTarget end
                 
                 if moveDir.Magnitude > 0 then
-                    -- Root Velocity umgehen, wir nutzen Humanoid:Move() in die neu berechnete Richtung
                     hum:Move(moveDir.Unit, false)
                 end
             end
         else
             if _G.WasBFLocked then
-                if LockGyro then LockGyro:Destroy(); LockGyro = nil end
+                if LockAlign then LockAlign:Destroy(); LockAlign = nil end
+                if LockAtt then LockAtt:Destroy(); LockAtt = nil end
                 hum.AutoRotate = true
                 _G.WasBFLocked = false
             end
         end
     else
         if _G.WasBFLocked then
-            if LockGyro then LockGyro:Destroy(); LockGyro = nil end
+            if LockAlign then LockAlign:Destroy(); LockAlign = nil end
+            if LockAtt then LockAtt:Destroy(); LockAtt = nil end
             hum.AutoRotate = true
             _G.WasBFLocked = false
         end
@@ -980,9 +977,9 @@ RunService.Heartbeat:Connect(function()
                                     
                                     if track.Animation and track.Animation.AnimationId then
                                         local animId = track.Animation.AnimationId:match("%d+")
-                                        -- Filtert Idle, Lauf und Dash Animationen exakt über deine Leak-IDs
+                                        -- Filtert Movement anhand deiner exakten Leak-IDs heraus
                                         if animId and KnownMovementAnims[animId] then
-                                            -- Ist sicher, kein Blocken nötig
+                                            -- Ist sicher, kein Blocken
                                         else
                                             local name = string.lower(track.Name)
                                             if string.find(name, "punch") or string.find(name, "attack") or string.find(name, "strike") or string.find(name, "m1") then
@@ -1230,7 +1227,7 @@ CreateToggle(SecPlayer, "Invisible (FE Server-Sided) (not working)", false, func
     MovementState.Invis = state
     ToggleInvis(state)
 end)
-CreateLabel(SecPlayer, "(If you know a way to make the player invisible please dm me on discord, ill gift you nitro.)")
+CreateLabel(SecPlayer, "If you know a way to make the player invisible please dm me on discord, ill gift you nitro.")
 
 local SubAuto = CreateSubTab(TabCombat, "Auto")
 local SecAutoDef = CreateSection(SubAuto, "Defensive")
