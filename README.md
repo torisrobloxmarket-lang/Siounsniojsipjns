@@ -385,6 +385,7 @@ local function CreateLabel(section, text)
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.TextWrapped = true
     
+    -- Dynamische Größenanpassung für längere Texte
     lbl:GetPropertyChangedSignal("TextBounds"):Connect(function()
         if lbl.TextBounds.Y > 30 then
             frame.Size = UDim2.new(0.92, 0, 0, lbl.TextBounds.Y + 10)
@@ -658,7 +659,7 @@ local RyuConfig = {
     BlockDuration = 500,
 }
 
--- Known Non-Attack Animations (Idle, Walk, Sprint, Dash, Fall, Jump etc. from TJS Animate Script Leak)
+-- Aus dem Leak: IDs für Movements (alles, was kein Angriff ist)
 local KnownMovementAnims = {
     ["120133391090244"] = true, ["138196552148011"] = true, -- idle
     ["96489184596023"] = true, ["117941450906936"] = true, ["77705898607209"] = true, -- walk/walkL/walkR
@@ -680,9 +681,8 @@ local KnownMovementAnims = {
     ["114113678077830"] = true, -- Chara sprint
 }
 
-
 --// ==========================================
---// BLACK FLASH / OFFENSIVE LOGIC (WITH 0.5s DELAY)
+--// BLACK FLASH / OFFENSIVE LOGIC (WITH 0.6s DELAY)
 --// ==========================================
 local function FireYujiBF()
     pcall(function()
@@ -718,7 +718,7 @@ pcall(function()
             if RyuConfig.AutoBFYuji and self.Parent and self.Parent.Parent and self.Parent.Parent.Name == "DivergentFistService" then
                 if not _G.YujiBFDebounce then
                     _G.YujiBFDebounce = true
-                    task.delay(0.5, function()
+                    task.delay(0.6, function()
                         pcall(function() self:FireServer(unpack(args)) end)
                         task.wait(0.1)
                         _G.YujiBFDebounce = false
@@ -728,7 +728,7 @@ pcall(function()
             if RyuConfig.AutoBFMahito and self.Parent and self.Parent.Parent and self.Parent.Parent.Name == "FocusStrikeService" then
                 if not _G.MahitoBFDebounce then
                     _G.MahitoBFDebounce = true
-                    task.delay(0.5, function()
+                    task.delay(0.6, function()
                         pcall(function() self:FireServer(unpack(args)) end)
                         task.wait(0.1)
                         _G.MahitoBFDebounce = false
@@ -788,10 +788,10 @@ local function TriggerBFAttack()
     if closest then
         local enemyRoot = closest.HumanoidRootPart
         
-        -- Strict Look at enemy before calculating
+        -- Locken auf den Gegner vor der Berechnung
         root.CFrame = CFrame.new(root.Position, Vector3.new(enemyRoot.Position.X, root.Position.Y, enemyRoot.Position.Z))
         
-        -- Check if enemy is facing away from us (meaning we are behind them)
+        -- Dot Product nutzen um herauszufinden ob wir HINTER ihm stehen
         local vectorToEnemy = (enemyRoot.Position - root.Position).Unit
         local enemyLookVector = enemyRoot.CFrame.LookVector
         local isFacingAway = enemyLookVector:Dot(vectorToEnemy) > 0.3
@@ -801,11 +801,10 @@ local function TriggerBFAttack()
             shouldDash = false
         end
         
-        -- If NOT behind the enemy, dash circularly to get behind
+        -- Wenn wir nicht hinter ihm stehen -> Kreisförmiger Dash nach Hinten
         if shouldDash and not isFacingAway then
             local dir = "Left"
             if RyuConfig.BFDashDir == "Automatic" then
-                -- Dashes to the side the enemy is not facing
                 local rightVector = enemyRoot.CFrame.RightVector
                 if rightVector:Dot(vectorToEnemy) > 0 then
                     dir = "Right"
@@ -821,17 +820,17 @@ local function TriggerBFAttack()
                 ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("MovementService"):WaitForChild("RE"):WaitForChild("Dash"):FireServer(unpack(args))
             end)
             
-            task.wait(0.35) -- Wait for circular dash to reach the back
+            -- Da der RenderStepped Loop die Rotation hält, fliegen wir in einem Bogen in seinen Rücken
+            task.wait(0.35) 
             
-            -- Lock strictly to enemy back again after dash
             if char:FindFirstChild("HumanoidRootPart") and closest:FindFirstChild("HumanoidRootPart") then
                 root.CFrame = CFrame.new(root.Position, Vector3.new(enemyRoot.Position.X, root.Position.Y, enemyRoot.Position.Z))
             end
         end
         
-        -- 2x Black Flash with 0.5s timer
+        -- 2x Black Flash mit 0.6s Timer, nachdem wir hinter ihm sind
         FireYujiBF()
-        task.wait(0.5)
+        task.wait(0.6)
         FireYujiBF()
     end
 end
@@ -841,20 +840,17 @@ BFMobileBtn.MouseButton1Click:Connect(TriggerBFAttack)
 UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
     
-    -- Auto BF for standard clicks
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         if RyuConfig.AutoBFYuji then FireYujiBF() end
         if RyuConfig.AutoBFMahito then FireMahitoBF() end
     end
     
-    -- Action Keybind (Dash+BF)
     if input.KeyCode == RyuConfig.BFActionKey then
         if RyuConfig.AutoBFChain or isMobilePlayer then
             TriggerBFAttack()
         end
     end
     
-    -- Toggle PC Permanent Look At
     if input.KeyCode == RyuConfig.BFChainKey and not isMobilePlayer then
         RyuConfig.AutoBFChain = not RyuConfig.AutoBFChain
     end
@@ -945,11 +941,11 @@ RunService.Heartbeat:Connect(function()
                                     
                                     if track.Animation and track.Animation.AnimationId then
                                         local animId = track.Animation.AnimationId:match("%d+")
+                                        -- Filtert Idle, Lauf und Dash Animationen exakt über deine Leak-IDs
                                         if animId and KnownMovementAnims[animId] then
-                                            -- Safe movement animation (Idle, Sprint, Walk, Fall), ignore!
+                                            -- Ist sicher, kein Blocken nötig
                                         else
                                             local name = string.lower(track.Name)
-                                            -- If NOT a known movement, check if it's an attack name or Action Priority
                                             if string.find(name, "punch") or string.find(name, "attack") or string.find(name, "strike") or string.find(name, "m1") then
                                                 isAttack = true
                                             elseif track.Priority == Enum.AnimationPriority.Action or track.Priority == Enum.AnimationPriority.Action2 or track.Priority == Enum.AnimationPriority.Action3 or track.Priority == Enum.AnimationPriority.Action4 then
@@ -1191,11 +1187,11 @@ CreateSlider(SecPlayer, "Jump Power", 50, 300, 150, function(val) MovementState.
 
 CreateToggle(SecPlayer, "Infinite Jump Spam", false, function(state) MovementState.InfJump = state end)
 CreateToggle(SecPlayer, "Noclip", false, function(state) MovementState.Noclip = state end)
-CreateToggle(SecPlayer, "Invisible (FE Server-Sided) (not working)", false, function(state) 
+CreateToggle(SecPlayer, "Invisible (FE Server-Sided)", false, function(state) 
     MovementState.Invis = state
     ToggleInvis(state)
 end)
-CreateLabel(SecPlayer, "If you know a way to make the player invisible please dm me on discord, ill gift you nitro.")
+CreateLabel(SecPlayer, "(If you know a way to make the player invisible please dm me on discord, ill gift you nitro.)")
 
 local SubAuto = CreateSubTab(TabCombat, "Auto")
 local SecAutoDef = CreateSection(SubAuto, "Defensive")
