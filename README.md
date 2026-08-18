@@ -27,7 +27,7 @@ end)
 if not guiParent then guiParent = LocalPlayer:WaitForChild("PlayerGui") end
 
 for _, v in pairs(guiParent:GetChildren()) do 
-    if v.Name == "RyuHubUI" then v:Destroy() end 
+    if v.Name == "RyuHubUI" or v.Name == "RyuBFMobileGui" then v:Destroy() end 
 end
 
 --// THEME
@@ -691,27 +691,41 @@ local function FireMahitoBF()
     end
 end
 
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        if RyuConfig.AutoBFYuji then FireYujiBF() end
-        if RyuConfig.AutoBFMahito then FireMahitoBF() end
-    end
-end)
-
 --// ==========================================
---// BLACK FLASH CHAIN TOOL & LOGIC
+--// BLACK FLASH CHAIN LOGIC (MOBILE BUTTON & PC KEYBIND)
 --// ==========================================
-local chainTool = Instance.new("Tool")
-chainTool.Name = "Chain"
-chainTool.RequiresHandle = false
-
 local isChaining = false
 local chainTarget = nil
 local chainStartTime = 0
 
-chainTool.Activated:Connect(function()
+local BFMobileGui = Instance.new("ScreenGui")
+BFMobileGui.Name = "RyuBFMobileGui"
+BFMobileGui.ResetOnSpawn = false
+BFMobileGui.Parent = guiParent
+
+local BFMobileBtn = Instance.new("TextButton")
+BFMobileBtn.Size = UDim2.new(0, 60, 0, 60)
+BFMobileBtn.Position = UDim2.new(1, -90, 1, -150)
+BFMobileBtn.BackgroundColor3 = Theme.Sidebar
+BFMobileBtn.Text = "BF"
+BFMobileBtn.TextColor3 = Theme.Accent
+BFMobileBtn.Font = Enum.Font.GothamBlack
+BFMobileBtn.TextSize = 20
+BFMobileBtn.Visible = false
+Instance.new("UICorner", BFMobileBtn).CornerRadius = UDim.new(1, 0)
+local bfBtnStroke = Instance.new("UIStroke", BFMobileBtn)
+bfBtnStroke.Color = Theme.Stroke
+bfBtnStroke.Thickness = 2
+BFMobileBtn.Parent = BFMobileGui
+
+local function TriggerBFChain()
     if not RyuConfig.AutoBFChain then return end
+    
+    if isChaining then
+        isChaining = false
+        chainTarget = nil
+        return
+    end
     
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -751,26 +765,23 @@ chainTool.Activated:Connect(function()
         
         FireYujiBF()
     end
-end)
+end
+
+BFMobileBtn.MouseButton1Click:Connect(TriggerBFChain)
 
 UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if RyuConfig.AutoBFYuji then FireYujiBF() end
+        if RyuConfig.AutoBFMahito then FireMahitoBF() end
+    end
     if input.KeyCode == RyuConfig.BFChainKey then
-        isChaining = false
-        chainTarget = nil
+        TriggerBFChain()
     end
 end)
 
--- Camera Lock / Tool Render Loop
+-- Camera Lock Render Loop
 RunService.Heartbeat:Connect(function()
-    if RyuConfig.AutoBFChain then
-        if not LocalPlayer.Backpack:FindFirstChild("Chain") and not (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Chain")) then
-            chainTool.Parent = LocalPlayer.Backpack
-        end
-    else
-        chainTool.Parent = nil
-    end
-    
     if isChaining and chainTarget and chainTarget:FindFirstChild("HumanoidRootPart") then
         if tick() - chainStartTime > RyuConfig.BFLockTime then
             isChaining = false
@@ -1083,11 +1094,11 @@ CreateSlider(SecPlayer, "Jump Power", 50, 300, 150, function(val) MovementState.
 
 CreateToggle(SecPlayer, "Infinite Jump Spam", false, function(state) MovementState.InfJump = state end)
 CreateToggle(SecPlayer, "Noclip", false, function(state) MovementState.Noclip = state end)
-CreateToggle(SecPlayer, "Invisible (FE Server-Sided) (not working)", false, function(state) 
+CreateToggle(SecPlayer, "Invisible (FE Server-Sided)", false, function(state) 
     MovementState.Invis = state
     ToggleInvis(state)
 end)
-CreateLabel(SecPlayer, "If you know a way to make the player invisible please dm me on discord, ill gift you nitro.")
+CreateLabel(SecPlayer, "(If you know a way to make the player invisible please dm me on discord, ill gift you nitro.)")
 
 local SubAuto = CreateSubTab(TabCombat, "Auto")
 local SecAutoDef = CreateSection(SubAuto, "Defensive")
@@ -1107,11 +1118,11 @@ local SecBFChain = CreateSection(SubAuto, "Blackflash")
 CreateToggle(SecBFChain, "Auto black flash chain", false, function(state) 
     RyuConfig.AutoBFChain = state 
     if state then
-        if not LocalPlayer.Backpack:FindFirstChild("Chain") and not (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Chain")) then
-            chainTool.Parent = LocalPlayer.Backpack
+        if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
+            BFMobileBtn.Visible = true
         end
     else
-        chainTool.Parent = nil
+        BFMobileBtn.Visible = false
         isChaining = false
         chainTarget = nil
     end
