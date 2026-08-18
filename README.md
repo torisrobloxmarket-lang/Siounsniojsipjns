@@ -1083,7 +1083,7 @@ CreateSlider(SecPlayer, "Jump Power", 50, 300, 150, function(val) MovementState.
 
 CreateToggle(SecPlayer, "Infinite Jump Spam", false, function(state) MovementState.InfJump = state end)
 CreateToggle(SecPlayer, "Noclip", false, function(state) MovementState.Noclip = state end)
-CreateToggle(SecPlayer, "Invisible (FE Server-Sided)", false, function(state) 
+CreateToggle(SecPlayer, "Invisible (FE Server-Sided) (not working)", false, function(state) 
     MovementState.Invis = state
     ToggleInvis(state)
 end)
@@ -1104,7 +1104,18 @@ CreateToggle(SecAutoOff, "Auto Todo Slap", false, function() end)
 CreateLabel(SecAutoOff, "Auto Combos: Join discord.gg/ryuhub and send clips of your combos!")
 
 local SecBFChain = CreateSection(SubAuto, "Blackflash")
-CreateToggle(SecBFChain, "Auto black flash chain", false, function(state) RyuConfig.AutoBFChain = state end)
+CreateToggle(SecBFChain, "Auto black flash chain", false, function(state) 
+    RyuConfig.AutoBFChain = state 
+    if state then
+        if not LocalPlayer.Backpack:FindFirstChild("Chain") and not (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Chain")) then
+            chainTool.Parent = LocalPlayer.Backpack
+        end
+    else
+        chainTool.Parent = nil
+        isChaining = false
+        chainTarget = nil
+    end
+end)
 CreateKeybind(SecBFChain, "Chain Keybind", Enum.KeyCode.E, function(key) RyuConfig.BFChainKey = key end)
 CreateToggle(SecBFChain, "Dont side dash when behind", false, function(state) RyuConfig.BFNoDashBehind = state end)
 CreateSlider(SecBFChain, "Sensitivity", 1, 10, 5, function(val) RyuConfig.BFSensitivity = val end)
