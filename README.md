@@ -385,7 +385,6 @@ local function CreateLabel(section, text)
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.TextWrapped = true
     
-    -- Dynamische Größenanpassung für längere Texte
     lbl:GetPropertyChangedSignal("TextBounds"):Connect(function()
         if lbl.TextBounds.Y > 30 then
             frame.Size = UDim2.new(0.92, 0, 0, lbl.TextBounds.Y + 10)
@@ -659,8 +658,31 @@ local RyuConfig = {
     BlockDuration = 500,
 }
 
+-- Known Non-Attack Animations (Idle, Walk, Sprint, Dash, Fall, Jump etc. from TJS Animate Script Leak)
+local KnownMovementAnims = {
+    ["120133391090244"] = true, ["138196552148011"] = true, -- idle
+    ["96489184596023"] = true, ["117941450906936"] = true, ["77705898607209"] = true, -- walk/walkL/walkR
+    ["140491244934559"] = true, -- sprint base
+    ["134343219970072"] = true, -- jump
+    ["126572575938378"] = true, -- fall
+    ["93938476274140"] = true, -- climb
+    ["137199497329581"] = true, -- sit
+    ["77992084875736"] = true, -- Gojo sprint
+    ["135750035707554"] = true, -- Hakari sprint
+    ["85570635517461"] = true, -- Mahoraga/Heian sprint
+    ["85012092465916"] = true, -- Mahito sprint
+    ["72509133503569"] = true, -- Charles sprint
+    ["119619096808750"] = true, -- Sword sprint (Hiromi/Yuta/Haruta/Kurourushi)
+    ["98616794135588"] = true, -- Nanami ult sprint
+    ["97238189166310"] = true, -- Goku ult sprint
+    ["125812953913280"] = true, -- Goku sprint
+    ["77801551230831"] = true, -- Mokou sprint
+    ["114113678077830"] = true, -- Chara sprint
+}
+
+
 --// ==========================================
---// BLACK FLASH / OFFENSIVE LOGIC (WITH NAMECALL HOOK & 0.5s DELAY)
+--// BLACK FLASH / OFFENSIVE LOGIC (WITH 0.5s DELAY)
 --// ==========================================
 local function FireYujiBF()
     pcall(function()
@@ -779,6 +801,7 @@ local function TriggerBFAttack()
             shouldDash = false
         end
         
+        -- If NOT behind the enemy, dash circularly to get behind
         if shouldDash and not isFacingAway then
             local dir = "Left"
             if RyuConfig.BFDashDir == "Automatic" then
@@ -824,7 +847,7 @@ UserInputService.InputBegan:Connect(function(input, gpe)
         if RyuConfig.AutoBFMahito then FireMahitoBF() end
     end
     
-    -- Perform combo dash + flash
+    -- Action Keybind (Dash+BF)
     if input.KeyCode == RyuConfig.BFActionKey then
         if RyuConfig.AutoBFChain or isMobilePlayer then
             TriggerBFAttack()
@@ -837,53 +860,68 @@ UserInputService.InputBegan:Connect(function(input, gpe)
     end
 end)
 
--- Character STRICT Lock Render Loop (Permanently looking at nearest target, NO camera change)
-RunService.Heartbeat:Connect(function()
-    -- On Mobile it is permanently on. On PC it is toggleable.
-    if RyuConfig.AutoBFChain or isMobilePlayer then
-        local char = LocalPlayer.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        if root then
-            local closest = nil
-            local minDist = RyuConfig.BFRange
-            
-            for _, p in pairs(Players:GetPlayers()) do
-                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                    local d = (p.Character.HumanoidRootPart.Position - root.Position).Magnitude
-                    if d <= minDist then
-                        minDist = d
-                        closest = p.Character
-                    end
+-- Character STRICT Lock & WASD Override Loop
+RunService.RenderStepped:Connect(function()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not char or not hum or not root then return end
+
+    if (RyuConfig.AutoBFChain or isMobilePlayer) and not MovementState.Fly then
+        local closest = nil
+        local minDist = RyuConfig.BFRange
+        
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                local d = (p.Character.HumanoidRootPart.Position - root.Position).Magnitude
+                if d <= minDist then
+                    minDist = d
+                    closest = p.Character
                 end
             end
+        end
+        
+        if closest then
+            local enemyRoot = closest.HumanoidRootPart
+            local lookPos = Vector3.new(enemyRoot.Position.X, root.Position.Y, enemyRoot.Position.Z)
             
-            if closest then
-                local lookPos = closest.HumanoidRootPart.Position
-                local rootTargetCFrame = CFrame.new(root.Position, Vector3.new(lookPos.X, root.Position.Y, lookPos.Z))
-                root.CFrame = rootTargetCFrame
+            -- STRICT LOCK: Ignoriert Shiftlock und zwingt den Char zum Feind
+            root.CFrame = CFrame.lookAt(root.Position, lookPos)
+            hum.AutoRotate = false
+            _G.WasBFLocked = true
+            
+            -- CUSTOM WASD OVERRIDE (zum Feind, weg vom Feind, kreisförmig)
+            local isMoving = UserInputService:IsKeyDown(Enum.KeyCode.W) or UserInputService:IsKeyDown(Enum.KeyCode.S) or UserInputService:IsKeyDown(Enum.KeyCode.A) or UserInputService:IsKeyDown(Enum.KeyCode.D)
+            if isMoving and not MovementState.Speed then
+                local moveDir = Vector3.new(0, 0, 0)
+                local toTarget = (lookPos - root.Position).Unit
+                local rightTarget = root.CFrame.RightVector
                 
-                local hum = char:FindFirstChildOfClass("Humanoid")
-                if hum then hum.AutoRotate = false end
-                _G.WasBFLocked = true
-            else
-                if _G.WasBFLocked then
-                    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-                    if hum then hum.AutoRotate = true end
-                    _G.WasBFLocked = false
+                if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + toTarget end
+                if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - toTarget end
+                if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - rightTarget end
+                if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + rightTarget end
+                
+                if moveDir.Magnitude > 0 then
+                    hum:Move(moveDir.Unit, false)
                 end
+            end
+        else
+            if _G.WasBFLocked then
+                hum.AutoRotate = true
+                _G.WasBFLocked = false
             end
         end
     else
         if _G.WasBFLocked then
-            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-            if hum then hum.AutoRotate = true end
+            hum.AutoRotate = true
             _G.WasBFLocked = false
         end
     end
 end)
 
 --// ==========================================
---// AUTO BLOCK LOGIC
+--// AUTO BLOCK LOGIC (SMART ANIMATION DETECTION)
 --// ==========================================
 RunService.Heartbeat:Connect(function()
     if RyuConfig.AutoBlock then
@@ -903,8 +941,24 @@ RunService.Heartbeat:Connect(function()
                         if animator then
                             pcall(function()
                                 for _, track in pairs(animator:GetPlayingAnimationTracks()) do
-                                    local name = string.lower(track.Name)
-                                    if string.find(name, "punch") or string.find(name, "attack") or string.find(name, "strike") or string.find(name, "m1") then
+                                    local isAttack = false
+                                    
+                                    if track.Animation and track.Animation.AnimationId then
+                                        local animId = track.Animation.AnimationId:match("%d+")
+                                        if animId and KnownMovementAnims[animId] then
+                                            -- Safe movement animation (Idle, Sprint, Walk, Fall), ignore!
+                                        else
+                                            local name = string.lower(track.Name)
+                                            -- If NOT a known movement, check if it's an attack name or Action Priority
+                                            if string.find(name, "punch") or string.find(name, "attack") or string.find(name, "strike") or string.find(name, "m1") then
+                                                isAttack = true
+                                            elseif track.Priority == Enum.AnimationPriority.Action or track.Priority == Enum.AnimationPriority.Action2 or track.Priority == Enum.AnimationPriority.Action3 or track.Priority == Enum.AnimationPriority.Action4 then
+                                                isAttack = true
+                                            end
+                                        end
+                                    end
+                                    
+                                    if isAttack then
                                         incomingAttack = true
                                         break
                                     end
@@ -1095,55 +1149,19 @@ local function ToggleInvis(state)
     end
 end
 
--- Core Render Loop for Speed, Fly, Noclip & Jump Override
+-- Render Loop for Speed (Integrated cleanly to not disrupt the Chain Lock)
 RunService.RenderStepped:Connect(function()
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not char or not hum or not root then return end
 
-    -- Noclip logic
-    if MovementState.Noclip then
-        for _, v in pairs(char:GetDescendants()) do
-            if v:IsA("BasePart") and v.CanCollide then
-                v.CanCollide = false
-            end
-        end
-    end
-    
-    -- Erzwungene High Jump Power gegen Anticheat-Resets
-    if MovementState.HighJump then
-        hum.UseJumpPower = true
-        hum.JumpPower = MovementState.JumpPower
-    end
-
-    -- Fly logic
-    if MovementState.Fly and flyBodyVelocity and flyBodyGyro then
-        hum.PlatformStand = true
-        local moveDir = Vector3.new(0,0,0)
-        
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + camera.CFrame.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - camera.CFrame.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - camera.CFrame.RightVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + camera.CFrame.RightVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0,1,0) end
-        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDir = moveDir - Vector3.new(0,1,0) end
-        
-        if moveDir.Magnitude > 0 then
-            flyBodyVelocity.Velocity = moveDir.Unit * MovementState.FlySpeed
+    if MovementState.Speed and not MovementState.Fly then
+        if hum.MoveDirection.Magnitude > 0 then
+            local flatDir = hum.MoveDirection
+            root.Velocity = Vector3.new(flatDir.X * MovementState.SpeedValue, root.Velocity.Y, flatDir.Z * MovementState.SpeedValue)
         else
-            flyBodyVelocity.Velocity = Vector3.new(0,0,0)
-        end
-        flyBodyGyro.CFrame = camera.CFrame
-    else
-        -- Speed logic
-        if MovementState.Speed then
-            if hum.MoveDirection.Magnitude > 0 then
-                local flatDir = hum.MoveDirection
-                root.Velocity = Vector3.new(flatDir.X * MovementState.SpeedValue, root.Velocity.Y, flatDir.Z * MovementState.SpeedValue)
-            else
-                root.Velocity = Vector3.new(0, root.Velocity.Y, 0)
-            end
+            root.Velocity = Vector3.new(0, root.Velocity.Y, 0)
         end
     end
 end)
