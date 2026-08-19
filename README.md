@@ -9,17 +9,15 @@ local PathfindingService = game:GetService("PathfindingService")
 local Player = Players.LocalPlayer
 local Mouse = Player:GetMouse()
 
-local ThemeManager = loadstring(game:HttpGet(repoForAddons .. "addons/ThemeManager.lua"))()
-local SaveManager = loadstring(game:HttpGet(repoForAddons .. "addons/SaveManager.lua"))()
+-- Basis UI Library (Muss bleiben, sonst lädt das GUI nicht)
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/ValoranterDev/Obs0/refs/heads/main/Library.lua"))()
 
+-- GitHubs für ThemeManager und SaveManager wurden restlos entfernt!
 local Options = Library.Options
 local Toggles = Library.Toggles
 
 Library.ForceCheckbox = false 
 Library.ShowToggleFrameInKeybinds = true 
-
-
-
 
 local UI = {}
 local Logic = {
@@ -117,19 +115,17 @@ local Logic = {
     }
 }
 
-
-
-
+-- RYU HUB GUI SETUP
 UI.Window = Library:CreateWindow({
-    Title = "Razorbill",
+    Title = "Ryu Hub Premium",
     Center = true,
     AutoShow = true,
     Resizable = true,
-    Icon = 133671154311695, 
+    Icon = 10887309995, -- Neues Icon
     NotifySide = "Right",
     ShowCustomCursor = true,
     TabSwipeOffset = 30,
-    Size = UDim2.new(0, 650, 0, 410),
+    Size = UDim2.new(0, 680, 0, 440), -- Etwas breiter und höher gemacht
 })
 
 UI.Tabs = {
@@ -141,9 +137,6 @@ UI.Tabs = {
     Servers = UI.Window:AddTab("Servers", "globe", "Server Browser"),
     UISettings = UI.Window:AddTab("UI Settings", "settings", "Configure UI and visuals"),
 }
-
-
-
 
 UI.CombatGroup = UI.Tabs.Main:AddLeftGroupbox("Black Flash Chain", "swords")
 
@@ -207,9 +200,6 @@ UI.CombatGroup:AddDropdown("DashEasingDirection", {
     Tooltip = "In = Fast at end. Out = Fast at start. InOut = Fast in middle."
 })
 
-
-
-
 UI.ESPBoxGrp = UI.Tabs.Visuals:AddLeftGroupbox("ESP Overlays")
 
 UI.ESPBoxGrp:AddToggle("ESPBox", { Text = "Box ESP", Default = false })
@@ -252,13 +242,8 @@ UI.ESPInfoGrp:AddDivider()
 
 UI.ESPInfoGrp:AddToggle("CooldownRevealer", { Text = "Cooldown Revealer", Default = false, Tooltip = "Shows enemy moveset cooldowns, ultimate, and evasive." })
 
-
-
-
-
 UI.LockGroup = UI.Tabs.Lock:AddLeftGroupbox("Target Lock", "crosshair")
 UI.LockConfigGroup = UI.Tabs.Lock:AddRightGroupbox("Configuration", "settings")
-
 
 UI.LockGroup:AddToggle("EnableLock", { 
     Text = "Enable Lock", 
@@ -267,12 +252,12 @@ UI.LockGroup:AddToggle("EnableLock", {
         Logic.LockState.Enabled = state 
         if Logic.LockSettings.LockNotification then
             if state then
-                Library:Notify({ Title = "Target Lock", Description = "Lock ENABLED - searching for targets...", Time = 2 })
+                Library:Notify({ Title = "Ryu Hub Lock", Description = "Lock ENABLED - searching for targets...", Time = 2 })
             else
                 if Logic.LockState.LastTargetName then
-                    Library:Notify({ Title = "Target Lock", Description = "Unlocked from " .. tostring(Logic.LockState.LastTargetName), Time = 2 })
+                    Library:Notify({ Title = "Ryu Hub Lock", Description = "Unlocked from " .. tostring(Logic.LockState.LastTargetName), Time = 2 })
                 else
-                    Library:Notify({ Title = "Target Lock", Description = "Lock DISABLED", Time = 2 })
+                    Library:Notify({ Title = "Ryu Hub Lock", Description = "Lock DISABLED", Time = 2 })
                 end
                 Logic.LockState.LastTargetName = nil
             end
@@ -295,9 +280,6 @@ UI.LockGroup:AddToggle("LockESP", {
     Default = Logic.LockSettings.ESPEnabled,
     Callback = function(state) Logic.LockSettings.ESPEnabled = state end 
 })
-
-
-
 
 UI.LockGroup:AddDivider()
 
@@ -324,13 +306,11 @@ UI.LockGroup:AddButton({
         local vals = {"Auto"}
         local charsFolder = workspace:FindFirstChild("Characters")
         
-        
         for _, p in ipairs(Players:GetPlayers()) do
             if p ~= Player then
                 table.insert(vals, p.Name)
             end
         end
-        
         
         if charsFolder then
             for _, model in ipairs(charsFolder:GetChildren()) do
@@ -351,11 +331,10 @@ UI.LockGroup:AddButton({
             Logic.LockSettings.SelectedPlayer = "Auto"
             Options.LockSpecificPlayer:SetValue("Auto")
         end
-        Library:Notify({ Title = "Target Lock", Description = "Player list refreshed! Found " .. (#vals - 1) .. " targets.", Time = 2 })
+        Library:Notify({ Title = "Ryu Hub Lock", Description = "Player list refreshed! Found " .. (#vals - 1) .. " targets.", Time = 2 })
     end,
     Tooltip = "Refresh the list of available players and NPCs",
 })
-
 
 UI.LockGroup:AddToggle("LockWallCheck", {
     Text = "Wall Check",
@@ -364,7 +343,6 @@ UI.LockGroup:AddToggle("LockWallCheck", {
     Callback = function(state) Logic.LockSettings.WallCheck = state end
 })
 
-
 UI.LockGroup:AddToggle("LockAutoRetarget", {
     Text = "Auto Retarget",
     Default = false,
@@ -372,14 +350,12 @@ UI.LockGroup:AddToggle("LockAutoRetarget", {
     Callback = function(state) Logic.LockSettings.AutoRetarget = state end
 })
 
-
 UI.LockGroup:AddToggle("LockNotification", {
     Text = "Lock Notifications",
     Default = true,
     Tooltip = "Show notifications when locking/unlocking targets.",
     Callback = function(state) Logic.LockSettings.LockNotification = state end
 })
-
 
 UI.LockConfigGroup:AddDropdown("LockMethod", {
     Values = {"Camera", "Body"},
@@ -423,7 +399,6 @@ UI.LockConfigGroup:AddSlider("LockSideOffset", {
     Callback = function(val) Logic.LockSettings.SideOffset = val end
 })
 
-
 UI.LockConfigGroup:AddDivider()
 
 UI.LockConfigGroup:AddSlider("LockMaxDistance", {
@@ -436,7 +411,6 @@ UI.LockConfigGroup:AddSlider("LockMaxDistance", {
     Callback = function(val) Logic.LockSettings.MaxDistance = val end
 })
 
-
 UI.LockConfigGroup:AddSlider("LockPrediction", {
     Text = "Prediction",
     Default = 0,
@@ -446,9 +420,6 @@ UI.LockConfigGroup:AddSlider("LockPrediction", {
     Tooltip = "Predicts target movement for smoother tracking. 0 = off.",
     Callback = function(val) Logic.LockSettings.Prediction = val end
 })
-
-
-
 
 UI.DashGroup = UI.Tabs.SideDash:AddLeftGroupbox("Side Dash Settings", "move")
 UI.DashConfigGroup = UI.Tabs.SideDash:AddRightGroupbox("Arc Modifiers", "settings")
@@ -514,9 +485,6 @@ UI.DashConfigGroup:AddSlider("DashLockDuration", {
     Default = 0.35, Min = 0.1, Max = 1.5, Rounding = 2,
     Callback = function(val) Logic.DashAssistState.LockDuration = val end
 })
-
-
-
 
 local TeleportLocations = {
     ["Under the Map"]      = Vector3.new(-20.23, -61.53, -146.34),
@@ -609,7 +577,7 @@ function Invisibility.toggle(state, silent)
                 if newTrack ~= _G.MiscState.InvisibleTrack then newTrack:Stop(0) end
             end)
         end)
-        Library:Notify({ Title = "Invisibility", Description = "Invisibility Enabled", Time = 2 })
+        Library:Notify({ Title = "Ryu Hub", Description = "Invisibility Enabled", Time = 2 })
     else
         _G.MiscState.IsInvisible = false
         
@@ -639,7 +607,7 @@ function Invisibility.toggle(state, silent)
             pcall(function() _G.MiscState.InvisibleTrack:Destroy() end)
             _G.MiscState.InvisibleTrack = nil
         end
-        Library:Notify({ Title = "Invisibility", Description = "Invisibility Disabled", Time = 2 })
+        Library:Notify({ Title = "Ryu Hub", Description = "Invisibility Disabled", Time = 2 })
     end
 end
 
@@ -839,9 +807,6 @@ local function startPathfinding(targetPos)
     end)
 end
 
-
-
-
 UI.TeleportGroup = UI.Tabs.Teleports:AddLeftGroupbox("Auto Teleport Settings", "map")
 
 UI.TeleportGroup:AddDropdown("TeleportDestination", {
@@ -894,11 +859,6 @@ UI.TeleportGroup:AddButton({
     end
 })
 
-
-
-
-
-
 task.spawn(function()
     local circle = Drawing.new("Circle")
     circle.Visible = false
@@ -910,7 +870,6 @@ task.spawn(function()
     circle.Radius = 200
     Logic.LockState.FOVCircle = circle
 end)
-
 
 task.spawn(function()
     local nameText = Drawing.new("Text")
@@ -949,12 +908,11 @@ task.spawn(function()
     Logic.LockState.TargetInfoLine = sepLine
 end)
 
-
 task.spawn(function()
     if Logic.LockState.ESPGui then pcall(function() Logic.LockState.ESPGui:Destroy() end) end
 
     local lockEspGui = Instance.new("BillboardGui")
-    lockEspGui.Name = "RazorbillLockESP"
+    lockEspGui.Name = "RyuHubLockESP"
     lockEspGui.Size = UDim2.new(0, 150, 0, 150)
     lockEspGui.AlwaysOnTop = true
     lockEspGui.LightInfluence = 0
@@ -987,7 +945,6 @@ task.spawn(function()
 
     Logic.LockState.ESPGui = lockEspGui
 end)
-
 
 local function refreshPlayerDropdown()
     local vals = {"Auto"}
@@ -1022,7 +979,6 @@ local function refreshPlayerDropdown()
     end)
 end
 
-
 Logic.Connections.PlayerAdded = Players.PlayerAdded:Connect(function()
     task.wait(1)
     refreshPlayerDropdown()
@@ -1038,18 +994,16 @@ Logic.Connections.PlayerRemoving = Players.PlayerRemoving:Connect(function(plr)
             Logic.LockState.CurrentLockTarget = nil
             Logic.LockState.LastTargetName = nil
             if Logic.LockSettings.LockNotification then
-                Library:Notify({ Title = "Target Lock", Description = plr.Name .. " left the game. Target lost.", Time = 3 })
+                Library:Notify({ Title = "Ryu Hub Lock", Description = plr.Name .. " left the game. Target lost.", Time = 3 })
             end
         end
     end
 end)
 
-
 task.spawn(function()
     task.wait(1)
     refreshPlayerDropdown()
 end)
-
 
 local function getLockTarget()
     if tick() - Logic.LockState.LastTargetSearch < 0.5 then return nil end
@@ -1060,7 +1014,6 @@ local function getLockTarget()
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return nil end
 
-    
     if Logic.LockSettings.SelectedPlayer ~= "Auto" then
         local selectedName = Logic.LockSettings.SelectedPlayer
         local isNPC = string.sub(selectedName, 1, 6) == "[NPC] "
@@ -1076,7 +1029,6 @@ local function getLockTarget()
                         if tHum and tHum.Health > 0 and tRoot then
                             local dist = (root.Position - tRoot.Position).Magnitude
                             if dist <= Logic.LockSettings.MaxDistance then
-                                
                                 if Logic.LockSettings.WallCheck then
                                     local rayParams = RaycastParams.new()
                                     rayParams.FilterDescendantsInstances = {char, model}
@@ -1100,7 +1052,6 @@ local function getLockTarget()
                 if tHum and tHum.Health > 0 and tRoot and tChar ~= char then
                     local dist = (root.Position - tRoot.Position).Magnitude
                     if dist <= Logic.LockSettings.MaxDistance then
-                        
                         if Logic.LockSettings.WallCheck then
                             local rayParams = RaycastParams.new()
                             rayParams.FilterDescendantsInstances = {char, tChar}
@@ -1116,7 +1067,6 @@ local function getLockTarget()
         end
     end
 
-    
     local best, shortest = nil, math.huge
     local charsFolder = workspace:FindFirstChild("Characters")
     local entities = charsFolder and charsFolder:GetChildren() or {}
@@ -1136,9 +1086,7 @@ local function getLockTarget()
             if tHum and tHum.Health > 0 and tRoot then
                 local worldDist = (root.Position - tRoot.Position).Magnitude
                 
-                
                 if worldDist > Logic.LockSettings.MaxDistance then continue end
-                
                 
                 if Logic.LockSettings.WallCheck then
                     local rayParams = RaycastParams.new()
@@ -1167,13 +1115,11 @@ local function getLockTarget()
     return best
 end
 
-
 Logic.Connections.LockZoom = UserInputService.InputChanged:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseWheel and Logic.LockState.CameraLocked then
         Logic.LockState.ZoomDistance = math.clamp(Logic.LockState.ZoomDistance - (input.Position.Z * 2), 4, 50)
     end
 end)
-
 
 local function hideTargetInfoHUD()
     if Logic.LockState.TargetInfoName then Logic.LockState.TargetInfoName.Visible = false end
@@ -1182,13 +1128,11 @@ local function hideTargetInfoHUD()
     if Logic.LockState.TargetInfoLine then Logic.LockState.TargetInfoLine.Visible = false end
 end
 
-
 local function hideFOVCircle()
     if Logic.LockState.FOVCircle then Logic.LockState.FOVCircle.Visible = false end
 end
 
-
-RunService:BindToRenderStep("RazorbillTargetLock", Enum.RenderPriority.Camera.Value + 5, function(dt)
+RunService:BindToRenderStep("RyuHubTargetLock", Enum.RenderPriority.Camera.Value + 5, function(dt)
     local Camera = workspace.CurrentCamera
     local char = Player.Character
     local hum  = char and char:FindFirstChildOfClass("Humanoid")
@@ -1196,7 +1140,6 @@ RunService:BindToRenderStep("RazorbillTargetLock", Enum.RenderPriority.Camera.Va
     
     local isAlive = (hum and hum.Health > 0 and root)
 
-    
     if Logic.LockState.FOVCircle then
         if Logic.LockSettings.ShowFOV and Logic.LockState.Enabled then
             Logic.LockState.FOVCircle.Position = Vector2.new(Mouse.X, Mouse.Y)
@@ -1211,7 +1154,6 @@ RunService:BindToRenderStep("RazorbillTargetLock", Enum.RenderPriority.Camera.Va
         end
     end
 
-    
     if not Logic.LockState.Enabled or not isAlive then
         if Logic.LockState.ESPGui then 
             Logic.LockState.ESPGui.Adornee = nil 
@@ -1238,7 +1180,6 @@ RunService:BindToRenderStep("RazorbillTargetLock", Enum.RenderPriority.Camera.Va
         return
     end
 
-    
     if Logic.LockState.CurrentLockTarget then
         local eHum = Logic.LockState.CurrentLockTarget:FindFirstChildOfClass("Humanoid")
         local targetAlive = Logic.LockState.CurrentLockTarget.Parent and eHum and eHum.Health > 0
@@ -1251,16 +1192,15 @@ RunService:BindToRenderStep("RazorbillTargetLock", Enum.RenderPriority.Camera.Va
             if Logic.LockSettings.AutoRetarget then
                 Logic.LockState.LastTargetSearch = 0 
                 if Logic.LockSettings.LockNotification and deadName then
-                    Library:Notify({ Title = "Target Lock", Description = deadName .. " eliminated. Retargeting...", Time = 2 })
+                    Library:Notify({ Title = "Ryu Hub Lock", Description = deadName .. " eliminated. Retargeting...", Time = 2 })
                 end
             elseif Logic.LockSettings.Sticky then
                 
                 if Logic.LockSettings.LockNotification and deadName then
-                    Library:Notify({ Title = "Target Lock", Description = deadName .. " eliminated. Target lost.", Time = 2 })
+                    Library:Notify({ Title = "Ryu Hub Lock", Description = deadName .. " eliminated. Target lost.", Time = 2 })
                 end
             end
         else
-            
             local tRoot = Logic.LockState.CurrentLockTarget:FindFirstChild("HumanoidRootPart") or Logic.LockState.CurrentLockTarget:FindFirstChild("Torso")
             if tRoot then
                 local dist = (root.Position - tRoot.Position).Magnitude
@@ -1268,7 +1208,7 @@ RunService:BindToRenderStep("RazorbillTargetLock", Enum.RenderPriority.Camera.Va
                     if not Logic.LockSettings.Sticky then
                         Logic.LockState.CurrentLockTarget = nil
                         if Logic.LockSettings.LockNotification then
-                            Library:Notify({ Title = "Target Lock", Description = "Target out of range. Searching...", Time = 2 })
+                            Library:Notify({ Title = "Ryu Hub Lock", Description = "Target out of range. Searching...", Time = 2 })
                         end
                     end
                 end
@@ -1276,13 +1216,11 @@ RunService:BindToRenderStep("RazorbillTargetLock", Enum.RenderPriority.Camera.Va
         end
     end
 
-    
     if not Logic.LockSettings.Sticky and Logic.LockState.CurrentLockTarget == nil then
         Logic.LockState.CurrentLockTarget = getLockTarget()
     elseif not Logic.LockState.CurrentLockTarget then
         Logic.LockState.CurrentLockTarget = getLockTarget()
     end
-    
     
     if Logic.LockState.CurrentLockTarget then
         local newName = Logic.LockState.CurrentLockTarget.Name
@@ -1292,7 +1230,7 @@ RunService:BindToRenderStep("RazorbillTargetLock", Enum.RenderPriority.Camera.Va
         if newName ~= Logic.LockState.LastTargetName then
             Logic.LockState.LastTargetName = newName
             if Logic.LockSettings.LockNotification then
-                Library:Notify({ Title = "Target Lock", Description = "Locked onto: " .. newName, Time = 2 })
+                Library:Notify({ Title = "Ryu Hub Lock", Description = "Locked onto: " .. newName, Time = 2 })
             end
         end
     end
@@ -1318,7 +1256,6 @@ RunService:BindToRenderStep("RazorbillTargetLock", Enum.RenderPriority.Camera.Va
         return 
     end
 
-    
     local targetPos = targetPart.Position
     if Logic.LockSettings.Prediction > 0 then
         local tRoot = Logic.LockState.CurrentLockTarget:FindFirstChild("HumanoidRootPart")
@@ -1327,7 +1264,6 @@ RunService:BindToRenderStep("RazorbillTargetLock", Enum.RenderPriority.Camera.Va
         end
     end
 
-    
     if Logic.LockSettings.ESPEnabled and Logic.LockState.ESPGui then
         Logic.LockState.ESPGui.Enabled = true 
         Logic.LockState.ESPGui.Adornee = targetPart
@@ -1346,13 +1282,11 @@ RunService:BindToRenderStep("RazorbillTargetLock", Enum.RenderPriority.Camera.Va
         Logic.LockState.ESPGui.Enabled = false
     end
 
-    
     if Logic.LockSettings.ShowTargetInfo and Logic.LockState.TargetInfoName then
         local viewport = Camera.ViewportSize
         local infoColor = Options.TargetInfoColor and Options.TargetInfoColor.Value or Color3.fromRGB(255, 255, 255)
         local eHum = Logic.LockState.CurrentLockTarget:FindFirstChildOfClass("Humanoid")
         local tDist = (root.Position - targetPart.Position).Magnitude
-        
         
         local baseX, baseY
         if Logic.LockSettings.TargetInfoPos == "Top Center" then
@@ -1369,7 +1303,6 @@ RunService:BindToRenderStep("RazorbillTargetLock", Enum.RenderPriority.Camera.Va
             baseY = 35
         end
         
-        
         local displayName = Logic.LockState.CurrentLockTarget.Name
         local plrFromChar = Players:GetPlayerFromCharacter(Logic.LockState.CurrentLockTarget)
         if plrFromChar then displayName = plrFromChar.DisplayName end
@@ -1379,12 +1312,10 @@ RunService:BindToRenderStep("RazorbillTargetLock", Enum.RenderPriority.Camera.Va
         Logic.LockState.TargetInfoName.Color = infoColor
         Logic.LockState.TargetInfoName.Visible = true
         
-        
         Logic.LockState.TargetInfoLine.From = Vector2.new(baseX - 60, baseY + 20)
         Logic.LockState.TargetInfoLine.To = Vector2.new(baseX + 60, baseY + 20)
         Logic.LockState.TargetInfoLine.Color = infoColor
         Logic.LockState.TargetInfoLine.Visible = true
-        
         
         if eHum then
             local hpFrac = math.clamp(eHum.Health / eHum.MaxHealth, 0, 1)
@@ -1397,7 +1328,6 @@ RunService:BindToRenderStep("RazorbillTargetLock", Enum.RenderPriority.Camera.Va
             Logic.LockState.TargetInfoHP.Visible = false
         end
         
-        
         Logic.LockState.TargetInfoDist.Text = string.format("Distance: %d studs", math.floor(tDist))
         Logic.LockState.TargetInfoDist.Position = Vector2.new(baseX, baseY + 40)
         Logic.LockState.TargetInfoDist.Color = infoColor
@@ -1406,7 +1336,6 @@ RunService:BindToRenderStep("RazorbillTargetLock", Enum.RenderPriority.Camera.Va
         hideTargetInfoHUD()
     end
 
-    
     if Logic.LockSettings.Method == "Camera" then
         if Logic.LockState.WasLockedBody then
             hum.AutoRotate = true
@@ -1463,7 +1392,6 @@ RunService:BindToRenderStep("RazorbillTargetLock", Enum.RenderPriority.Camera.Va
             Camera.CFrame = Camera.CFrame:Lerp(desiredCF, alpha)
         end
 
-    
     else
         if Logic.LockState.CameraLocked then
             Camera.CameraType = Enum.CameraType.Custom
@@ -1488,9 +1416,6 @@ RunService:BindToRenderStep("RazorbillTargetLock", Enum.RenderPriority.Camera.Va
         )
     end
 end)
-
-
-
 
 local function getClosestTarget(maxDist)
     local char = Player.Character
@@ -1521,12 +1446,8 @@ local function getClosestTarget(maxDist)
     return closest
 end
 
-
-
-
 Logic.DashAnimLeft.AnimationId = "rbxassetid://75203303352791"
 Logic.DashAnimRight.AnimationId = "rbxassetid://117223862448096"
-
 
 local isDashingArc = false
 
@@ -1555,7 +1476,6 @@ local function executeDashArc(direction)
         if dot < -0.1 then isDashingArc = false return end
     end
 
-    
     root.Anchored = true
     humanoid.AutoRotate = false
     root.AssemblyLinearVelocity = Vector3.zero
@@ -1584,7 +1504,7 @@ local function executeDashArc(direction)
 
     local progress = Instance.new("NumberValue")
     progress.Value = 0
-    local dashName = "RazorbillFakeDash_" .. tostring(tick())
+    local dashName = "RyuHubFakeDash_" .. tostring(tick())
 
     local tween = TweenService:Create(
         progress,
@@ -1654,7 +1574,7 @@ local function executeDashArc(direction)
         end
 
         local lockStart = tick()
-        local lockName = "RazorbillDashLock_" .. tostring(lockStart)
+        local lockName = "RyuHubDashLock_" .. tostring(lockStart)
         RunService:BindToRenderStep(lockName, 20000, function()
             if tick() - lockStart > Logic.DashAssistState.LockDuration or not target or not target.Parent or not root then
                 RunService:UnbindFromRenderStep(lockName)
@@ -1679,7 +1599,6 @@ local function executeDashArc(direction)
     end)
 end
 
-
 Logic.Connections.DashInput = UserInputService.InputBegan:Connect(function(input, gp)
     if gp then return end
     if not Logic.DashAssistState.Enabled then return end
@@ -1687,7 +1606,6 @@ Logic.Connections.DashInput = UserInputService.InputBegan:Connect(function(input
     local assignedKey = Options.DashAssistKeybind.Value
     local targetKeyCode
 
-    
     if typeof(assignedKey) == "EnumItem" then
         targetKeyCode = assignedKey
     elseif typeof(assignedKey) == "string" then
@@ -1711,9 +1629,6 @@ Logic.Connections.DashInput = UserInputService.InputBegan:Connect(function(input
         task.spawn(function() executeDashArc(direction) end)
     end
 end)
-
-
-
 
 task.spawn(function()
     Logic.TargetRemote = ReplicatedStorage:WaitForChild("Knit")
@@ -1744,8 +1659,6 @@ local function autoFireDivergentFist()
         end
     end
 end
-
-
 
 local function performDashLogic(target)
     local MAX_DASH_DISTANCE = Options.DashDistance.Value
@@ -1866,14 +1779,9 @@ local function performDashLogic(target)
     end)
 end
 
-
-
-
 local function onAnimationPlayed(animTrack)
     local animId = animTrack.Animation and animTrack.Animation.AnimationId or ""
 
-    
-    
     if Logic.DashAssistState.Enabled and not isDashingArc then
         if animId:match("75203303352791") then
             task.spawn(function() executeDashArc("Left") end)
@@ -1882,7 +1790,6 @@ local function onAnimationPlayed(animTrack)
         end
     end
 
-    
     if Toggles.BlackFlashEnabled.Value then
         local idMatch = string.match(animId, "%d+")
         if idMatch and Logic.TargetAnimations[idMatch] then
@@ -1912,11 +1819,6 @@ end
 
 if Player.Character then task.spawn(setupCharacter, Player.Character) end
 Player.CharacterAdded:Connect(setupCharacter)
-
-
-
-
-
 
 local function w2v(pos)
     local cam = workspace.CurrentCamera
@@ -2002,9 +1904,6 @@ local function mkText(size)
     t.Font = 2
     return t
 end
-
-
-
 
 local function CreateCooldownBillboard(character, player, rootPart)
     if not player or not rootPart then return nil, nil end
@@ -2220,10 +2119,6 @@ local function CreateCooldownBillboard(character, player, rootPart)
     return Reveal, Cleanup
 end
 
-
-
-
-
 local function createESP()
     local e = {}
     e.BoxS = {}; e.BoxL = {}
@@ -2344,7 +2239,6 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
 
         local dist = (cam.CFrame.Position - hrp.Position).Magnitude
         local box  = getCharBounds(char)
-
         
         if Toggles.ESPBox.Value and box then
             for i = 1, 4 do e.BoxL[i].Color = Options.ESPBoxColor.Value end
@@ -2355,7 +2249,6 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
         else
             for i = 1, 4 do e.BoxS[i].Visible = false; e.BoxL[i].Visible = false end
         end
-
         
         if Toggles.ESPCorner.Value and box then
             for i = 1, 8 do e.CorL[i].Color = Options.ESPCornerColor.Value end
@@ -2374,7 +2267,6 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
             for i = 1, 8 do e.CorS[i].Visible = false; e.CorL[i].Visible = false end
         end
 
-        
         if Toggles.ESPSkeleton.Value then
             local bones = char:FindFirstChild("UpperTorso") and Logic.R15Bones or Logic.R6Bones
             local idx = 0
@@ -2398,7 +2290,6 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
             for i = 1, 14 do e.Skel[i].Visible = false end
         end
 
-        
         if Toggles.ESPHeadDot.Value and head then
             local hs, ho = w2v(head.Position)
             if ho then
@@ -2415,7 +2306,6 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
             e.HDotS.Visible = false; e.HDot.Visible = false
         end
 
-        
         if Toggles.ESPTracer.Value then
             local fp, fo = w2v(hrp.Position - Vector3.new(0, 3, 0))
             if fo then
@@ -2430,7 +2320,6 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
             e.TrcS.Visible = false; e.Trc.Visible = false
         end
 
-        
         if Toggles.ESPHPText.Value and box then
             local f = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
             e.HPTxt.Position = Vector2.new(box.X + box.W + 4, box.Y)
@@ -2441,7 +2330,6 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
             e.HPTxt.Visible = false
         end
 
-        
         if Toggles.ESPHPBar.Value and box then
             local f   = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
             local bx  = box.X - 6
@@ -2455,7 +2343,6 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
         else
             e.BarO.Visible = false; e.BarBG.Visible = false; e.BarF.Visible = false
         end
-
         
         if Toggles.ESPOutline.Value then
             if not e.HL or e.HL.Parent ~= char then
@@ -2474,7 +2361,6 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
             if e.HL then e.HL.Enabled = false end
         end
 
-        
         if Toggles.CooldownRevealer.Value then
             if not e.CooldownCleanup then
                 e.RevealGui, e.CooldownCleanup = CreateCooldownBillboard(char, plr, hrp)
@@ -2488,7 +2374,6 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
             end
         end
 
-        
         if box then
             local ay = box.Y - 2
             if Toggles.ESPCharacter.Value then
@@ -2547,7 +2432,6 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
         end
     end
 
-    
     for char, e in pairs(Logic.ESPObjects) do
         if not alive[char] or not char.Parent then
             hideAll(e)
@@ -2557,10 +2441,6 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
         end
     end
 end)
-
-
-
-
 
 UI.ServerListGrp = UI.Tabs.Servers:AddLeftGroupbox("Server List", "list")
 UI.ServerInfoGrp = UI.Tabs.Servers:AddRightGroupbox("Server Details", "info")
@@ -2941,10 +2821,6 @@ task.spawn(function()
     refreshDropdown()
 end)
 
-
-
-
-
 UI.UIBox = UI.Tabs.UISettings:AddLeftGroupbox("UI Configuration", "palette")
 
 UI.UIBox:AddButton("Unload UI", function() Library:Unload() end)
@@ -2957,25 +2833,11 @@ UI.UIBox:AddLabel("Menu Bind"):AddKeyPicker("MenuBind", {
 
 Library.ToggleKeybind = Options.MenuBind 
 
-ThemeManager:SetLibrary(Library)
-SaveManager:SetLibrary(Library)
-SaveManager:IgnoreThemeSettings()
-SaveManager:SetIgnoreIndexes({ "MenuBind" })
-
-ThemeManager:SetFolder("razorbill")
-SaveManager:SetFolder("mspaint/razorbillhub")
-
-SaveManager:BuildConfigSection(UI.Tabs.UISettings)
-ThemeManager:ApplyToTab(UI.Tabs.UISettings)
-
-if Options.AccentColor then
-    Options.AccentColor:SetValueRGB(Color3.fromRGB(185, 186, 189))
+-- Die ThemeManager und SaveManager Settings wurden entfernt
+-- Wir setzen hier manuell eine Standard-Accent-Farbe für das Ryu Hub (Rot)
+if Library.AccentColor then
+    Library:SetAccentColor(Color3.fromRGB(255, 50, 50)) 
 end
-
-SaveManager:LoadAutoloadConfig()
-
-
-
 
 Library:OnUnload(function()
     if Logic.Connections.ESP then Logic.Connections.ESP:Disconnect() end
@@ -2983,7 +2845,7 @@ Library:OnUnload(function()
     if Logic.Connections.PlayerAdded then Logic.Connections.PlayerAdded:Disconnect() end
     if Logic.Connections.PlayerRemoving then Logic.Connections.PlayerRemoving:Disconnect() end
     if Logic.Connections.DashInput then Logic.Connections.DashInput:Disconnect() end
-    pcall(function() RunService:UnbindFromRenderStep("RazorbillTargetLock") end)
+    pcall(function() RunService:UnbindFromRenderStep("RyuHubTargetLock") end)
     
     if Logic.LockState.ESPGui then 
         pcall(function() Logic.LockState.ESPGui:Destroy() end)
@@ -2991,7 +2853,6 @@ Library:OnUnload(function()
     if Logic.LockState.LockBodyGyro then
         pcall(function() Logic.LockState.LockBodyGyro:Destroy() end)
     end
-    
     
     if Logic.LockState.FOVCircle then pcall(function() Logic.LockState.FOVCircle:Remove() end) end
     if Logic.LockState.TargetInfoName then pcall(function() Logic.LockState.TargetInfoName:Remove() end) end
