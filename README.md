@@ -1,516 +1,118 @@
+--// ==========================================
+--// RYU HUB - UI OVERLAY & FULL LOGIC INTEGRATION
+--// 100% MONOCHROME CLEAN TEMPLATE
+--// ==========================================
+
+local LPH_NO_VIRTUALIZE = function(f) return f end
+if getgenv and getgenv().LPH_NO_VIRTUALIZE then
+    LPH_NO_VIRTUALIZE = getgenv().LPH_NO_VIRTUALIZE
+end
+
+local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
-local UserInputService = game:GetService("UserInputService")
 local PathfindingService = game:GetService("PathfindingService")
-local Player = Players.LocalPlayer
+
+local LocalPlayer = Players.LocalPlayer
+local Player = LocalPlayer
 local Mouse = Player:GetMouse()
+local camera = Workspace.CurrentCamera
 
--- Basis UI Library (Muss bleiben, sonst lädt das GUI nicht)
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/ValoranterDev/Obs0/refs/heads/main/Library.lua"))()
-
--- GitHubs für ThemeManager und SaveManager wurden restlos entfernt!
-local Options = Library.Options
-local Toggles = Library.Toggles
-
-Library.ForceCheckbox = false 
-Library.ShowToggleFrameInKeybinds = true 
-
-local UI = {}
-local Logic = {
-    TIME_WINDOW = 2,
-    LastFiredTick = 0,
-    TargetAnimations = {
-        ["100962226150441"] = true,
-        ["95852624447551"] = true,
-        ["74145636023952"] = true,
-        ["123171106092050"] = true
-    },
-    
-    DashAnimLeft = Instance.new("Animation"),
-    DashAnimRight = Instance.new("Animation"),
-    DashAssistState = {
-        Enabled = false,
-        CameraLock = false,
-        OnlyIfFacing = false,
-        DetectionRange = 60,
-        BehindDistance = 5,
-        FlightDuration = 0.42,
-        CurveStrength = 10,
-        ArchHeight = 3,
-        LockDuration = 0.35,
-    }, 
-    Pathfinding = {
-        Active = false,
-        Speed = 350,
-        VisualizeOn = true,
-        CurrentTween = nil,
-        VisualParts = {},
-        VisualFolder = nil,
-    },
-    TargetRemote = nil,
-    ESPObjects = {},
-    Connections = {},
-    ServerMap = {},
-    ShadowColor = Color3.fromRGB(0, 0, 0),
-    CooldownGradient = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(20, 255, 255)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 177, 255))
-    }),
-    R15Bones = {
-        {"Head","UpperTorso"}, {"UpperTorso","LowerTorso"},
-        {"UpperTorso","LeftUpperArm"},  {"LeftUpperArm","LeftLowerArm"},  {"LeftLowerArm","LeftHand"},
-        {"UpperTorso","RightUpperArm"}, {"RightUpperArm","RightLowerArm"},{"RightLowerArm","RightHand"},
-        {"LowerTorso","LeftUpperLeg"},  {"LeftUpperLeg","LeftLowerLeg"},  {"LeftLowerLeg","LeftFoot"},
-        {"LowerTorso","RightUpperLeg"}, {"RightUpperLeg","RightLowerLeg"},{"RightLowerLeg","RightFoot"},
-    },
-    R6Bones = {
-        {"Head","Torso"}, {"Torso","Left Arm"}, {"Torso","Right Arm"},
-        {"Torso","Left Leg"}, {"Torso","Right Leg"},
-    },
-    
-    LockSettings = {
-        ESPEnabled = false,
-        Sticky = false,
-        Method = "Camera",
-        TargetMode = "Closest",
-        TargetPart = "HumanoidRootPart",
-        Smoothness = 0,
-        SideOffset = 1.75,
-        
-        MaxDistance = 500,
-        WallCheck = false,
-        ShowFOV = false,
-        FOVRadius = 200,
-        FOVFilled = false,
-        FOVTransparency = 0.8,
-        FOVSides = 60,
-        Prediction = 0,
-        SelectedPlayer = "Auto",
-        ShowTargetInfo = false,
-        LockNotification = true,
-        AutoRetarget = false,
-        TargetInfoPos = "Top",
-    },
-    LockState = {
-        Enabled = false,
-        LastTargetSearch = 0,
-        WasLockedBody = false,
-        ZoomDistance = 10,
-        CurrentLockTarget = nil,
-        CameraLocked = false,
-        OrigCamType = Enum.CameraType.Custom,
-        LockBodyGyro = nil,
-        ESPGui = nil,
-        
-        FOVCircle = nil,
-        TargetInfoName = nil,
-        TargetInfoHP = nil,
-        TargetInfoDist = nil,
-        TargetInfoLine = nil,
-        LastTargetName = nil,
-    }
-}
-
--- RYU HUB GUI SETUP
-UI.Window = Library:CreateWindow({
-    Title = "Ryu Hub Premium",
-    Center = true,
-    AutoShow = true,
-    Resizable = true,
-    Icon = 10887309995, -- Neues Icon
-    NotifySide = "Right",
-    ShowCustomCursor = true,
-    TabSwipeOffset = 30,
-    Size = UDim2.new(0, 680, 0, 440), -- Etwas breiter und höher gemacht
-})
-
-UI.Tabs = {
-    Main = UI.Window:AddTab("Blackflash Chain", "zap", "Combat Modules"),
-    Visuals = UI.Window:AddTab("Visuals", "eye", "ESP and Visuals"),
-    Lock = UI.Window:AddTab("Lock", "crosshair", "Target Locking"),
-    Teleports = UI.Window:AddTab("Teleports", "map", "Travel"), 
-    SideDash = UI.Window:AddTab("Side Dash", "move-horizontal", "Side Dash Assist"), 
-    Servers = UI.Window:AddTab("Servers", "globe", "Server Browser"),
-    UISettings = UI.Window:AddTab("UI Settings", "settings", "Configure UI and visuals"),
-}
-
-UI.CombatGroup = UI.Tabs.Main:AddLeftGroupbox("Black Flash Chain", "swords")
-
-UI.CombatGroup:AddToggle("BlackFlashEnabled", {
-    Text = "Enable Black Flash Chain",
-    Default = false,
-    Tooltip = "Automatically target and dash behind enemies when using Divergent Fist."
-})
-
-UI.CombatGroup:AddToggle("CameraLockEnabled", {
-    Text = "Camera Lock During Dash",
-    Default = true,
-    Tooltip = "Forces your camera to lock onto the enemy's back while dashing."
-})
-
-UI.CombatGroup:AddSlider("DashDistance", {
-    Text = "Max Dash Distance",
-    Default = 15,
-    Min = 5,
-    Max = 50,
-    Rounding = 0,
-})
-
-UI.CombatGroup:AddSlider("FireDelay", {
-    Text = "Combo Fire Delay (s)",
-    Default = 0.25,
-    Min = 0.1,
-    Max = 1.0,
-    Rounding = 2,
-})
-
-UI.CombatGroup:AddSlider("DashDuration", {
-    Text = "Dash Duration (s)",
-    Default = 0.35,
-    Min = 0.1,
-    Max = 1.0,
-    Rounding = 2,
-})
-
-UI.CombatGroup:AddSlider("LockTime", {
-    Text = "post Dash Lock Time",
-    Default = 0.1,
-    Min = 0.0,
-    Max = 0.5,
-    Rounding = 2,
-})
-
-UI.CombatGroup:AddDropdown("DashEasingStyle", {
-    Values = {"Linear", "Sine", "Quad", "Cubic", "Quart", "Quint", "Expo", "Circ", "Elastic", "Back", "Bounce"},
-    Default = "Cubic",
-    Multi = false,
-    Text = "Dash Easing Style",
-    Tooltip = "Changes the momentum curve of the dash."
-})
-
-UI.CombatGroup:AddDropdown("DashEasingDirection", {
-    Values = {"In", "Out", "InOut"},
-    Default = "Out",
-    Multi = false,
-    Text = "Dash Easing Direction",
-    Tooltip = "In = Fast at end. Out = Fast at start. InOut = Fast in middle."
-})
-
-UI.ESPBoxGrp = UI.Tabs.Visuals:AddLeftGroupbox("ESP Overlays")
-
-UI.ESPBoxGrp:AddToggle("ESPBox", { Text = "Box ESP", Default = false })
-    :AddColorPicker("ESPBoxColor", { Default = Color3.fromRGB(255, 65, 65), Title = "Box Color" })
-
-UI.ESPBoxGrp:AddToggle("ESPCorner", { Text = "Corner ESP", Default = false })
-    :AddColorPicker("ESPCornerColor", { Default = Color3.fromRGB(0, 255, 255), Title = "Corner Color" })
-
-UI.ESPBoxGrp:AddToggle("ESPOutline", { Text = "Outline ESP", Default = false })
-    :AddColorPicker("ESPOutlineColor", { Default = Color3.fromRGB(255, 255, 255), Title = "Outline Color" })
-
-UI.ESPBoxGrp:AddToggle("ESPSkeleton", { Text = "Skeleton ESP", Default = false })
-    :AddColorPicker("ESPSkeletonColor", { Default = Color3.fromRGB(190, 90, 255), Title = "Skeleton Color" })
-
-UI.ESPBoxGrp:AddToggle("ESPHeadDot", { Text = "Head Dot", Default = false })
-    :AddColorPicker("ESPHeadDotColor", { Default = Color3.fromRGB(255, 255, 0), Title = "Head Dot Color" })
-
-UI.ESPBoxGrp:AddToggle("ESPTracer", { Text = "Tracer ESP", Default = false })
-    :AddColorPicker("ESPTracerColor", { Default = Color3.fromRGB(85, 255, 85), Title = "Tracer Color" })
-
-
-UI.ESPInfoGrp = UI.Tabs.Visuals:AddRightGroupbox("ESP Information")
-
-UI.ESPInfoGrp:AddToggle("ESPName", { Text = "Name ESP", Default = false })
-    :AddColorPicker("ESPNameColor", { Default = Color3.fromRGB(255, 255, 255), Title = "Name Color" })
-
-UI.ESPInfoGrp:AddToggle("ESPCharacter", { Text = "Character Moveset ESP", Default = false })
-    :AddColorPicker("ESPCharacterColor", { Default = Color3.fromRGB(180, 200, 255), Title = "Character Color" })
-
-UI.ESPInfoGrp:AddToggle("ESPDistance", { Text = "Distance ESP", Default = false })
-    :AddColorPicker("ESPDistanceColor", { Default = Color3.fromRGB(120, 200, 255), Title = "Distance Color" })
-
-UI.ESPInfoGrp:AddToggle("ESPKill", { Text = "Kill ESP", Default = false })
-    :AddColorPicker("ESPKillColor", { Default = Color3.fromRGB(255, 170, 0), Title = "Kill Color" })
-
-UI.ESPInfoGrp:AddToggle("ESPHPText", { Text = "HP Text", Default = false, Tooltip = "Shows actual Health values" })
-UI.ESPInfoGrp:AddToggle("ESPHPBar", { Text = "HP Bar", Default = false, Tooltip = "Shows a graphical Health bar" })
-
-UI.ESPInfoGrp:AddDivider()
-
-UI.ESPInfoGrp:AddToggle("CooldownRevealer", { Text = "Cooldown Revealer", Default = false, Tooltip = "Shows enemy moveset cooldowns, ultimate, and evasive." })
-
-UI.LockGroup = UI.Tabs.Lock:AddLeftGroupbox("Target Lock", "crosshair")
-UI.LockConfigGroup = UI.Tabs.Lock:AddRightGroupbox("Configuration", "settings")
-
-UI.LockGroup:AddToggle("EnableLock", { 
-    Text = "Enable Lock", 
-    Default = Logic.LockState.Enabled,
-    Callback = function(state) 
-        Logic.LockState.Enabled = state 
-        if Logic.LockSettings.LockNotification then
-            if state then
-                Library:Notify({ Title = "Ryu Hub Lock", Description = "Lock ENABLED - searching for targets...", Time = 2 })
-            else
-                if Logic.LockState.LastTargetName then
-                    Library:Notify({ Title = "Ryu Hub Lock", Description = "Unlocked from " .. tostring(Logic.LockState.LastTargetName), Time = 2 })
-                else
-                    Library:Notify({ Title = "Ryu Hub Lock", Description = "Lock DISABLED", Time = 2 })
-                end
-                Logic.LockState.LastTargetName = nil
-            end
-        end
-    end 
-}):AddKeyPicker("LockKeybind", {
-    Default = "C",
-    SyncToggleState = true,
-    Mode = "Toggle",
-    Text = "Lock Keybind",
-    NoUI = false
-})
-
-Options.LockKeybind:OnClick(function()
-    Toggles.EnableLock:SetValue(Options.LockKeybind:GetState())
-end)
-
-UI.LockGroup:AddToggle("LockESP", { 
-    Text = "Lock ESP", 
-    Default = Logic.LockSettings.ESPEnabled,
-    Callback = function(state) Logic.LockSettings.ESPEnabled = state end 
-})
-
-UI.LockGroup:AddDivider()
-
-UI.LockGroup:AddDropdown("LockSpecificPlayer", {
-    Values = {"Auto"},
-    Default = 1,
-    Multi = false,
-    Text = "Target Player",
-    Searchable = true,
-    Tooltip = "Lock onto a specific player only, or Auto for normal targeting.",
-    Callback = function(val) 
-        Logic.LockSettings.SelectedPlayer = val 
-        
-        if val ~= "Auto" then
-            Logic.LockState.CurrentLockTarget = nil
-            Logic.LockState.LastTargetSearch = 0
-        end
+--// GUI PARENT RESOLVER & CLEANUP
+local guiParent
+pcall(function()
+    if type(gethui) == "function" then
+        guiParent = gethui()
+    elseif syn and syn.protect_gui then
+        guiParent = CoreGui
     end
-})
+end)
+if not guiParent then guiParent = LocalPlayer:WaitForChild("PlayerGui") end
 
-UI.LockGroup:AddButton({
-    Text = "Refresh Player List",
-    Func = function()
-        local vals = {"Auto"}
-        local charsFolder = workspace:FindFirstChild("Characters")
-        
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= Player then
-                table.insert(vals, p.Name)
-            end
-        end
-        
-        if charsFolder then
-            for _, model in ipairs(charsFolder:GetChildren()) do
-                if model:IsA("Model") and not Players:GetPlayerFromCharacter(model) then
-                    local hum = model:FindFirstChildOfClass("Humanoid")
-                    if hum and hum.Health > 0 then
-                        local npcName = "[NPC] " .. model.Name
-                        if not table.find(vals, npcName) then
-                            table.insert(vals, npcName)
-                        end
-                    end
-                end
-            end
-        end
-        
-        Options.LockSpecificPlayer:SetValues(vals)
-        if not table.find(vals, Logic.LockSettings.SelectedPlayer) then
-            Logic.LockSettings.SelectedPlayer = "Auto"
-            Options.LockSpecificPlayer:SetValue("Auto")
-        end
-        Library:Notify({ Title = "Ryu Hub Lock", Description = "Player list refreshed! Found " .. (#vals - 1) .. " targets.", Time = 2 })
-    end,
-    Tooltip = "Refresh the list of available players and NPCs",
-})
+for _, v in pairs(guiParent:GetChildren()) do 
+    if v.Name == "RyuHubUI" then v:Destroy() end 
+end
 
-UI.LockGroup:AddToggle("LockWallCheck", {
-    Text = "Wall Check",
-    Default = false,
-    Tooltip = "Won't lock onto targets behind walls/obstacles.",
-    Callback = function(state) Logic.LockSettings.WallCheck = state end
-})
-
-UI.LockGroup:AddToggle("LockAutoRetarget", {
-    Text = "Auto Retarget",
-    Default = false,
-    Tooltip = "Automatically find a new target when current one dies (different from Sticky).",
-    Callback = function(state) Logic.LockSettings.AutoRetarget = state end
-})
-
-UI.LockGroup:AddToggle("LockNotification", {
-    Text = "Lock Notifications",
-    Default = true,
-    Tooltip = "Show notifications when locking/unlocking targets.",
-    Callback = function(state) Logic.LockSettings.LockNotification = state end
-})
-
-UI.LockConfigGroup:AddDropdown("LockMethod", {
-    Values = {"Camera", "Body"},
-    Default = 1,
-    Multi = false,
-    Text = "Method",
-    Callback = function(val) Logic.LockSettings.Method = val end
-})
-
-UI.LockConfigGroup:AddDropdown("LockTargetMode", {
-    Values = {"Closest", "Closest to Mouse"},
-    Default = 1,
-    Multi = false,
-    Text = "Target Mode",
-    Callback = function(val) Logic.LockSettings.TargetMode = val end
-})
-
-UI.LockConfigGroup:AddDropdown("LockTargetPart", {
-    Values = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso"},
-    Default = 2,
-    Multi = false,
-    Text = "Target Part",
-    Callback = function(val) Logic.LockSettings.TargetPart = val end
-})
-
-UI.LockConfigGroup:AddSlider("LockSmoothness", {
-    Text = "Smoothness",
-    Default = 0,
-    Min = 0,
-    Max = 20,
-    Rounding = 1,
-    Callback = function(val) Logic.LockSettings.Smoothness = val end
-})
-
-UI.LockConfigGroup:AddSlider("LockSideOffset", {
-    Text = "Camera Side Offset",
-    Default = 1.75,
-    Min = -8,
-    Max = 8,
-    Rounding = 2,
-    Callback = function(val) Logic.LockSettings.SideOffset = val end
-})
-
-UI.LockConfigGroup:AddDivider()
-
-UI.LockConfigGroup:AddSlider("LockMaxDistance", {
-    Text = "Max Lock Distance",
-    Default = 500,
-    Min = 10,
-    Max = 2000,
-    Rounding = 0,
-    Tooltip = "Maximum distance to lock onto a target (studs).",
-    Callback = function(val) Logic.LockSettings.MaxDistance = val end
-})
-
-UI.LockConfigGroup:AddSlider("LockPrediction", {
-    Text = "Prediction",
-    Default = 0,
-    Min = 0,
-    Max = 1,
-    Rounding = 2,
-    Tooltip = "Predicts target movement for smoother tracking. 0 = off.",
-    Callback = function(val) Logic.LockSettings.Prediction = val end
-})
-
-UI.DashGroup = UI.Tabs.SideDash:AddLeftGroupbox("Side Dash Settings", "move")
-UI.DashConfigGroup = UI.Tabs.SideDash:AddRightGroupbox("Arc Modifiers", "settings")
-
-UI.DashGroup:AddToggle("EnableDashAssist", {
-    Text = "Enable Side Dash Assist",
-    Default = Logic.DashAssistState.Enabled,
-    Callback = function(val) Logic.DashAssistState.Enabled = val end
-})
-
-UI.DashGroup:AddToggle("DashCameraLock", {
-    Text = "Lock Camera On Enemy",
-    Default = Logic.DashAssistState.CameraLock,
-    Callback = function(val) Logic.DashAssistState.CameraLock = val end
-})
-
-UI.DashGroup:AddToggle("DashOnlyIfFacing", {
-    Text = "Dash Only If Facing Front",
-    Default = Logic.DashAssistState.OnlyIfFacing,
-    Callback = function(val) Logic.DashAssistState.OnlyIfFacing = val end
-})
-
-UI.DashGroup:AddLabel("Dash Keybind"):AddKeyPicker("DashAssistKeybind", {
-    Default = "J",
-    SyncToggleState = false,
-    Mode = "Toggle",
-    Text = "Dash Keybind",
-    NoUI = false
-})
-
-UI.DashGroup:AddSlider("DashDetectionRange", {
-    Text = "Detection Range",
-    Default = 15, Min = 1, Max = 50, Rounding = 0,
-    Callback = function(val) Logic.DashAssistState.DetectionRange = val end
-})
-
-UI.DashGroup:AddSlider("DashBehindDistance", {
-    Text = "Behind Distance",
-    Default = 5, Min = 1, Max = 15, Rounding = 1,
-    Callback = function(val) Logic.DashAssistState.BehindDistance = val end
-})
-
-UI.DashGroup:AddSlider("DashFlightDuration", {
-    Text = "Flight Duration",
-    Default = 0.42, Min = 0.1, Max = 1, Rounding = 2,
-    Callback = function(val) Logic.DashAssistState.FlightDuration = val end
-})
-
-UI.DashConfigGroup:AddSlider("DashCurveStrength", {
-    Text = "Curve Strength",
-    Default = 10, Min = 0, Max = 25, Rounding = 1,
-    Callback = function(val) Logic.DashAssistState.CurveStrength = val end
-})
-
-UI.DashConfigGroup:AddSlider("DashArchHeight", {
-    Text = "Arch Height",
-    Default = 3, Min = 0, Max = 10, Rounding = 1,
-    Callback = function(val) Logic.DashAssistState.ArchHeight = val end
-})
-
-UI.DashConfigGroup:AddSlider("DashLockDuration", {
-    Text = "Lock Duration",
-    Default = 0.35, Min = 0.1, Max = 1.5, Rounding = 2,
-    Callback = function(val) Logic.DashAssistState.LockDuration = val end
-})
-
-local TeleportLocations = {
-    ["Under the Map"]      = Vector3.new(-20.23, -61.53, -146.34),
-    ["Unlicensed Studios"] = Vector3.new(196.86, 23.58, -37.27),
-    ["Towers"]             = Vector3.new(25.35, 183.08, 110.77),
-    ["Train Button"]       = Vector3.new(182.21, -9.33, 562.54),
-    ["Bowling"]            = Vector3.new(267.60, -59.89, -255.06),
-    ["Restaurant"]         = Vector3.new(-43.24, 23.63, -83.07),
-    ["Storage House"]      = Vector3.new(195.69, 23.58, 151.44),
-    ["Sewers 1"]           = Vector3.new(-148.14, -31.48, -127.22),
-    ["Train Station"]      = Vector3.new(185.27, -9.69, -97.17),
-    ["Sewers 2"]           = Vector3.new(60.84, -10.58, 167.47),
-    ["Shenanigans Mall"]   = Vector3.new(155.66, -26.38, -254.85),
-    ["Rhythm Game"]        = Vector3.new(12.23, -30.21, -315.03),
-    ["Piano"]              = Vector3.new(-86.38, 26.65, -252.48),
-    ["Convenience Store"]  = Vector3.new(-247.51, 26.96, -116.64),
-    ["Court"]              = Vector3.new(124.48, 23.78, -247.06),
-    ["Graveyard"]          = Vector3.new(228.55, 23.68, -130.48),
-    ["Train Station Exit"] = Vector3.new(1.52, 24.72, 396.06),
-    ["Tze's"]              = Vector3.new(-55.30, 23.62, 245.42),
-    ["Jail"]               = Vector3.new(-243.84, 23.58, 126.97),
+--// THEME
+local Theme = {
+    Background = Color3.fromRGB(15, 15, 15),
+    Sidebar = Color3.fromRGB(22, 22, 22),
+    SectionBG = Color3.fromRGB(30, 30, 30),
+    Text = Color3.fromRGB(255, 255, 255),
+    SubText = Color3.fromRGB(150, 150, 150),
+    Accent = Color3.fromRGB(255, 50, 50), -- Roter Akzent passend zu Ryu
+    ToggleOff = Color3.fromRGB(45, 45, 45),
+    ToggleOn = Color3.fromRGB(255, 255, 255),
+    Stroke = Color3.fromRGB(60, 60, 60)
 }
 
-local LocationNames = {}
-for k, _ in pairs(TeleportLocations) do table.insert(LocationNames, k) end
-table.sort(LocationNames)
+--// CONFIGURATION & STATE
+local RyuConfig = {
+    -- Combat / Blackflash
+    BlackFlashEnabled = false,
+    CameraLockEnabled = true,
+    DashDistance = 15,
+    FireDelay = 0.25,
+    DashDuration = 0.35,
+    LockTime = 0.1,
+    DashEasingStyle = Enum.EasingStyle.Cubic,
+    DashEasingDirection = Enum.EasingDirection.Out,
+    
+    -- Side Dash Assist
+    EnableDashAssist = false,
+    DashCameraLock = false,
+    DashOnlyIfFacing = false,
+    DashAssistKeybind = Enum.KeyCode.J,
+    DashDetectionRange = 15,
+    DashBehindDistance = 5,
+    DashFlightDuration = 0.42,
+    DashCurveStrength = 10,
+    DashArchHeight = 3,
+    DashLockDuration = 0.35,
+
+    -- ESP Visuals
+    ESPBox = false, ESPBoxColor = Color3.fromRGB(255, 65, 65),
+    ESPCorner = false, ESPCornerColor = Color3.fromRGB(0, 255, 255),
+    ESPOutline = false, ESPOutlineColor = Color3.fromRGB(255, 255, 255),
+    ESPSkeleton = false, ESPSkeletonColor = Color3.fromRGB(190, 90, 255),
+    ESPHeadDot = false, ESPHeadDotColor = Color3.fromRGB(255, 255, 0),
+    ESPTracer = false, ESPTracerColor = Color3.fromRGB(85, 255, 85),
+    ESPName = false, ESPNameColor = Color3.fromRGB(255, 255, 255),
+    ESPCharacter = false, ESPCharacterColor = Color3.fromRGB(180, 200, 255),
+    ESPDistance = false, ESPDistanceColor = Color3.fromRGB(120, 200, 255),
+    ESPKill = false, ESPKillColor = Color3.fromRGB(255, 170, 0),
+    ESPHPText = false, ESPHPBar = false, CooldownRevealer = false,
+
+    -- Lock System
+    LockKeybind = Enum.KeyCode.C,
+    LockSpecificPlayer = "Auto",
+}
+
+local Logic = {
+    TIME_WINDOW = 2, LastFiredTick = 0,
+    TargetAnimations = { ["100962226150441"] = true, ["95852624447551"] = true, ["74145636023952"] = true, ["123171106092050"] = true },
+    DashAnimLeft = Instance.new("Animation"), DashAnimRight = Instance.new("Animation"),
+    Pathfinding = { Active = false, Speed = 350, VisualizeOn = true, CurrentTween = nil, VisualParts = {}, VisualFolder = nil },
+    TargetRemote = nil, ESPObjects = {}, Connections = {}, ServerMap = {}, ServerList = {}, SelectedServerData = nil,
+    ShadowColor = Color3.fromRGB(0, 0, 0),
+    CooldownGradient = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(20, 255, 255)), ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 177, 255)) }),
+    R15Bones = { {"Head","UpperTorso"}, {"UpperTorso","LowerTorso"}, {"UpperTorso","LeftUpperArm"}, {"LeftUpperArm","LeftLowerArm"}, {"LeftLowerArm","LeftHand"}, {"UpperTorso","RightUpperArm"}, {"RightUpperArm","RightLowerArm"},{"RightLowerArm","RightHand"}, {"LowerTorso","LeftUpperLeg"}, {"LeftUpperLeg","LeftLowerLeg"}, {"LeftLowerLeg","LeftFoot"}, {"LowerTorso","RightUpperLeg"}, {"RightUpperLeg","RightLowerLeg"},{"RightLowerLeg","RightFoot"} },
+    R6Bones = { {"Head","Torso"}, {"Torso","Left Arm"}, {"Torso","Right Arm"}, {"Torso","Left Leg"}, {"Torso","Right Leg"} },
+    LockSettings = { ESPEnabled = false, Sticky = false, Method = "Camera", TargetMode = "Closest", TargetPart = "HumanoidRootPart", Smoothness = 0, SideOffset = 1.75, MaxDistance = 500, WallCheck = false, ShowFOV = false, FOVRadius = 200, FOVFilled = false, FOVTransparency = 0.8, FOVSides = 60, Prediction = 0, ShowTargetInfo = false, LockNotification = true, AutoRetarget = false, TargetInfoPos = "Top" },
+    LockState = { Enabled = false, LastTargetSearch = 0, WasLockedBody = false, ZoomDistance = 10, CurrentLockTarget = nil, CameraLocked = false, OrigCamType = Enum.CameraType.Custom, LockBodyGyro = nil, ESPGui = nil, FOVCircle = nil, TargetInfoName = nil, TargetInfoHP = nil, TargetInfoDist = nil, TargetInfoLine = nil, LastTargetName = nil }
+}
+Logic.DashAnimLeft.AnimationId = "rbxassetid://75203303352791"
+Logic.DashAnimRight.AnimationId = "rbxassetid://117223862448096"
+
+--// ==========================================
+--// LOGIC FUNCTIONS
+--// ==========================================
 
 _G.MiscState = _G.MiscState or {}
 local Invisibility = { Connections = {} }
@@ -526,16 +128,11 @@ function Invisibility.toggle(state, silent)
 
     if state then
         _G.MiscState.IsInvisible = true
-        if not silent then
-            hum.AutoRotate = false
-            hrp.Anchored = true
-        end
+        if not silent then hum.AutoRotate = false hrp.Anchored = true end
 
         Invisibility.Connections["InvisNoclip"] = RunService.Stepped:Connect(function()
             if not _G.MiscState.IsInvisible then return end
-            for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then part.CanCollide = false end
-            end
+            for _, part in ipairs(char:GetDescendants()) do if part:IsA("BasePart") then part.CanCollide = false end end
         end)
 
         _G.MiscState.InvisibleFakeTorso = Instance.new("Part")
@@ -553,9 +150,7 @@ function Invisibility.toggle(state, silent)
                 if not _G.MiscState.IsInvisible or not hrp or not hrp.Parent or not _G.MiscState.InvisibleFakeTorso then return end
                 local camCF = Camera.CFrame
                 local lookDir = Vector3.new(camCF.LookVector.X, 0, camCF.LookVector.Z)
-                if lookDir.Magnitude > 0.001 then
-                    hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + lookDir.Unit)
-                end
+                if lookDir.Magnitude > 0.001 then hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + lookDir.Unit) end
                 _G.MiscState.InvisibleFakeTorso.CFrame = CFrame.new(hrp.Position + Vector3.new(0, 1.5, 0))
             end)
         end
@@ -568,70 +163,36 @@ function Invisibility.toggle(state, silent)
             task.wait(0.1)
             _G.MiscState.InvisibleTrack.TimePosition = 0.1
             _G.MiscState.InvisibleTrack:AdjustSpeed(0)
-
-            for _, t in ipairs(animator:GetPlayingAnimationTracks()) do
-                if t ~= _G.MiscState.InvisibleTrack then t:Stop(0) end
-            end
-
-            Invisibility.Connections["InvisAnim"] = animator.AnimationPlayed:Connect(function(newTrack)
-                if newTrack ~= _G.MiscState.InvisibleTrack then newTrack:Stop(0) end
-            end)
+            for _, t in ipairs(animator:GetPlayingAnimationTracks()) do if t ~= _G.MiscState.InvisibleTrack then t:Stop(0) end end
+            Invisibility.Connections["InvisAnim"] = animator.AnimationPlayed:Connect(function(newTrack) if newTrack ~= _G.MiscState.InvisibleTrack then newTrack:Stop(0) end end)
         end)
-        Library:Notify({ Title = "Ryu Hub", Description = "Invisibility Enabled", Time = 2 })
     else
         _G.MiscState.IsInvisible = false
-        
-        if Invisibility.Connections["InvisNoclip"] then 
-            Invisibility.Connections["InvisNoclip"]:Disconnect() 
-            Invisibility.Connections["InvisNoclip"] = nil 
-        end
-        if Invisibility.Connections["InvisAnim"] then 
-            Invisibility.Connections["InvisAnim"]:Disconnect() 
-            Invisibility.Connections["InvisAnim"] = nil 
-        end
+        if Invisibility.Connections["InvisNoclip"] then Invisibility.Connections["InvisNoclip"]:Disconnect(); Invisibility.Connections["InvisNoclip"] = nil end
+        if Invisibility.Connections["InvisAnim"] then Invisibility.Connections["InvisAnim"]:Disconnect(); Invisibility.Connections["InvisAnim"] = nil end
         pcall(function() RunService:UnbindFromRenderStep("MeditationFocus") end)
-
-        if char and char.Parent then
-            for _, part in ipairs(char:GetDescendants()) do
-                if part:IsA("BasePart") then part.CanCollide = true end
-            end
-        end
+        if char and char.Parent then for _, part in ipairs(char:GetDescendants()) do if part:IsA("BasePart") then part.CanCollide = true end end end
         if hrp and hrp.Parent then hrp.Anchored = false end
         if hum and hum.Parent then hum.AutoRotate = true; Camera.CameraSubject = hum end
-        if _G.MiscState.InvisibleFakeTorso then 
-            _G.MiscState.InvisibleFakeTorso:Destroy() 
-            _G.MiscState.InvisibleFakeTorso = nil 
-        end
-        if _G.MiscState.InvisibleTrack then
-            pcall(function() _G.MiscState.InvisibleTrack:Stop(0) end)
-            pcall(function() _G.MiscState.InvisibleTrack:Destroy() end)
-            _G.MiscState.InvisibleTrack = nil
-        end
-        Library:Notify({ Title = "Ryu Hub", Description = "Invisibility Disabled", Time = 2 })
+        if _G.MiscState.InvisibleFakeTorso then _G.MiscState.InvisibleFakeTorso:Destroy(); _G.MiscState.InvisibleFakeTorso = nil end
+        if _G.MiscState.InvisibleTrack then pcall(function() _G.MiscState.InvisibleTrack:Stop(0) end); pcall(function() _G.MiscState.InvisibleTrack:Destroy() end); _G.MiscState.InvisibleTrack = nil end
     end
 end
 
 local function getWaypointSpacing(speed)
-    if speed <= 30 then return 4
-    elseif speed <= 100 then return 6
-    elseif speed <= 300 then return 10
-    elseif speed <= 600 then return 16
-    else return 24 end
+    if speed <= 30 then return 4 elseif speed <= 100 then return 6 elseif speed <= 300 then return 10 elseif speed <= 600 then return 16 else return 24 end
 end
 
 local function clearPathVisualization()
     for _, p in ipairs(Logic.Pathfinding.VisualParts) do pcall(function() p:Destroy() end) end
     Logic.Pathfinding.VisualParts = {}
-    if Logic.Pathfinding.VisualFolder and Logic.Pathfinding.VisualFolder.Parent then
-        Logic.Pathfinding.VisualFolder:Destroy()
-    end
+    if Logic.Pathfinding.VisualFolder and Logic.Pathfinding.VisualFolder.Parent then Logic.Pathfinding.VisualFolder:Destroy() end
     Logic.Pathfinding.VisualFolder = nil
 end
 
 local function visualizePath(waypoints)
     clearPathVisualization()
     if not Logic.Pathfinding.VisualizeOn then return end
-
     local folder = Instance.new("Folder")
     folder.Name = "PathVisuals"
     folder.Parent = workspace
@@ -691,7 +252,6 @@ local function tweenToPosition(hrp, targetPos, speed)
     local distance = (hrp.Position - targetPos).Magnitude
     if distance < 0.5 then return true end
     local duration = math.max(distance / speed, 0.001)
-
     local direction = (targetPos - hrp.Position)
     local flatDir = Vector3.new(direction.X, 0, direction.Z)
     local targetCF = flatDir.Magnitude > 0.1 and CFrame.new(targetPos, targetPos + flatDir.Unit) or CFrame.new(targetPos) * hrp.CFrame.Rotation
@@ -702,11 +262,7 @@ local function tweenToPosition(hrp, targetPos, speed)
 
     local done = false
     local conn
-    conn = tween.Completed:Connect(function()
-        done = true
-        if conn then conn:Disconnect() end
-    end)
-
+    conn = tween.Completed:Connect(function() done = true if conn then conn:Disconnect() end end)
     while not done and Logic.Pathfinding.Active do RunService.Heartbeat:Wait() end
     if not done and Logic.Pathfinding.CurrentTween == tween then tween:Cancel() end
     return done and Logic.Pathfinding.Active
@@ -717,7 +273,6 @@ local function stepToPosition(hrp, targetPos, speed)
     local direction = (targetPos - startPos)
     local distance = direction.Magnitude
     if distance < 0.5 then return true end
-
     local dirUnit = direction.Unit
     local flatDir = Vector3.new(dirUnit.X, 0, dirUnit.Z)
     local lookCF = flatDir.Magnitude > 0.01 and CFrame.lookAt(Vector3.zero, flatDir) or CFrame.new()
@@ -736,12 +291,10 @@ local function stopPathfinding()
     Logic.Pathfinding.Active = false
     if _G.MiscState and _G.MiscState.IsInvisible then Invisibility.toggle(false, false) end
     if Logic.Pathfinding.CurrentTween then pcall(function() Logic.Pathfinding.CurrentTween:Cancel() end) end
-    
     local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
     if hrp then hrp.Anchored = false end
     local hum = Player.Character and Player.Character:FindFirstChildOfClass("Humanoid")
     if hum then hum.PlatformStand = false end
-    
     clearPathVisualization()
 end
 
@@ -759,18 +312,10 @@ local function startPathfinding(targetPos)
             local humanoid = Player.Character and Player.Character:FindFirstChildOfClass("Humanoid")
             if not hrp or not humanoid then task.wait(1) continue end
 
-            if (hrp.Position - targetPos).Magnitude < 6 then
-                Library:Notify({ Title = "Teleport", Description = "Destination reached!", Time = 3 })
-                stopPathfinding()
-                break
-            end
+            if (hrp.Position - targetPos).Magnitude < 6 then stopPathfinding() break end
 
             local ok, _ = pcall(function() path:ComputeAsync(hrp.Position, targetPos) end)
-            if not ok or path.Status == Enum.PathStatus.NoPath then
-                Library:Notify({ Title = "Teleport", Description = "No path found! Retrying...", Time = 2 })
-                task.wait(1.5)
-                continue
-            end
+            if not ok or path.Status == Enum.PathStatus.NoPath then task.wait(1.5) continue end
 
             local batchedWP = batchWaypoints(path:GetWaypoints(), math.max(speed * 0.05, 2))
             visualizePath(path:GetWaypoints())
@@ -780,230 +325,21 @@ local function startPathfinding(targetPos)
 
             hrp.Anchored = true
             humanoid.PlatformStand = true
-
             local completed = true
             for i = 2, #batchedWP do
                 if not Logic.Pathfinding.Active or pathBlocked then completed = false break end
-                
                 local success
-                if Logic.Pathfinding.Speed > 500 then
-                    success = stepToPosition(hrp, batchedWP[i].Position, Logic.Pathfinding.Speed)
-                else
-                    success = tweenToPosition(hrp, batchedWP[i].Position, Logic.Pathfinding.Speed)
-                end
-
+                if Logic.Pathfinding.Speed > 500 then success = stepToPosition(hrp, batchedWP[i].Position, Logic.Pathfinding.Speed)
+                else success = tweenToPosition(hrp, batchedWP[i].Position, Logic.Pathfinding.Speed) end
                 if not success then completed = false break end
             end
 
             if blockedConn then blockedConn:Disconnect() end
-
-            if completed and Logic.Pathfinding.Active then
-                Library:Notify({ Title = "Teleport", Description = "Destination reached!", Time = 3 })
-                stopPathfinding()
-                break
-            end
+            if completed and Logic.Pathfinding.Active then stopPathfinding() break end
             task.wait(0.3)
         end
     end)
 end
-
-UI.TeleportGroup = UI.Tabs.Teleports:AddLeftGroupbox("Auto Teleport Settings", "map")
-
-UI.TeleportGroup:AddDropdown("TeleportDestination", {
-    Values = LocationNames,
-    Default = 1,
-    Multi = false,
-    Text = "Destination",
-    Searchable = true,
-})
-
-UI.TeleportGroup:AddDropdown("TeleportMode", {
-    Values = {"Tween", "Tween + Invis"},
-    Default = 1,
-    Multi = false,
-    Text = "Teleport Method",
-})
-
-UI.TeleportGroup:AddSlider("TeleportSpeed", {
-    Text = "Teleport Speed (Studs/s)",
-    Default = 350, Min = 30, Max = 1500, Rounding = 0,
-    Callback = function(val) Logic.Pathfinding.Speed = val end
-})
-
-UI.TeleportGroup:AddToggle("TeleportVisualize", {
-    Text = "Show Path Visualization",
-    Default = true,
-    Callback = function(val) Logic.Pathfinding.VisualizeOn = val end
-})
-
-UI.TeleportGroup:AddDivider()
-
-UI.TeleportGroup:AddButton({
-    Text = "Start Teleport",
-    Func = function()
-        local destName = Options.TeleportDestination.Value
-        local destPos = TeleportLocations[destName]
-        if destPos then
-            if Options.TeleportMode.Value == "Tween + Invis" then Invisibility.toggle(true, false) end
-            Library:Notify({ Title = "Teleport", Description = "Pathfinding to " .. destName .. "...", Time = 2 })
-            startPathfinding(destPos)
-        end
-    end
-})
-
-UI.TeleportGroup:AddButton({
-    Text = "Stop Teleport",
-    Func = function()
-        stopPathfinding()
-        Library:Notify({ Title = "Teleport", Description = "Teleport manually stopped.", Time = 2 })
-    end
-})
-
-task.spawn(function()
-    local circle = Drawing.new("Circle")
-    circle.Visible = false
-    circle.Thickness = 1.5
-    circle.NumSides = 60
-    circle.Filled = false
-    circle.Transparency = 0.2
-    circle.Color = Color3.fromRGB(255, 255, 255)
-    circle.Radius = 200
-    Logic.LockState.FOVCircle = circle
-end)
-
-task.spawn(function()
-    local nameText = Drawing.new("Text")
-    nameText.Visible = false
-    nameText.Size = 18
-    nameText.Center = true
-    nameText.Outline = true
-    nameText.OutlineColor = Color3.new(0, 0, 0)
-    nameText.Font = 2
-    nameText.Color = Color3.fromRGB(255, 255, 255)
-    Logic.LockState.TargetInfoName = nameText
-
-    local hpText = Drawing.new("Text")
-    hpText.Visible = false
-    hpText.Size = 15
-    hpText.Center = true
-    hpText.Outline = true
-    hpText.OutlineColor = Color3.new(0, 0, 0)
-    hpText.Font = 2
-    Logic.LockState.TargetInfoHP = hpText
-
-    local distText = Drawing.new("Text")
-    distText.Visible = false
-    distText.Size = 14
-    distText.Center = true
-    distText.Outline = true
-    distText.OutlineColor = Color3.new(0, 0, 0)
-    distText.Font = 2
-    Logic.LockState.TargetInfoDist = distText
-    
-    local sepLine = Drawing.new("Line")
-    sepLine.Visible = false
-    sepLine.Thickness = 1
-    sepLine.Color = Color3.fromRGB(255, 255, 255)
-    sepLine.Transparency = 0.5
-    Logic.LockState.TargetInfoLine = sepLine
-end)
-
-task.spawn(function()
-    if Logic.LockState.ESPGui then pcall(function() Logic.LockState.ESPGui:Destroy() end) end
-
-    local lockEspGui = Instance.new("BillboardGui")
-    lockEspGui.Name = "RyuHubLockESP"
-    lockEspGui.Size = UDim2.new(0, 150, 0, 150)
-    lockEspGui.AlwaysOnTop = true
-    lockEspGui.LightInfluence = 0
-    lockEspGui.Enabled = false 
-    lockEspGui.Adornee = nil
-
-    local mainImg = Instance.new("ImageLabel")
-    mainImg.Name = "Main"
-    mainImg.BackgroundTransparency = 1
-    mainImg.Image = "rbxassetid://119160428107030"
-    mainImg.Size = UDim2.new(0, 110, 0, 110)
-    mainImg.Position = UDim2.new(0.5, 0, 0.5, 0)
-    mainImg.AnchorPoint = Vector2.new(0.5, 0.5)
-    mainImg.Parent = lockEspGui
-
-    local markerImg = Instance.new("ImageLabel")
-    markerImg.Name = "Marker"
-    markerImg.BackgroundTransparency = 1
-    markerImg.Image = "rbxassetid://85142373343991"
-    markerImg.Size = UDim2.new(0, 25, 0, 15) 
-    markerImg.Position = UDim2.new(0.5, 0, -0.05, 0) 
-    markerImg.AnchorPoint = Vector2.new(0.5, 0.5)
-    markerImg.Parent = lockEspGui
-
-    pcall(function()
-        local coreGui = game:GetService("CoreGui")
-        if coreGui then lockEspGui.Parent = coreGui else lockEspGui.Parent = Player:WaitForChild("PlayerGui") end
-    end)
-    if not lockEspGui.Parent then lockEspGui.Parent = Player:WaitForChild("PlayerGui") end
-
-    Logic.LockState.ESPGui = lockEspGui
-end)
-
-local function refreshPlayerDropdown()
-    local vals = {"Auto"}
-    local charsFolder = workspace:FindFirstChild("Characters")
-    
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= Player then
-            table.insert(vals, p.Name)
-        end
-    end
-    
-    if charsFolder then
-        for _, model in ipairs(charsFolder:GetChildren()) do
-            if model:IsA("Model") and not Players:GetPlayerFromCharacter(model) then
-                local hum = model:FindFirstChildOfClass("Humanoid")
-                if hum and hum.Health > 0 then
-                    local npcName = "[NPC] " .. model.Name
-                    if not table.find(vals, npcName) then
-                        table.insert(vals, npcName)
-                    end
-                end
-            end
-        end
-    end
-    
-    pcall(function()
-        Options.LockSpecificPlayer:SetValues(vals)
-        if not table.find(vals, Logic.LockSettings.SelectedPlayer) then
-            Logic.LockSettings.SelectedPlayer = "Auto"
-            Options.LockSpecificPlayer:SetValue("Auto")
-        end
-    end)
-end
-
-Logic.Connections.PlayerAdded = Players.PlayerAdded:Connect(function()
-    task.wait(1)
-    refreshPlayerDropdown()
-end)
-
-Logic.Connections.PlayerRemoving = Players.PlayerRemoving:Connect(function(plr)
-    task.wait(0.5)
-    refreshPlayerDropdown()
-    
-    if Logic.LockState.CurrentLockTarget then
-        local targetPlayer = Players:GetPlayerFromCharacter(Logic.LockState.CurrentLockTarget)
-        if targetPlayer == plr then
-            Logic.LockState.CurrentLockTarget = nil
-            Logic.LockState.LastTargetName = nil
-            if Logic.LockSettings.LockNotification then
-                Library:Notify({ Title = "Ryu Hub Lock", Description = plr.Name .. " left the game. Target lost.", Time = 3 })
-            end
-        end
-    end
-end)
-
-task.spawn(function()
-    task.wait(1)
-    refreshPlayerDropdown()
-end)
 
 local function getLockTarget()
     if tick() - Logic.LockState.LastTargetSearch < 0.5 then return nil end
@@ -1014,8 +350,8 @@ local function getLockTarget()
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return nil end
 
-    if Logic.LockSettings.SelectedPlayer ~= "Auto" then
-        local selectedName = Logic.LockSettings.SelectedPlayer
+    if RyuConfig.LockSpecificPlayer ~= "Auto" then
+        local selectedName = RyuConfig.LockSpecificPlayer
         local isNPC = string.sub(selectedName, 1, 6) == "[NPC] "
         
         if isNPC then
@@ -1070,13 +406,7 @@ local function getLockTarget()
     local best, shortest = nil, math.huge
     local charsFolder = workspace:FindFirstChild("Characters")
     local entities = charsFolder and charsFolder:GetChildren() or {}
-    if #entities == 0 then
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p.Character then table.insert(entities, p.Character) end
-        end
-    end
-
-    local Camera = workspace.CurrentCamera
+    if #entities == 0 then for _, p in ipairs(Players:GetPlayers()) do if p.Character then table.insert(entities, p.Character) end end end
 
     for _, tChar in ipairs(entities) do
         if tChar:IsA("Model") and tChar ~= char then
@@ -1085,7 +415,6 @@ local function getLockTarget()
 
             if tHum and tHum.Health > 0 and tRoot then
                 local worldDist = (root.Position - tRoot.Position).Magnitude
-                
                 if worldDist > Logic.LockSettings.MaxDistance then continue end
                 
                 if Logic.LockSettings.WallCheck then
@@ -1099,10 +428,9 @@ local function getLockTarget()
                 if Logic.LockSettings.TargetMode == "Closest" then
                     if worldDist < shortest then shortest = worldDist; best = tChar end
                 else
-                    local pos, onScreen = Camera:WorldToViewportPoint(tRoot.Position)
+                    local pos, onScreen = camera:WorldToViewportPoint(tRoot.Position)
                     if onScreen then
                         local d = (Vector2.new(Mouse.X, Mouse.Y) - Vector2.new(pos.X, pos.Y)).Magnitude
-                        
                         if Logic.LockSettings.ShowFOV and Logic.LockSettings.FOVRadius > 0 then
                             if d > Logic.LockSettings.FOVRadius then continue end
                         end
@@ -1115,12 +443,6 @@ local function getLockTarget()
     return best
 end
 
-Logic.Connections.LockZoom = UserInputService.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseWheel and Logic.LockState.CameraLocked then
-        Logic.LockState.ZoomDistance = math.clamp(Logic.LockState.ZoomDistance - (input.Position.Z * 2), 4, 50)
-    end
-end)
-
 local function hideTargetInfoHUD()
     if Logic.LockState.TargetInfoName then Logic.LockState.TargetInfoName.Visible = false end
     if Logic.LockState.TargetInfoHP then Logic.LockState.TargetInfoHP.Visible = false end
@@ -1132,291 +454,6 @@ local function hideFOVCircle()
     if Logic.LockState.FOVCircle then Logic.LockState.FOVCircle.Visible = false end
 end
 
-RunService:BindToRenderStep("RyuHubTargetLock", Enum.RenderPriority.Camera.Value + 5, function(dt)
-    local Camera = workspace.CurrentCamera
-    local char = Player.Character
-    local hum  = char and char:FindFirstChildOfClass("Humanoid")
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    
-    local isAlive = (hum and hum.Health > 0 and root)
-
-    if Logic.LockState.FOVCircle then
-        if Logic.LockSettings.ShowFOV and Logic.LockState.Enabled then
-            Logic.LockState.FOVCircle.Position = Vector2.new(Mouse.X, Mouse.Y)
-            Logic.LockState.FOVCircle.Radius = Logic.LockSettings.FOVRadius
-            Logic.LockState.FOVCircle.Color = Options.FOVColor and Options.FOVColor.Value or Color3.fromRGB(255, 255, 255)
-            Logic.LockState.FOVCircle.Filled = Logic.LockSettings.FOVFilled
-            Logic.LockState.FOVCircle.Transparency = 1 - Logic.LockSettings.FOVTransparency
-            Logic.LockState.FOVCircle.NumSides = Logic.LockSettings.FOVSides
-            Logic.LockState.FOVCircle.Visible = true
-        else
-            Logic.LockState.FOVCircle.Visible = false
-        end
-    end
-
-    if not Logic.LockState.Enabled or not isAlive then
-        if Logic.LockState.ESPGui then 
-            Logic.LockState.ESPGui.Adornee = nil 
-            Logic.LockState.ESPGui.Enabled = false 
-        end
-        
-        if Logic.LockState.CameraLocked then
-            Camera.CameraType = Enum.CameraType.Custom
-            if hum then Camera.CameraSubject = hum end
-            Logic.LockState.CameraLocked = false
-        end
-
-        if Logic.LockState.WasLockedBody then
-            if hum then hum.AutoRotate = true end
-            if Logic.LockState.LockBodyGyro then Logic.LockState.LockBodyGyro:Destroy(); Logic.LockState.LockBodyGyro = nil end
-            Logic.LockState.WasLockedBody = false
-        end
-        
-        if not Logic.LockState.Enabled then
-            Logic.LockState.CurrentLockTarget = nil
-        end
-        
-        hideTargetInfoHUD()
-        return
-    end
-
-    if Logic.LockState.CurrentLockTarget then
-        local eHum = Logic.LockState.CurrentLockTarget:FindFirstChildOfClass("Humanoid")
-        local targetAlive = Logic.LockState.CurrentLockTarget.Parent and eHum and eHum.Health > 0
-        
-        if not targetAlive then
-            local deadName = Logic.LockState.LastTargetName
-            Logic.LockState.CurrentLockTarget = nil
-            Logic.LockState.LastTargetName = nil
-            
-            if Logic.LockSettings.AutoRetarget then
-                Logic.LockState.LastTargetSearch = 0 
-                if Logic.LockSettings.LockNotification and deadName then
-                    Library:Notify({ Title = "Ryu Hub Lock", Description = deadName .. " eliminated. Retargeting...", Time = 2 })
-                end
-            elseif Logic.LockSettings.Sticky then
-                
-                if Logic.LockSettings.LockNotification and deadName then
-                    Library:Notify({ Title = "Ryu Hub Lock", Description = deadName .. " eliminated. Target lost.", Time = 2 })
-                end
-            end
-        else
-            local tRoot = Logic.LockState.CurrentLockTarget:FindFirstChild("HumanoidRootPart") or Logic.LockState.CurrentLockTarget:FindFirstChild("Torso")
-            if tRoot then
-                local dist = (root.Position - tRoot.Position).Magnitude
-                if dist > Logic.LockSettings.MaxDistance then
-                    if not Logic.LockSettings.Sticky then
-                        Logic.LockState.CurrentLockTarget = nil
-                        if Logic.LockSettings.LockNotification then
-                            Library:Notify({ Title = "Ryu Hub Lock", Description = "Target out of range. Searching...", Time = 2 })
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    if not Logic.LockSettings.Sticky and Logic.LockState.CurrentLockTarget == nil then
-        Logic.LockState.CurrentLockTarget = getLockTarget()
-    elseif not Logic.LockState.CurrentLockTarget then
-        Logic.LockState.CurrentLockTarget = getLockTarget()
-    end
-    
-    if Logic.LockState.CurrentLockTarget then
-        local newName = Logic.LockState.CurrentLockTarget.Name
-        local plrFromChar = Players:GetPlayerFromCharacter(Logic.LockState.CurrentLockTarget)
-        if plrFromChar then newName = plrFromChar.DisplayName .. " (@" .. plrFromChar.Name .. ")" end
-        
-        if newName ~= Logic.LockState.LastTargetName then
-            Logic.LockState.LastTargetName = newName
-            if Logic.LockSettings.LockNotification then
-                Library:Notify({ Title = "Ryu Hub Lock", Description = "Locked onto: " .. newName, Time = 2 })
-            end
-        end
-    end
-    
-    if not Logic.LockState.CurrentLockTarget or not root or not hum then 
-        if Logic.LockState.ESPGui then 
-            Logic.LockState.ESPGui.Adornee = nil 
-            Logic.LockState.ESPGui.Enabled = false 
-        end
-        hideTargetInfoHUD()
-        return 
-    end
-
-    local targetPart = Logic.LockState.CurrentLockTarget:FindFirstChild(Logic.LockSettings.TargetPart)
-        or Logic.LockState.CurrentLockTarget:FindFirstChild("HumanoidRootPart")
-        
-    if not targetPart then 
-        if Logic.LockState.ESPGui then 
-            Logic.LockState.ESPGui.Adornee = nil 
-            Logic.LockState.ESPGui.Enabled = false 
-        end
-        hideTargetInfoHUD()
-        return 
-    end
-
-    local targetPos = targetPart.Position
-    if Logic.LockSettings.Prediction > 0 then
-        local tRoot = Logic.LockState.CurrentLockTarget:FindFirstChild("HumanoidRootPart")
-        if tRoot and tRoot:IsA("BasePart") then
-            targetPos = targetPos + (tRoot.AssemblyLinearVelocity * Logic.LockSettings.Prediction)
-        end
-    end
-
-    if Logic.LockSettings.ESPEnabled and Logic.LockState.ESPGui then
-        Logic.LockState.ESPGui.Enabled = true 
-        Logic.LockState.ESPGui.Adornee = targetPart
-        
-        local espMain = Logic.LockState.ESPGui:FindFirstChild("Main")
-        if espMain then
-            espMain.Rotation = (tick() * 45) % 360 
-        end
-        
-        local espMarker = Logic.LockState.ESPGui:FindFirstChild("Marker")
-        if espMarker then
-            espMarker.Position = UDim2.new(0.5, 0, -0.05, 0)
-        end
-    elseif Logic.LockState.ESPGui then
-        Logic.LockState.ESPGui.Adornee = nil
-        Logic.LockState.ESPGui.Enabled = false
-    end
-
-    if Logic.LockSettings.ShowTargetInfo and Logic.LockState.TargetInfoName then
-        local viewport = Camera.ViewportSize
-        local infoColor = Options.TargetInfoColor and Options.TargetInfoColor.Value or Color3.fromRGB(255, 255, 255)
-        local eHum = Logic.LockState.CurrentLockTarget:FindFirstChildOfClass("Humanoid")
-        local tDist = (root.Position - targetPart.Position).Magnitude
-        
-        local baseX, baseY
-        if Logic.LockSettings.TargetInfoPos == "Top Center" then
-            baseX = viewport.X / 2
-            baseY = 35
-        elseif Logic.LockSettings.TargetInfoPos == "Bottom Center" then
-            baseX = viewport.X / 2
-            baseY = viewport.Y - 90
-        elseif Logic.LockSettings.TargetInfoPos == "Top Right" then
-            baseX = viewport.X - 150
-            baseY = 35
-        else
-            baseX = viewport.X / 2
-            baseY = 35
-        end
-        
-        local displayName = Logic.LockState.CurrentLockTarget.Name
-        local plrFromChar = Players:GetPlayerFromCharacter(Logic.LockState.CurrentLockTarget)
-        if plrFromChar then displayName = plrFromChar.DisplayName end
-        
-        Logic.LockState.TargetInfoName.Text = "🎯 " .. displayName
-        Logic.LockState.TargetInfoName.Position = Vector2.new(baseX, baseY)
-        Logic.LockState.TargetInfoName.Color = infoColor
-        Logic.LockState.TargetInfoName.Visible = true
-        
-        Logic.LockState.TargetInfoLine.From = Vector2.new(baseX - 60, baseY + 20)
-        Logic.LockState.TargetInfoLine.To = Vector2.new(baseX + 60, baseY + 20)
-        Logic.LockState.TargetInfoLine.Color = infoColor
-        Logic.LockState.TargetInfoLine.Visible = true
-        
-        if eHum then
-            local hpFrac = math.clamp(eHum.Health / eHum.MaxHealth, 0, 1)
-            local hpCol = Color3.fromRGB(255 * (1 - hpFrac), 255 * hpFrac, 50)
-            Logic.LockState.TargetInfoHP.Text = string.format("HP: %d / %d (%.0f%%)", math.floor(eHum.Health), math.floor(eHum.MaxHealth), hpFrac * 100)
-            Logic.LockState.TargetInfoHP.Position = Vector2.new(baseX, baseY + 24)
-            Logic.LockState.TargetInfoHP.Color = hpCol
-            Logic.LockState.TargetInfoHP.Visible = true
-        else
-            Logic.LockState.TargetInfoHP.Visible = false
-        end
-        
-        Logic.LockState.TargetInfoDist.Text = string.format("Distance: %d studs", math.floor(tDist))
-        Logic.LockState.TargetInfoDist.Position = Vector2.new(baseX, baseY + 40)
-        Logic.LockState.TargetInfoDist.Color = infoColor
-        Logic.LockState.TargetInfoDist.Visible = true
-    else
-        hideTargetInfoHUD()
-    end
-
-    if Logic.LockSettings.Method == "Camera" then
-        if Logic.LockState.WasLockedBody then
-            hum.AutoRotate = true
-            if Logic.LockState.LockBodyGyro then Logic.LockState.LockBodyGyro:Destroy(); Logic.LockState.LockBodyGyro = nil end
-            Logic.LockState.WasLockedBody = false
-        end
-
-        if not Logic.LockState.CameraLocked then
-            Logic.LockState.OrigCamType = Camera.CameraType
-            local dist = (Camera.CFrame.Position - root.Position).Magnitude
-            if dist <= 50 then
-                Logic.LockState.ZoomDistance = math.clamp(dist, 4, 50)
-            else
-                Logic.LockState.ZoomDistance = 10 
-            end
-            Logic.LockState.CameraLocked = true
-        end
-
-        Camera.CameraType = Enum.CameraType.Scriptable
-
-        local offsetDir = root.Position - targetPos
-        local flatDir = Vector3.new(offsetDir.X, 0, offsetDir.Z)
-        
-        if flatDir.Magnitude < 0.001 then
-            flatDir = -root.CFrame.LookVector
-            flatDir = Vector3.new(flatDir.X, 0, flatDir.Z)
-        end
-        flatDir = flatDir.Unit
-
-        local baseHeight = Vector3.new(0, 2.5, 0)
-        local camPos = root.Position + (flatDir * Logic.LockState.ZoomDistance) + baseHeight
-
-        local lookCF = CFrame.lookAt(camPos, targetPos)
-        camPos = camPos + (lookCF.RightVector * Logic.LockSettings.SideOffset)
-
-        local rayParams = RaycastParams.new()
-        rayParams.FilterDescendantsInstances = {char, Logic.LockState.CurrentLockTarget}
-        rayParams.FilterType = Enum.RaycastFilterType.Exclude
-        
-        local rayStart = root.Position + Vector3.new(0, 1.5, 0)
-        local rayResult = workspace:Raycast(rayStart, camPos - rayStart, rayParams)
-        
-        if rayResult then
-            camPos = rayResult.Position + (lookCF.LookVector * 0.5)
-        end
-
-        local desiredCF = CFrame.lookAt(camPos, targetPos)
-
-        if Logic.LockSettings.Smoothness <= 0 then
-            Camera.CFrame = desiredCF
-        else
-            local rate  = 30 / Logic.LockSettings.Smoothness
-            local alpha = math.clamp(1 - math.exp(-rate * dt), 0, 1)
-            Camera.CFrame = Camera.CFrame:Lerp(desiredCF, alpha)
-        end
-
-    else
-        if Logic.LockState.CameraLocked then
-            Camera.CameraType = Enum.CameraType.Custom
-            Camera.CameraSubject = hum
-            Logic.LockState.CameraLocked = false
-        end
-
-        hum.AutoRotate = false
-        Logic.LockState.WasLockedBody = true
-
-        if not Logic.LockState.LockBodyGyro or Logic.LockState.LockBodyGyro.Parent ~= root then
-            if Logic.LockState.LockBodyGyro then Logic.LockState.LockBodyGyro:Destroy() end
-            Logic.LockState.LockBodyGyro = Instance.new("BodyGyro")
-            Logic.LockState.LockBodyGyro.MaxTorque = Vector3.new(0, 400000, 0)
-            Logic.LockState.LockBodyGyro.P = 50000
-            Logic.LockState.LockBodyGyro.D = 500
-            Logic.LockState.LockBodyGyro.Parent = root
-        end
-        Logic.LockState.LockBodyGyro.CFrame = CFrame.lookAt(
-            root.Position,
-            Vector3.new(targetPos.X, root.Position.Y, targetPos.Z)
-        )
-    end
-end)
-
 local function getClosestTarget(maxDist)
     local char = Player.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -1424,7 +461,6 @@ local function getClosestTarget(maxDist)
 
     local closest = nil
     local minDistance = math.huge
-
     local charactersFolder = workspace:FindFirstChild("Characters")
     local targetsToSearch = charactersFolder and charactersFolder:GetChildren() or workspace:GetChildren()
 
@@ -1432,7 +468,6 @@ local function getClosestTarget(maxDist)
         if model ~= char and model:IsA("Model") then
             local enemyRoot = model:FindFirstChild("HumanoidRootPart")
             local enemyHum = model:FindFirstChild("Humanoid")
-
             if enemyRoot and enemyHum and enemyHum.Health > 0 then
                 local dist = (enemyRoot.Position - root.Position).Magnitude
                 if dist < minDistance and dist <= maxDist then
@@ -1442,15 +477,10 @@ local function getClosestTarget(maxDist)
             end
         end
     end
-
     return closest
 end
 
-Logic.DashAnimLeft.AnimationId = "rbxassetid://75203303352791"
-Logic.DashAnimRight.AnimationId = "rbxassetid://117223862448096"
-
 local isDashingArc = false
-
 local function getBezierPoint(t, p0, p1, p2)
     return (1 - t)^2 * p0 + 2 * (1 - t) * t * p1 + t^2 * p2
 end
@@ -1465,12 +495,12 @@ local function executeDashArc(direction)
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not root or not humanoid then isDashingArc = false return end
 
-    local targetChar = getClosestTarget(Logic.DashAssistState.DetectionRange)
+    local targetChar = getClosestTarget(RyuConfig.DashDetectionRange)
     local target = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
 
     if not target then isDashingArc = false return end
 
-    if Logic.DashAssistState.OnlyIfFacing then
+    if RyuConfig.DashOnlyIfFacing then
         local toPlayer = (root.Position - target.Position).Unit
         local dot = target.CFrame.LookVector:Dot(toPlayer)
         if dot < -0.1 then isDashingArc = false return end
@@ -1489,29 +519,21 @@ local function executeDashArc(direction)
     local dashTrack = nil
     if animator then
         for _, track in pairs(animator:GetPlayingAnimationTracks()) do
-            if track.Animation and (track.Animation.AnimationId:match("117223862448096") or track.Animation.AnimationId:match("75203303352791")) then
-                track:Stop(0)
-            end
+            if track.Animation and (track.Animation.AnimationId:match("117223862448096") or track.Animation.AnimationId:match("75203303352791")) then track:Stop(0) end
         end
         local animToUse = (direction == "Left") and Logic.DashAnimLeft or Logic.DashAnimRight
         dashTrack = animator:LoadAnimation(animToUse)
         dashTrack.Priority = Enum.AnimationPriority.Action4
-        dashTrack:Play(0.05, 1, 1 / Logic.DashAssistState.FlightDuration)
+        dashTrack:Play(0.05, 1, 1 / RyuConfig.DashFlightDuration)
     end
 
     local p0 = root.Position
     local sideMult = (direction == "Left") and -1 or 1
-
     local progress = Instance.new("NumberValue")
     progress.Value = 0
     local dashName = "RyuHubFakeDash_" .. tostring(tick())
 
-    local tween = TweenService:Create(
-        progress,
-        TweenInfo.new(Logic.DashAssistState.FlightDuration, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut),
-        { Value = 1 }
-    )
-
+    local tween = TweenService:Create(progress, TweenInfo.new(RyuConfig.DashFlightDuration, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), { Value = 1 })
     local Camera = workspace.CurrentCamera
     local prevCamType = Camera.CameraType
 
@@ -1521,7 +543,7 @@ local function executeDashArc(direction)
             if root then root.Anchored = false end
             if humanoid then humanoid.AutoRotate = true end
             if dashTrack then dashTrack:Stop() end
-            if Logic.DashAssistState.CameraLock then Camera.CameraType = prevCamType end
+            if RyuConfig.DashCameraLock then Camera.CameraType = prevCamType end
             isDashingArc = false
             return
         end
@@ -1529,9 +551,7 @@ local function executeDashArc(direction)
         root.Anchored = true
         humanoid.AutoRotate = false
         root.AssemblyLinearVelocity = Vector3.zero
-
         local val = progress.Value
-
         local tPos = target.Position
         local tLook = target.CFrame.LookVector
         local flatLook = Vector3.new(tLook.X, 0, tLook.Z)
@@ -1541,20 +561,15 @@ local function executeDashArc(direction)
         local flatRight = Vector3.new(tRight.X, 0, tRight.Z)
         if flatRight.Magnitude > 0.001 then flatRight = flatRight.Unit else flatRight = Vector3.new(1, 0, 0) end
 
-        local p2 = tPos + (flatLook * -Logic.DashAssistState.BehindDistance)
+        local p2 = tPos + (flatLook * -RyuConfig.DashBehindDistance)
         local midPoint = (p0 + p2) / 2
-        local p1 = midPoint + (flatRight * (Logic.DashAssistState.CurveStrength * sideMult)) + Vector3.new(0, Logic.DashAssistState.ArchHeight, 0)
+        local p1 = midPoint + (flatRight * (RyuConfig.DashCurveStrength * sideMult)) + Vector3.new(0, RyuConfig.DashArchHeight, 0)
 
         local currentPos = getBezierPoint(val, p0, p1, p2)
-
         local lookPos = Vector3.new(tPos.X, currentPos.Y, tPos.Z)
-        if (lookPos - currentPos).Magnitude > 0.1 then
-            root.CFrame = CFrame.lookAt(currentPos, lookPos)
-        else
-            root.CFrame = CFrame.new(currentPos)
-        end
+        if (lookPos - currentPos).Magnitude > 0.1 then root.CFrame = CFrame.lookAt(currentPos, lookPos) else root.CFrame = CFrame.new(currentPos) end
 
-        if Logic.DashAssistState.CameraLock then
+        if RyuConfig.DashCameraLock then
             Camera.CameraType = Enum.CameraType.Scriptable
             local dirToEnemy = (tPos - root.Position).Unit
             local targetCamCF = CFrame.lookAt(root.Position - (dirToEnemy * 11) + Vector3.new(0, 4.5, 0), tPos)
@@ -1563,25 +578,18 @@ local function executeDashArc(direction)
     end)
 
     tween:Play()
-
     tween.Completed:Connect(function()
         RunService:UnbindFromRenderStep(dashName)
         progress:Destroy()
         if dashTrack then dashTrack:Stop(0.1) end
-
-        if Logic.DashAssistState.CameraLock then
-            Camera.CameraType = prevCamType
-        end
+        if RyuConfig.DashCameraLock then Camera.CameraType = prevCamType end
 
         local lockStart = tick()
         local lockName = "RyuHubDashLock_" .. tostring(lockStart)
         RunService:BindToRenderStep(lockName, 20000, function()
-            if tick() - lockStart > Logic.DashAssistState.LockDuration or not target or not target.Parent or not root then
+            if tick() - lockStart > RyuConfig.DashLockDuration or not target or not target.Parent or not root then
                 RunService:UnbindFromRenderStep(lockName)
-                if root then
-                    root.Anchored = false
-                    root.AssemblyLinearVelocity = Vector3.zero
-                end
+                if root then root.Anchored = false; root.AssemblyLinearVelocity = Vector3.zero end
                 if humanoid then humanoid.AutoRotate = true end
                 isDashingArc = false 
                 return
@@ -1589,66 +597,12 @@ local function executeDashArc(direction)
             root.Anchored = true
             if humanoid then humanoid.AutoRotate = false end
             root.AssemblyLinearVelocity = Vector3.zero
-
             local lockedPos = root.Position
             local facePos = Vector3.new(target.Position.X, lockedPos.Y, target.Position.Z)
-            if (facePos - lockedPos).Magnitude > 0.1 then
-                root.CFrame = CFrame.lookAt(lockedPos, facePos)
-            end
+            if (facePos - lockedPos).Magnitude > 0.1 then root.CFrame = CFrame.lookAt(lockedPos, facePos) end
         end)
     end)
 end
-
-Logic.Connections.DashInput = UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if not Logic.DashAssistState.Enabled then return end
-
-    local assignedKey = Options.DashAssistKeybind.Value
-    local targetKeyCode
-
-    if typeof(assignedKey) == "EnumItem" then
-        targetKeyCode = assignedKey
-    elseif typeof(assignedKey) == "string" then
-        local ok, kc = pcall(function() return Enum.KeyCode[assignedKey] end)
-        if ok then targetKeyCode = kc else return end
-    else
-        return
-    end
-
-    if input.KeyCode == targetKeyCode then
-        local direction = "Right"
-        local char = Player.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if hum and hum.MoveDirection.Magnitude > 0 then
-            local camRight = workspace.CurrentCamera.CFrame.RightVector * Vector3.new(1, 0, 1)
-            if camRight.Magnitude > 0 then
-                camRight = camRight.Unit
-                if hum.MoveDirection:Dot(camRight) < -0.2 then direction = "Left" end
-            end
-        end
-        task.spawn(function() executeDashArc(direction) end)
-    end
-end)
-
-task.spawn(function()
-    Logic.TargetRemote = ReplicatedStorage:WaitForChild("Knit")
-        :WaitForChild("Knit")
-        :WaitForChild("Services")
-        :WaitForChild("DivergentFistService")
-        :WaitForChild("RE")
-        :WaitForChild("Activated")
-end)
-
-local oldNamecall
-oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-    local method = getnamecallmethod()
-
-    if not checkcaller() and method == "FireServer" and self == Logic.TargetRemote and Toggles.BlackFlashEnabled.Value then
-        Logic.LastFiredTick = tick()
-    end
-
-    return oldNamecall(self, ...)
-end)
 
 local function autoFireDivergentFist()
     local character = Player.Character
@@ -1661,28 +615,24 @@ local function autoFireDivergentFist()
 end
 
 local function performDashLogic(target)
-    local MAX_DASH_DISTANCE = Options.DashDistance.Value
-    local FIRE_DELAY = Options.FireDelay.Value
-    local DASH_DURATION = Options.DashDuration.Value
-    local POST_DASH_LOCK_TIME = Options.LockTime.Value
+    local MAX_DASH_DISTANCE = RyuConfig.DashDistance
+    local FIRE_DELAY = RyuConfig.FireDelay
+    local DASH_DURATION = RyuConfig.DashDuration
+    local POST_DASH_LOCK_TIME = RyuConfig.LockTime
 
-    local easingStyleEnum = Enum.EasingStyle[Options.DashEasingStyle.Value] or Enum.EasingStyle.Cubic
-    local easingDirectionEnum = Enum.EasingDirection[Options.DashEasingDirection.Value] or Enum.EasingDirection.Out
+    local easingStyleEnum = RyuConfig.DashEasingStyle or Enum.EasingStyle.Cubic
+    local easingDirectionEnum = RyuConfig.DashEasingDirection or Enum.EasingDirection.Out
 
     local char = Player.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     local humanoid = char and char:FindFirstChild("Humanoid")
     local enemyRoot = target:FindFirstChild("HumanoidRootPart")
 
-    if not root or not enemyRoot then
-        task.delay(FIRE_DELAY, autoFireDivergentFist)
-        return
-    end
+    if not root or not enemyRoot then task.delay(FIRE_DELAY, autoFireDivergentFist) return end
 
     local initialEnemyCFrame = enemyRoot.CFrame
     local initialEnemyPos = initialEnemyCFrame.Position
     local startPos = root.Position
-
     local objectSpacePos = initialEnemyCFrame:PointToObjectSpace(startPos)
     local isBehind = objectSpacePos.Z > 0
     local distanceToEnemy = (startPos - initialEnemyPos).Magnitude
@@ -1700,22 +650,15 @@ local function performDashLogic(target)
     else
         dashType = "Arch"
         endPos = (initialEnemyCFrame * CFrame.new(0, 0, 4)).Position
-
         local distance = (endPos - startPos).Magnitude
         local archWidth = math.clamp(distance / 1.5, 5, 25)
-
         local direction = endPos - startPos
         local perp = Vector3.new(-direction.Z, 0, direction.X)
-        if perp.Magnitude > 0.001 then
-            perp = perp.Unit
-        else
-            perp = Vector3.new(1, 0, 0)
-        end
+        if perp.Magnitude > 0.001 then perp = perp.Unit else perp = Vector3.new(1, 0, 0) end
 
         local midPos = (startPos + endPos) / 2
         local cp1 = midPos + (perp * archWidth)
         local cp2 = midPos - (perp * archWidth)
-
         local enemyRightVector = initialEnemyCFrame.RightVector
         local playerIsOnRightSide = (startPos - initialEnemyPos):Dot(enemyRightVector) > 0
         local cp1IsOnRightSide = (cp1 - initialEnemyPos):Dot(enemyRightVector) > 0
@@ -1733,75 +676,51 @@ local function performDashLogic(target)
         if dashConn then dashConn:Disconnect() end
         if humanoid then humanoid.AutoRotate = true end
         if finalCFrame and root and root.Parent then root.CFrame = finalCFrame end
-
-        if not hasFired then
-            hasFired = true
-            autoFireDivergentFist()
-        end
+        if not hasFired then hasFired = true; autoFireDivergentFist() end
     end
 
     dashConn = RunService.Heartbeat:Connect(function()
         if not root or not root.Parent then return finalizeMovement(nil) end
 
         local elapsed = tick() - startTime
-
-        if elapsed >= FIRE_DELAY and not hasFired then
-            hasFired = true
-            autoFireDivergentFist()
-        end
+        if elapsed >= FIRE_DELAY and not hasFired then hasFired = true; autoFireDivergentFist() end
 
         local currentPos = startPos
         if isDash then
             local alpha = math.clamp(elapsed / DASH_DURATION, 0, 1)
             local easedAlpha = TweenService:GetValue(alpha, easingStyleEnum, easingDirectionEnum)
 
-            if dashType == "Straight" then
-                currentPos = startPos:Lerp(endPos, easedAlpha)
-            elseif dashType == "Arch" then
-                currentPos = (1 - easedAlpha)^2 * startPos + 2 * (1 - easedAlpha) * easedAlpha * controlPos + easedAlpha^2 * endPos
-            end
+            if dashType == "Straight" then currentPos = startPos:Lerp(endPos, easedAlpha)
+            elseif dashType == "Arch" then currentPos = (1 - easedAlpha)^2 * startPos + 2 * (1 - easedAlpha) * easedAlpha * controlPos + easedAlpha^2 * endPos end
         end
 
         root.CFrame = CFrame.lookAt(currentPos, initialEnemyPos)
 
-        if Toggles.CameraLockEnabled.Value then
+        if RyuConfig.CameraLockEnabled then
             local cam = workspace.CurrentCamera
-            if cam then
-                cam.CFrame = CFrame.lookAt(cam.CFrame.Position, initialEnemyPos)
-            end
+            if cam then cam.CFrame = CFrame.lookAt(cam.CFrame.Position, initialEnemyPos) end
         end
 
         local totalWaitTime = isDash and (DASH_DURATION + POST_DASH_LOCK_TIME) or (FIRE_DELAY + POST_DASH_LOCK_TIME)
-
-        if elapsed >= totalWaitTime then
-            finalizeMovement(CFrame.lookAt(currentPos, initialEnemyPos))
-        end
+        if elapsed >= totalWaitTime then finalizeMovement(CFrame.lookAt(currentPos, initialEnemyPos)) end
     end)
 end
 
 local function onAnimationPlayed(animTrack)
     local animId = animTrack.Animation and animTrack.Animation.AnimationId or ""
 
-    if Logic.DashAssistState.Enabled and not isDashingArc then
-        if animId:match("75203303352791") then
-            task.spawn(function() executeDashArc("Left") end)
-        elseif animId:match("117223862448096") then
-            task.spawn(function() executeDashArc("Right") end)
-        end
+    if RyuConfig.EnableDashAssist and not isDashingArc then
+        if animId:match("75203303352791") then task.spawn(function() executeDashArc("Left") end)
+        elseif animId:match("117223862448096") then task.spawn(function() executeDashArc("Right") end) end
     end
 
-    if Toggles.BlackFlashEnabled.Value then
+    if RyuConfig.BlackFlashEnabled then
         local idMatch = string.match(animId, "%d+")
         if idMatch and Logic.TargetAnimations[idMatch] then
             if (tick() - Logic.LastFiredTick) <= Logic.TIME_WINDOW then
                 Logic.LastFiredTick = 0
-
-                local closestTarget = getClosestTarget(Options.DashDistance.Value)
-                if closestTarget then
-                    performDashLogic(closestTarget)
-                else
-                    task.delay(Options.FireDelay.Value, autoFireDivergentFist)
-                end
+                local closestTarget = getClosestTarget(RyuConfig.DashDistance)
+                if closestTarget then performDashLogic(closestTarget) else task.delay(RyuConfig.FireDelay, autoFireDivergentFist) end
             end
         end
     end
@@ -1811,14 +730,9 @@ local function setupCharacter(character)
     local humanoid = character:WaitForChild("Humanoid", 10)
     if humanoid then
         local animator = humanoid:WaitForChild("Animator", 10)
-        if animator then
-            animator.AnimationPlayed:Connect(onAnimationPlayed)
-        end
+        if animator then animator.AnimationPlayed:Connect(onAnimationPlayed) end
     end
 end
-
-if Player.Character then task.spawn(setupCharacter, Player.Character) end
-Player.CharacterAdded:Connect(setupCharacter)
 
 local function w2v(pos)
     local cam = workspace.CurrentCamera
@@ -1835,28 +749,22 @@ end
 local function getCharBounds(char)
     local cam = workspace.CurrentCamera
     if not cam then return nil end
-
     local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
     if not hrp then return nil end
-
     local head = char:FindFirstChild("Head")
     local pos  = hrp.Position
-
     local topY = head and (head.Position.Y + 0.5) or (pos.Y + 2.8)
     local botY = pos.Y - 3.1
     local topWorld = Vector3.new(pos.X, topY, pos.Z)
     local botWorld = Vector3.new(pos.X, botY, pos.Z)
-
     local topSP, topOn = cam:WorldToViewportPoint(topWorld)
     local botSP, botOn = cam:WorldToViewportPoint(botWorld)
 
     if not topOn or not botOn then return nil end
-
     local h  = math.abs(botSP.Y - topSP.Y)
     local w  = h * 0.5
     local cx = (topSP.X + botSP.X) / 2
     local my = math.min(topSP.Y, botSP.Y)
-
     return { X = cx - w / 2, Y = my, W = w, H = h, CX = cx, CY = (topSP.Y + botSP.Y) / 2 }
 end
 
@@ -1864,15 +772,10 @@ local function getEntities()
     local out = {}
     local folder = workspace:FindFirstChild("Characters")
     local targetsToSearch = folder and folder:GetChildren() or workspace:GetChildren()
-
     for _, char in ipairs(targetsToSearch) do
         if char:IsA("Model") and char:FindFirstChildOfClass("Humanoid") then
             local plr = Players:GetPlayerFromCharacter(char)
-            out[#out + 1] = {
-                Model  = char,
-                Player = plr,
-                Name   = plr and plr.DisplayName or char.Name,
-            }
+            out[#out + 1] = { Model = char, Player = plr, Name = plr and plr.DisplayName or char.Name }
         end
     end
     return out
@@ -1880,28 +783,19 @@ end
 
 local function mkLine(thick)
     local l = Drawing.new("Line")
-    l.Visible = false
-    l.Thickness = thick or 1
+    l.Visible = false; l.Thickness = thick or 1
     return l
 end
 
 local function mkCircle(thick, filled)
     local c = Drawing.new("Circle")
-    c.Visible = false
-    c.Thickness = thick or 2
-    c.Filled = filled or false
-    c.NumSides = 30
+    c.Visible = false; c.Thickness = thick or 2; c.Filled = filled or false; c.NumSides = 30
     return c
 end
 
 local function mkText(size)
     local t = Drawing.new("Text")
-    t.Visible = false
-    t.Size = size or 14
-    t.Center = true
-    t.Outline = true
-    t.OutlineColor = Color3.new(0, 0, 0)
-    t.Font = 2
+    t.Visible = false; t.Size = size or 14; t.Center = true; t.Outline = true; t.OutlineColor = Color3.new(0, 0, 0); t.Font = 2
     return t
 end
 
@@ -1943,12 +837,7 @@ local function CreateCooldownBillboard(character, player, rootPart)
     Ult.BorderSizePixel = 0
     Ult.Size = UDim2.new(0.25, 0, 1, 0)
     Ult.Parent = Reveal
-    
-    local UltStroke = Instance.new("UIStroke")
-    UltStroke.Thickness = 2
-    UltStroke.Transparency = 0.5
-    UltStroke.Color = Color3.fromRGB(0, 0, 0)
-    UltStroke.Parent = Ult
+    local UltStroke = Instance.new("UIStroke"); UltStroke.Thickness = 2; UltStroke.Transparency = 0.5; UltStroke.Color = Color3.fromRGB(0, 0, 0); UltStroke.Parent = Ult
 
     local UltFill = Instance.new("Frame")
     UltFill.Name = "Fill"
@@ -1959,10 +848,7 @@ local function CreateCooldownBillboard(character, player, rootPart)
     UltFill.BorderSizePixel = 0
     UltFill.Size = UDim2.new(1, 0, 0, 0) 
     UltFill.Parent = Ult
-
-    local UltFillGradient = Instance.new("UIGradient")
-    UltFillGradient.Color = Logic.CooldownGradient
-    UltFillGradient.Parent = UltFill
+    local UltFillGradient = Instance.new("UIGradient"); UltFillGradient.Color = Logic.CooldownGradient; UltFillGradient.Parent = UltFill
 
     local Evasive = Instance.new("Frame")
     Evasive.Name = "Evasive"
@@ -1973,12 +859,7 @@ local function CreateCooldownBillboard(character, player, rootPart)
     Evasive.BorderSizePixel = 0
     Evasive.Size = UDim2.new(0.1, 0, 1, 0)
     Evasive.Parent = Reveal
-    
-    local EvasiveStroke = Instance.new("UIStroke")
-    EvasiveStroke.Thickness = 2
-    EvasiveStroke.Transparency = 0.5
-    EvasiveStroke.Color = Color3.fromRGB(0, 0, 0)
-    EvasiveStroke.Parent = Evasive
+    local EvasiveStroke = Instance.new("UIStroke"); EvasiveStroke.Thickness = 2; EvasiveStroke.Transparency = 0.5; EvasiveStroke.Color = Color3.fromRGB(0, 0, 0); EvasiveStroke.Parent = Evasive
 
     local EvasiveFill = Instance.new("Frame")
     EvasiveFill.Name = "Fill"
@@ -1989,85 +870,39 @@ local function CreateCooldownBillboard(character, player, rootPart)
     EvasiveFill.BorderSizePixel = 0
     EvasiveFill.Size = UDim2.new(1, 0, 0, 0)
     EvasiveFill.Parent = Evasive
-
-    local EvasiveFillGradient = Instance.new("UIGradient")
-    EvasiveFillGradient.Color = Logic.CooldownGradient
-    EvasiveFillGradient.Parent = EvasiveFill
+    local EvasiveFillGradient = Instance.new("UIGradient"); EvasiveFillGradient.Color = Logic.CooldownGradient; EvasiveFillGradient.Parent = EvasiveFill
 
     local connections = {}
     local moveFrames = {}
 
     local function addMoveCooldown(moveValue)
         if moveFrames[moveValue] then return end
-
         local Move = Instance.new("Frame")
-        Move.Name = moveValue.Name
-        Move.BackgroundColor3 = Color3.fromRGB(31, 31, 31)
-        Move.BackgroundTransparency = 0.5
-        Move.BorderSizePixel = 0
-        Move.Size = UDim2.new(1, 0, 0.22, 0)
-        Move.Parent = Moveset
-
-        local MoveStroke = Instance.new("UIStroke")
-        MoveStroke.Thickness = 2
-        MoveStroke.Transparency = 0.5
-        MoveStroke.Color = Color3.fromRGB(0, 0, 0)
-        MoveStroke.Parent = Move
+        Move.Name = moveValue.Name; Move.BackgroundColor3 = Color3.fromRGB(31, 31, 31); Move.BackgroundTransparency = 0.5; Move.BorderSizePixel = 0; Move.Size = UDim2.new(1, 0, 0.22, 0); Move.Parent = Moveset
+        local MoveStroke = Instance.new("UIStroke"); MoveStroke.Thickness = 2; MoveStroke.Transparency = 0.5; MoveStroke.Color = Color3.fromRGB(0, 0, 0); MoveStroke.Parent = Move
 
         local MoveCooldown = Instance.new("Frame")
-        MoveCooldown.Name = "Cooldown"
-        MoveCooldown.AnchorPoint = Vector2.new(0.5, 1)
-        MoveCooldown.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        MoveCooldown.BackgroundTransparency = 0.25
-        MoveCooldown.Position = UDim2.new(0.5, 0, 1, 0)
-        MoveCooldown.BorderSizePixel = 0
-        MoveCooldown.Size = UDim2.new(1, 0, 0, 0)
-        MoveCooldown.ZIndex = 1 
-        MoveCooldown.Parent = Move
-
-        local MoveGradient = Instance.new("UIGradient")
-        MoveGradient.Color = Logic.CooldownGradient
-        MoveGradient.Parent = MoveCooldown
+        MoveCooldown.Name = "Cooldown"; MoveCooldown.AnchorPoint = Vector2.new(0.5, 1); MoveCooldown.BackgroundColor3 = Color3.fromRGB(255, 255, 255); MoveCooldown.BackgroundTransparency = 0.25; MoveCooldown.Position = UDim2.new(0.5, 0, 1, 0); MoveCooldown.BorderSizePixel = 0; MoveCooldown.Size = UDim2.new(1, 0, 0, 0); MoveCooldown.ZIndex = 1; MoveCooldown.Parent = Move
+        local MoveGradient = Instance.new("UIGradient"); MoveGradient.Color = Logic.CooldownGradient; MoveGradient.Parent = MoveCooldown
         
         local MoveText = Instance.new("TextLabel")
-        MoveText.Name = "MoveNameText"
-        MoveText.Parent = Move
-        MoveText.Size = UDim2.new(1, -4, 1, -4) 
-        MoveText.Position = UDim2.new(0, 2, 0, 2)
-        MoveText.BackgroundTransparency = 1
-        MoveText.Text = moveValue.Name
-        MoveText.TextColor3 = Color3.fromRGB(255, 255, 255)
-        MoveText.TextScaled = true
-        MoveText.Font = Enum.Font.GothamBold
-        MoveText.ZIndex = 2 
-        
-        local TextStroke = Instance.new("UIStroke")
-        TextStroke.Parent = MoveText
-        TextStroke.Thickness = 1.2
-        TextStroke.Color = Color3.fromRGB(0, 0, 0)
+        MoveText.Name = "MoveNameText"; MoveText.Parent = Move; MoveText.Size = UDim2.new(1, -4, 1, -4); MoveText.Position = UDim2.new(0, 2, 0, 2); MoveText.BackgroundTransparency = 1; MoveText.Text = moveValue.Name; MoveText.TextColor3 = Color3.fromRGB(255, 255, 255); MoveText.TextScaled = true; MoveText.Font = Enum.Font.GothamBold; MoveText.ZIndex = 2 
+        local TextStroke = Instance.new("UIStroke"); TextStroke.Parent = MoveText; TextStroke.Thickness = 1.2; TextStroke.Color = Color3.fromRGB(0, 0, 0)
 
         moveFrames[moveValue] = Move
 
         table.insert(connections, moveValue:GetAttributeChangedSignal("ReadyAt"):Connect(function()
             local maxCd = moveValue.Value or 0
             local readyAt = moveValue:GetAttribute("ReadyAt")
-
             if maxCd <= 0 or not readyAt then
                 if MoveCooldown then MoveCooldown.Size = UDim2.new(1, 0, 0, 0) end
                 return
             end
-
             task.spawn(function()
                 while MoveCooldown and MoveCooldown.Parent and Reveal and Reveal.Parent do
                     local currentTime = workspace:GetServerTimeNow()
                     local remaining = readyAt - currentTime
-                    
-                    if remaining <= 0 then
-                        MoveCooldown.Size = UDim2.new(1, 0, 0, 0)
-                        break
-                    else
-                        MoveCooldown.Size = UDim2.new(1, 0, math.clamp(remaining / maxCd, 0, 1), 0)
-                    end
+                    if remaining <= 0 then MoveCooldown.Size = UDim2.new(1, 0, 0, 0) break else MoveCooldown.Size = UDim2.new(1, 0, math.clamp(remaining / maxCd, 0, 1), 0) end
                     task.wait()
                 end
             end)
@@ -2077,19 +912,11 @@ local function CreateCooldownBillboard(character, player, rootPart)
     local function trackMoveset()
         local moveset = character:FindFirstChild("Moveset")
         if not moveset then return end
-
-        for _, child in ipairs(moveset:GetChildren()) do
-            if child:IsA("NumberValue") then addMoveCooldown(child) end
-        end
-
-        table.insert(connections, moveset.ChildAdded:Connect(function(child)
-            if child:IsA("NumberValue") then addMoveCooldown(child) end
-        end))
+        for _, child in ipairs(moveset:GetChildren()) do if child:IsA("NumberValue") then addMoveCooldown(child) end end
+        table.insert(connections, moveset.ChildAdded:Connect(function(child) if child:IsA("NumberValue") then addMoveCooldown(child) end end))
     end
 
-    table.insert(connections, character.ChildAdded:Connect(function(child)
-        if child.Name == "Moveset" then trackMoveset() end
-    end))
+    table.insert(connections, character.ChildAdded:Connect(function(child) if child.Name == "Moveset" then trackMoveset() end end))
     trackMoveset()
 
     local function updateUltimate()
@@ -2110,9 +937,7 @@ local function CreateCooldownBillboard(character, player, rootPart)
 
     local function Cleanup()
         if Reveal then Reveal:Destroy() end
-        for _, conn in ipairs(connections) do
-            conn:Disconnect()
-        end
+        for _, conn in ipairs(connections) do conn:Disconnect() end
         table.clear(connections)
     end
 
@@ -2122,40 +947,17 @@ end
 local function createESP()
     local e = {}
     e.BoxS = {}; e.BoxL = {}
-    for i = 1, 4 do
-        e.BoxS[i] = mkLine(3.5); e.BoxS[i].Color = Logic.ShadowColor
-        e.BoxL[i] = mkLine(1.5)
-    end
-
+    for i = 1, 4 do e.BoxS[i] = mkLine(3.5); e.BoxS[i].Color = Logic.ShadowColor; e.BoxL[i] = mkLine(1.5) end
     e.CorS = {}; e.CorL = {}
-    for i = 1, 8 do
-        e.CorS[i] = mkLine(3.5); e.CorS[i].Color = Logic.ShadowColor
-        e.CorL[i] = mkLine(1.5)
-    end
-
+    for i = 1, 8 do e.CorS[i] = mkLine(3.5); e.CorS[i].Color = Logic.ShadowColor; e.CorL[i] = mkLine(1.5) end
     e.Skel = {}
     for i = 1, 14 do e.Skel[i] = mkLine(1.5) end
-
-    e.HDotS = mkCircle(4, false); e.HDotS.Color = Logic.ShadowColor
-    e.HDot  = mkCircle(2, false)
-
-    e.TrcS = mkLine(3); e.TrcS.Color = Logic.ShadowColor
-    e.Trc  = mkLine(1.5)
-
+    e.HDotS = mkCircle(4, false); e.HDotS.Color = Logic.ShadowColor; e.HDot  = mkCircle(2, false)
+    e.TrcS = mkLine(3); e.TrcS.Color = Logic.ShadowColor; e.Trc  = mkLine(1.5)
     e.HPTxt = mkText(13); e.HPTxt.Center = false
-    e.BarO  = mkLine(7);  e.BarO.Color = Logic.ShadowColor
-    e.BarBG = mkLine(5);  e.BarBG.Color = Color3.fromRGB(40, 40, 40)
-    e.BarF  = mkLine(3)
-
-    e.NameTxt = mkText(14)
-    e.CharTxt = mkText(12)
-    e.DistTxt = mkText(12)
-    e.KillTxt = mkText(12)
-    e.HL = nil
-    
-    e.RevealGui = nil
-    e.CooldownCleanup = nil
-
+    e.BarO  = mkLine(7);  e.BarO.Color = Logic.ShadowColor; e.BarBG = mkLine(5);  e.BarBG.Color = Color3.fromRGB(40, 40, 40); e.BarF  = mkLine(3)
+    e.NameTxt = mkText(14); e.CharTxt = mkText(12); e.DistTxt = mkText(12); e.KillTxt = mkText(12); e.HL = nil
+    e.RevealGui = nil; e.CooldownCleanup = nil
     return e
 end
 
@@ -2166,19 +968,14 @@ local function hideAll(e)
     for i = 1, 14 do e.Skel[i].Visible = false end
     e.HDotS.Visible = false; e.HDot.Visible  = false
     e.TrcS.Visible  = false; e.Trc.Visible   = false
-    e.HPTxt.Visible  = false
-    e.BarO.Visible   = false; e.BarBG.Visible = false; e.BarF.Visible = false
-    e.NameTxt.Visible = false; e.CharTxt.Visible = false
-    e.DistTxt.Visible = false; e.KillTxt.Visible = false
+    e.HPTxt.Visible  = false; e.BarO.Visible   = false; e.BarBG.Visible = false; e.BarF.Visible = false
+    e.NameTxt.Visible = false; e.CharTxt.Visible = false; e.DistTxt.Visible = false; e.KillTxt.Visible = false
     if e.RevealGui then e.RevealGui.Enabled = false end
 end
 
 local function safeRM(obj)
     if not obj then return end
-    pcall(function()
-        if typeof(obj) == "Instance" then obj:Destroy()
-        elseif type(obj) == "userdata" and obj.Remove then obj:Remove() end
-    end)
+    pcall(function() if typeof(obj) == "Instance" then obj:Destroy() elseif type(obj) == "userdata" and obj.Remove then obj:Remove() end end)
 end
 
 local function removeAll(e)
@@ -2186,13 +983,8 @@ local function removeAll(e)
     for i = 1, 4 do safeRM(e.BoxS[i]); safeRM(e.BoxL[i]) end
     for i = 1, 8 do safeRM(e.CorS[i]); safeRM(e.CorL[i]) end
     for i = 1, 14 do safeRM(e.Skel[i]) end
-    safeRM(e.HDotS); safeRM(e.HDot)
-    safeRM(e.TrcS);  safeRM(e.Trc)
-    safeRM(e.HPTxt)
-    safeRM(e.BarO);  safeRM(e.BarBG); safeRM(e.BarF)
-    safeRM(e.NameTxt); safeRM(e.CharTxt)
-    safeRM(e.DistTxt); safeRM(e.KillTxt)
-    safeRM(e.HL)
+    safeRM(e.HDotS); safeRM(e.HDot); safeRM(e.TrcS); safeRM(e.Trc); safeRM(e.HPTxt); safeRM(e.BarO); safeRM(e.BarBG); safeRM(e.BarF)
+    safeRM(e.NameTxt); safeRM(e.CharTxt); safeRM(e.DistTxt); safeRM(e.KillTxt); safeRM(e.HL)
     if e.CooldownCleanup then e.CooldownCleanup() end
 end
 
@@ -2201,16 +993,636 @@ local function setLinePair(shadow, line, from, to, vis)
     line.From   = from; line.To   = to; line.Visible   = vis
 end
 
+local function estimateRegion(ping)
+    if ping <= 0 then return "Unknown" elseif ping <= 40 then return "US East / Nearby" elseif ping <= 70 then return "US Central" elseif ping <= 100 then return "US West / Regional" elseif ping <= 140 then return "EU West" elseif ping <= 180 then return "EU East / Middle East" elseif ping <= 220 then return "South America" elseif ping <= 270 then return "East Asia" elseif ping <= 320 then return "Southeast Asia / Oceania" elseif ping <= 400 then return "Africa / South Asia" else return "Very Far" end
+end
+
+local function pingQualityIcon(ping)
+    if ping <= 60 then return "[+++]" elseif ping <= 120 then return "[++ ]" elseif ping <= 200 then return "[+  ]" else return "[!  ]" end
+end
+
+local function buildServerMap(serverList)
+    Logic.ServerMap = {}
+    local vals = {}
+    for i, entry in ipairs(serverList) do
+        local label = string.format("%s #%d | %d/%d | %dms%s", pingQualityIcon(entry.Ping), i, entry.Playing, entry.MaxPlayers, entry.Ping, entry.IsCurrent and " [YOU]" or "")
+        Logic.ServerMap[label] = entry
+        vals[#vals + 1] = label
+    end
+    return vals
+end
+
+local UI_SrvInfoLabel, UI_SrvStatsLabel
+local SrvDropController
+
+local function updateServerInfo(entry)
+    if not UI_SrvInfoLabel then return end
+    if not entry then UI_SrvInfoLabel.Text = "No server selected.\n\nClick 'Refresh Server List' to load servers,\nthen select one from the dropdown."; return end
+
+    local fillPercent = entry.MaxPlayers > 0 and math.floor((entry.Playing / entry.MaxPlayers) * 100) or 0
+    local fillBar = string.rep("|", math.floor(fillPercent / 5)) .. string.rep(".", 20 - math.floor(fillPercent / 5))
+
+    local info = string.format("Job ID:\n%s\n\nPlayers: %d / %d (%d%%)\n[%s]\n\nPing: %d ms  %s\nServer FPS: %.1f\n\nEstimated Region: %s\n%s",
+        entry.JobId, entry.Playing, entry.MaxPlayers, fillPercent, fillBar, entry.Ping, pingQualityIcon(entry.Ping), entry.FPS, entry.Region, entry.IsCurrent and "\n>> This is YOUR current server <<" or "")
+    UI_SrvInfoLabel.Text = info
+end
+
+local function updateStatsLabel()
+    if not UI_SrvStatsLabel then return end
+    if #Logic.ServerList == 0 then UI_SrvStatsLabel.Text = "No data. Refresh to load servers."; return end
+    
+    local totalPlayers, totalPing, minPing, maxPing = 0, 0, math.huge, 0
+    local fullServers, emptyServers = 0, 0
+    for _, srv in ipairs(Logic.ServerList) do
+        totalPlayers += srv.Playing; totalPing += srv.Ping
+        if srv.Ping < minPing then minPing = srv.Ping end
+        if srv.Ping > maxPing then maxPing = srv.Ping end
+        if srv.Playing >= srv.MaxPlayers then fullServers += 1 end
+        if srv.Playing == 0 then emptyServers += 1 end
+    end
+    local avgPing = math.floor(totalPing / #Logic.ServerList)
+    UI_SrvStatsLabel.Text = string.format("Total Servers: %d\nTotal Players: %d\n\nAvg Ping: %dms\nBest Ping: %dms\nWorst Ping: %dms\n\nFull Servers: %d\nEmpty Servers: %d", #Logic.ServerList, totalPlayers, avgPing, minPing, maxPing, fullServers, emptyServers)
+end
+
+local function refreshDropdown()
+    local vals = buildServerMap(Logic.ServerList)
+    if SrvDropController then
+        if #vals > 0 then
+            SrvDropController.Refresh(vals)
+        else
+            SrvDropController.Refresh({ "No servers found" })
+        end
+    end
+    updateStatsLabel()
+end
+
+local function fetchServers()
+    Logic.ServerList = {}; Logic.ServerMap = {}
+    local placeId = game.PlaceId
+    local cursor = ""; local maxPages = 10; local idx = 0
+
+    for page = 1, maxPages do
+        local url = string.format("https://games.roblox.com/v1/games/%d/servers/0?sortOrder=2&excludeFullGames=false&limit=100%s", placeId, cursor ~= "" and ("&cursor=" .. cursor) or "")
+        local ok, res = pcall(game.HttpGet, game, url)
+        if not ok or not res then break end
+        local ok2, data = pcall(HttpService.JSONDecode, HttpService, res)
+        if not ok2 or not data or not data.data then break end
+
+        for _, srv in ipairs(data.data) do
+            idx += 1
+            local entry = { JobId = srv.id or "", Playing = srv.playing or 0, MaxPlayers = srv.maxPlayers or 0, Ping = srv.ping or 0, FPS = srv.fps or 0, Index = idx, Region = estimateRegion(srv.ping or 0), IsCurrent = (srv.id == game.JobId) }
+            table.insert(Logic.ServerList, entry)
+        end
+        cursor = data.nextPageCursor or ""
+        if cursor == "" then break end
+        task.wait(0.4)
+    end
+    return Logic.ServerList
+end
+
+
+--// ==========================================
+--// UI BUILDER HELPER FUNCTIONS
+--// ==========================================
+
+local itemOrderCounter = 0
+local Tabs = {}
+
+local function UpdateSidebarCanvas()
+    local totalH = 10
+    for _, t in pairs(Tabs) do
+        totalH = totalH + 36 + 6
+        if t.IsOpen then totalH = totalH + t.SubLayout.AbsoluteContentSize.Y + 6 end
+    end
+    Sidebar.CanvasSize = UDim2.new(0, 0, 0, totalH)
+end
+
+local function CreateMainTab(name)
+    local tabObj = { Btn = nil, SubContainer = nil, SubLayout = nil, IsOpen = false, SubTabs = {} }
+    
+    local tabBtn = Instance.new("TextButton", Sidebar)
+    tabBtn.Size = UDim2.new(1, 0, 0, 36)
+    tabBtn.BackgroundColor3 = Theme.Sidebar
+    tabBtn.Text = "  " .. string.upper(name)
+    tabBtn.TextColor3 = Theme.SubText
+    tabBtn.Font = Enum.Font.GothamBlack
+    tabBtn.TextSize = 13
+    tabBtn.TextXAlignment = Enum.TextXAlignment.Left
+    Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 8)
+    tabObj.Btn = tabBtn
+
+    local subContainer = Instance.new("Frame", Sidebar)
+    subContainer.Size = UDim2.new(1, 0, 0, 0)
+    subContainer.BackgroundTransparency = 1
+    subContainer.ClipsDescendants = true
+    tabObj.SubContainer = subContainer
+
+    local subLayout = Instance.new("UIListLayout", subContainer)
+    subLayout.Padding = UDim.new(0, 2)
+    subLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+    subLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    tabObj.SubLayout = subLayout
+
+    tabBtn.MouseButton1Click:Connect(function()
+        tabObj.IsOpen = not tabObj.IsOpen
+        local targetSize = tabObj.IsOpen and UDim2.new(1, 0, 0, subLayout.AbsoluteContentSize.Y) or UDim2.new(1, 0, 0, 0)
+        pcall(function()
+            TweenService:Create(subContainer, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = targetSize}):Play()
+            tabBtn.TextColor3 = tabObj.IsOpen and Theme.Text or Theme.SubText
+            tabBtn.BackgroundColor3 = tabObj.IsOpen and Theme.SectionBG or Theme.Sidebar
+        end)
+        task.delay(0.26, UpdateSidebarCanvas)
+    end)
+
+    subLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        if tabObj.IsOpen then subContainer.Size = UDim2.new(1, 0, 0, subLayout.AbsoluteContentSize.Y) end
+    end)
+
+    table.insert(Tabs, tabObj)
+    return tabObj
+end
+
+local function CreateSubTab(tabObj, subName)
+    local subObj = { Btn = nil, Page = nil }
+    local subBtn = Instance.new("TextButton", tabObj.SubContainer)
+    subBtn.Size = UDim2.new(1, 0, 0, 28)
+    subBtn.BackgroundTransparency = 1
+    subBtn.Text = "     " .. subName
+    subBtn.TextColor3 = Theme.SubText
+    subBtn.Font = Enum.Font.GothamMedium
+    subBtn.TextSize = 12
+    subBtn.TextXAlignment = Enum.TextXAlignment.Left
+    subObj.Btn = subBtn
+
+    local page = Instance.new("ScrollingFrame", ContentContainer)
+    page.Size = UDim2.new(1, 0, 1, 0)
+    page.BackgroundTransparency = 1
+    page.ScrollBarThickness = 2
+    page.ScrollBarImageColor3 = Theme.Accent
+    page.Visible = false
+    subObj.Page = page
+
+    local pageLayout = Instance.new("UIListLayout", page)
+    pageLayout.Padding = UDim.new(0, 12)
+    pageLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    pageLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        page.CanvasSize = UDim2.new(0, 0, 0, pageLayout.AbsoluteContentSize.Y + 20)
+    end)
+
+    subBtn.MouseButton1Click:Connect(function()
+        for _, t in pairs(Tabs) do
+            for _, st in pairs(t.SubTabs) do
+                st.Page.Visible = false
+                st.Btn.TextColor3 = Theme.SubText
+            end
+        end
+        page.Visible = true
+        subBtn.TextColor3 = Theme.Text
+    end)
+
+    table.insert(tabObj.SubTabs, subObj)
+    return page
+end
+
+local function CreateSection(page, titleText)
+    local section = Instance.new("Frame", page)
+    section.Size = UDim2.new(0.98, 0, 0, 50)
+    section.BackgroundColor3 = Theme.SectionBG
+    section.BackgroundTransparency = 0
+    Instance.new("UICorner", section).CornerRadius = UDim.new(0, 10)
+    Instance.new("UIStroke", section).Color = Theme.Stroke
+    
+    local secLayout = Instance.new("UIListLayout", section)
+    secLayout.Padding = UDim.new(0, 10)
+    secLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    secLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    
+    local secPadding = Instance.new("UIPadding", section)
+    secPadding.PaddingTop = UDim.new(0, 12)
+    secPadding.PaddingBottom = UDim.new(0, 12)
+    
+    local title = Instance.new("TextLabel", section)
+    title.LayoutOrder = -1
+    title.Size = UDim2.new(0.92, 0, 0, 24)
+    title.BackgroundTransparency = 1
+    title.Text = titleText
+    title.TextColor3 = Theme.Text
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 14
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    
+    secLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() 
+        section.Size = UDim2.new(1, 0, 0, secLayout.AbsoluteContentSize.Y + 24) 
+    end)
+    return section
+end
+
+local function CreateLabel(section, text)
+    itemOrderCounter = itemOrderCounter + 1
+    local frame = Instance.new("Frame", section)
+    frame.LayoutOrder = itemOrderCounter
+    frame.Size = UDim2.new(0.92, 0, 0, 90)
+    frame.BackgroundTransparency = 1
+    
+    local lbl = Instance.new("TextLabel", frame)
+    lbl.Size = UDim2.new(1, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = text
+    lbl.TextColor3 = Theme.SubText
+    lbl.Font = Enum.Font.GothamMedium
+    lbl.TextSize = 11
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.TextWrapped = true
+    return lbl
+end
+
+local function CreateToggle(section, text, descText, defaultState, callback)
+    if type(descText) == "boolean" then callback = defaultState; defaultState = descText; descText = nil end
+    itemOrderCounter = itemOrderCounter + 1
+    
+    local frame = Instance.new("Frame", section)
+    frame.LayoutOrder = itemOrderCounter
+    frame.Size = UDim2.new(0.92, 0, 0, descText and 52 or 34)
+    frame.BackgroundTransparency = 1
+    
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(0.7, 0, 0, 34)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = defaultState and Theme.Text or Theme.SubText
+    label.Font = Enum.Font.GothamMedium
+    label.TextSize = 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    
+    if descText then
+        local descLabel = Instance.new("TextLabel", frame)
+        descLabel.Size = UDim2.new(0.7, 0, 0, 15)
+        descLabel.Position = UDim2.new(0, 0, 0, 30)
+        descLabel.BackgroundTransparency = 1
+        descLabel.Text = descText
+        descLabel.TextColor3 = Theme.SubText
+        descLabel.Font = Enum.Font.Gotham
+        descLabel.TextSize = 11
+        descLabel.TextXAlignment = Enum.TextXAlignment.Left
+    end
+    
+    local tBtn = Instance.new("TextButton", frame)
+    tBtn.Size = UDim2.new(0, 42, 0, 22)
+    tBtn.Position = UDim2.new(1, -42, 0, 6)
+    tBtn.BackgroundColor3 = defaultState and Theme.ToggleOn or Theme.ToggleOff
+    tBtn.Text = ""
+    Instance.new("UICorner", tBtn).CornerRadius = UDim.new(1, 0)
+    
+    local circle = Instance.new("Frame", tBtn)
+    circle.Size = UDim2.new(0, 16, 0, 16)
+    circle.Position = defaultState and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
+    circle.BackgroundColor3 = defaultState and Theme.Background or Color3.fromRGB(150, 150, 150)
+    Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
+    
+    local isOn = defaultState or false
+    tBtn.MouseButton1Click:Connect(function()
+        isOn = not isOn
+        pcall(function()
+            TweenService:Create(tBtn, TweenInfo.new(0.2), {BackgroundColor3 = isOn and Theme.ToggleOn or Theme.ToggleOff}):Play()
+            TweenService:Create(circle, TweenInfo.new(0.2), {Position = isOn and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8), BackgroundColor3 = isOn and Theme.Background or Color3.fromRGB(150, 150, 150)}):Play()
+            label.TextColor3 = isOn and Theme.Text or Theme.SubText
+        end)
+        if callback then pcall(function() callback(isOn) end) end
+    end)
+end
+
+local function CreateSlider(section, text, min, max, default, callback)
+    itemOrderCounter = itemOrderCounter + 1
+    local frame = Instance.new("Frame", section)
+    frame.LayoutOrder = itemOrderCounter
+    frame.Size = UDim2.new(0.92, 0, 0, 50)
+    frame.BackgroundTransparency = 1
+    
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(1, -40, 0, 18)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Theme.SubText
+    label.Font = Enum.Font.GothamMedium
+    label.TextSize = 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local valLabel = Instance.new("TextLabel", frame)
+    valLabel.Size = UDim2.new(0, 40, 0, 18)
+    valLabel.Position = UDim2.new(1, -40, 0, 0)
+    valLabel.BackgroundTransparency = 1
+    valLabel.Text = tostring(default)
+    valLabel.TextColor3 = Theme.Accent
+    valLabel.Font = Enum.Font.GothamBold
+    valLabel.TextSize = 13
+    valLabel.TextXAlignment = Enum.TextXAlignment.Right
+    
+    local sliderBg = Instance.new("Frame", frame)
+    sliderBg.Size = UDim2.new(1, 0, 0, 4)
+    sliderBg.Position = UDim2.new(0, 0, 0, 32)
+    sliderBg.BackgroundColor3 = Theme.ToggleOff
+    Instance.new("UICorner", sliderBg).CornerRadius = UDim.new(1, 0)
+    
+    local sliderFill = Instance.new("Frame", sliderBg)
+    local percentage = math.clamp((default - min) / (max - min), 0, 1)
+    sliderFill.Size = UDim2.new(percentage, 0, 1, 0)
+    sliderFill.BackgroundColor3 = Theme.Accent
+    Instance.new("UICorner", sliderFill).CornerRadius = UDim.new(1, 0)
+    
+    local knob = Instance.new("TextButton", sliderFill)
+    knob.Size = UDim2.new(0, 14, 0, 14)
+    knob.Position = UDim2.new(1, -7, 0.5, -7)
+    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    knob.Text = ""
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+    
+    local dragging = false
+    knob.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = true end end)
+    UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local relative = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
+            local value = math.floor(min + (max - min) * relative)
+            valLabel.Text = tostring(value)
+            sliderFill.Size = UDim2.new(relative, 0, 1, 0)
+            if callback then pcall(function() callback(value) end) end
+        end
+    end)
+end
+
+local function CreateButton(section, text, color, callback)
+    if type(color) == "function" then callback = color; color = Theme.SectionBG end
+    itemOrderCounter = itemOrderCounter + 1
+    
+    local btn = Instance.new("TextButton", section)
+    btn.LayoutOrder = itemOrderCounter
+    btn.Size = UDim2.new(0.92, 0, 0, 34)
+    btn.BackgroundColor3 = color
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 12
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    Instance.new("UIStroke", btn).Color = Theme.Stroke
+    AddClickPop(btn)
+    
+    btn.MouseButton1Click:Connect(function() pcall(callback) end)
+    return btn
+end
+
+local function CreateDropdown(section, headerText, itemsList, callback)
+    itemOrderCounter = itemOrderCounter + 1
+    local frame = Instance.new("Frame", section)
+    frame.LayoutOrder = itemOrderCounter
+    frame.Size = UDim2.new(0.92, 0, 0, 160)
+    frame.BackgroundTransparency = 1
+    
+    local header = Instance.new("TextLabel", frame)
+    header.Size = UDim2.new(1, 0, 0, 20)
+    header.BackgroundTransparency = 1
+    header.Text = headerText .. ": None"
+    header.TextColor3 = Theme.SubText
+    header.Font = Enum.Font.GothamMedium
+    header.TextSize = 12
+    header.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local scroll = Instance.new("ScrollingFrame", frame)
+    scroll.Size = UDim2.new(1, 0, 0, 130)
+    scroll.Position = UDim2.new(0, 0, 0, 25)
+    scroll.BackgroundColor3 = Theme.Background
+    scroll.ScrollBarThickness = 4
+    Instance.new("UICorner", scroll).CornerRadius = UDim.new(0, 6)
+    
+    local listLayout = Instance.new("UIListLayout", scroll)
+    listLayout.Padding = UDim.new(0, 4)
+    listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    
+    local function populate(list)
+        for _, child in pairs(scroll:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end
+        for _, itemName in ipairs(list) do
+            local btn = Instance.new("TextButton", scroll)
+            btn.Size = UDim2.new(0.94, 0, 0, 26)
+            btn.BackgroundColor3 = Theme.SectionBG
+            btn.Text = "  " .. tostring(itemName)
+            btn.TextColor3 = Theme.Text
+            btn.Font = Enum.Font.GothamBold
+            btn.TextSize = 12
+            btn.TextXAlignment = Enum.TextXAlignment.Left
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+            
+            btn.MouseButton1Click:Connect(function() 
+                header.Text = headerText .. ": " .. tostring(itemName)
+                if callback then callback(itemName) end
+            end)
+        end
+        task.defer(function() scroll.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10) end)
+    end
+    
+    populate(itemsList)
+    return { Refresh = populate }
+end
+
+local function CreateKeybind(section, text, defaultKey, callback)
+    itemOrderCounter = itemOrderCounter + 1
+    local frame = Instance.new("Frame", section)
+    frame.LayoutOrder = itemOrderCounter
+    frame.Size = UDim2.new(0.92, 0, 0, 34)
+    frame.BackgroundTransparency = 1
+    
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(0.7, 0, 0, 34)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Theme.Text
+    label.Font = Enum.Font.GothamMedium
+    label.TextSize = 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local btn = Instance.new("TextButton", frame)
+    btn.Size = UDim2.new(0, 80, 0, 22)
+    btn.Position = UDim2.new(1, -80, 0, 6)
+    btn.BackgroundColor3 = Theme.ToggleOff
+    btn.Text = defaultKey.Name
+    btn.TextColor3 = Theme.Text
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 12
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+    
+    local waiting = false
+    btn.MouseButton1Click:Connect(function() waiting = true; btn.Text = "..." end)
+    UserInputService.InputBegan:Connect(function(input)
+        if waiting and input.UserInputType == Enum.UserInputType.Keyboard then
+            waiting = false
+            btn.Text = input.KeyCode.Name
+            if callback then pcall(function() callback(input.KeyCode) end) end
+        end
+    end)
+end
+
+local function CreateInput(section, placeholder, callback)
+    itemOrderCounter = itemOrderCounter + 1
+    local box = Instance.new("TextBox", section)
+    box.LayoutOrder = itemOrderCounter
+    box.Size = UDim2.new(0.92, 0, 0, 34)
+    box.BackgroundColor3 = Theme.Background
+    box.Text = ""
+    box.PlaceholderText = placeholder
+    box.TextColor3 = Theme.Text
+    box.Font = Enum.Font.GothamMedium
+    box.TextSize = 12
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 6)
+    Instance.new("UIStroke", box).Color = Theme.Stroke
+    
+    if callback then 
+        box.FocusLost:Connect(function() pcall(function() callback(box.Text) end) end) 
+    end
+    return box
+end
+
+--// ==========================================
+--// POPULATE UI
+--// ==========================================
+
+-- TAB: COMBAT
+local TabCombat = CreateMainTab("Combat")
+
+local SubBlackFlash = CreateSubTab(TabCombat, "Black Flash")
+local SecBlackFlash = CreateSection(SubBlackFlash, "Blackflash Chain")
+CreateToggle(SecBlackFlash, "Enable Black Flash Chain", RyuConfig.BlackFlashEnabled, function(v) RyuConfig.BlackFlashEnabled = v end)
+CreateToggle(SecBlackFlash, "Camera Lock During Dash", RyuConfig.CameraLockEnabled, function(v) RyuConfig.CameraLockEnabled = v end)
+CreateSlider(SecBlackFlash, "Max Dash Distance", 5, 50, RyuConfig.DashDistance, function(v) RyuConfig.DashDistance = v end)
+CreateSlider(SecBlackFlash, "Combo Fire Delay (s)", 0, 1, RyuConfig.FireDelay, function(v) RyuConfig.FireDelay = v end)
+CreateSlider(SecBlackFlash, "Dash Duration (s)", 0, 1, RyuConfig.DashDuration, function(v) RyuConfig.DashDuration = v end)
+CreateSlider(SecBlackFlash, "Post Dash Lock Time", 0, 1, RyuConfig.LockTime, function(v) RyuConfig.LockTime = v end)
+
+local SubSideDash = CreateSubTab(TabCombat, "Side Dash")
+local SecDashAssist = CreateSection(SubSideDash, "Side Dash Assist")
+CreateToggle(SecDashAssist, "Enable Side Dash Assist", RyuConfig.EnableDashAssist, function(v) RyuConfig.EnableDashAssist = v end)
+CreateToggle(SecDashAssist, "Lock Camera On Enemy", RyuConfig.DashCameraLock, function(v) RyuConfig.DashCameraLock = v end)
+CreateToggle(SecDashAssist, "Dash Only If Facing Front", RyuConfig.DashOnlyIfFacing, function(v) RyuConfig.DashOnlyIfFacing = v end)
+CreateKeybind(SecDashAssist, "Dash Keybind", RyuConfig.DashAssistKeybind, function(v) RyuConfig.DashAssistKeybind = v end)
+CreateSlider(SecDashAssist, "Detection Range", 1, 50, RyuConfig.DashDetectionRange, function(v) RyuConfig.DashDetectionRange = v end)
+
+local SecDashArc = CreateSection(SubSideDash, "Arc Modifiers")
+CreateSlider(SecDashArc, "Behind Distance", 1, 15, RyuConfig.DashBehindDistance, function(v) RyuConfig.DashBehindDistance = v end)
+CreateSlider(SecDashArc, "Curve Strength", 0, 25, RyuConfig.DashCurveStrength, function(v) RyuConfig.DashCurveStrength = v end)
+CreateSlider(SecDashArc, "Arch Height", 0, 10, RyuConfig.DashArchHeight, function(v) RyuConfig.DashArchHeight = v end)
+
+
+-- TAB: VISUALS
+local TabVisuals = CreateMainTab("Visuals")
+
+local SubESPOverlays = CreateSubTab(TabVisuals, "Overlays")
+local SecESPBox = CreateSection(SubESPOverlays, "ESP Boxes & Lines")
+CreateToggle(SecESPBox, "Box ESP", RyuConfig.ESPBox, function(v) RyuConfig.ESPBox = v end)
+CreateToggle(SecESPBox, "Corner ESP", RyuConfig.ESPCorner, function(v) RyuConfig.ESPCorner = v end)
+CreateToggle(SecESPBox, "Outline ESP", RyuConfig.ESPOutline, function(v) RyuConfig.ESPOutline = v end)
+CreateToggle(SecESPBox, "Skeleton ESP", RyuConfig.ESPSkeleton, function(v) RyuConfig.ESPSkeleton = v end)
+CreateToggle(SecESPBox, "Head Dot", RyuConfig.ESPHeadDot, function(v) RyuConfig.ESPHeadDot = v end)
+CreateToggle(SecESPBox, "Tracer ESP", RyuConfig.ESPTracer, function(v) RyuConfig.ESPTracer = v end)
+
+local SubESPInfo = CreateSubTab(TabVisuals, "Information")
+local SecESPInfo = CreateSection(SubESPInfo, "Player Information")
+CreateToggle(SecESPInfo, "Name ESP", RyuConfig.ESPName, function(v) RyuConfig.ESPName = v end)
+CreateToggle(SecESPInfo, "Character Moveset ESP", RyuConfig.ESPCharacter, function(v) RyuConfig.ESPCharacter = v end)
+CreateToggle(SecESPInfo, "Distance ESP", RyuConfig.ESPDistance, function(v) RyuConfig.ESPDistance = v end)
+CreateToggle(SecESPInfo, "Kill ESP", RyuConfig.ESPKill, function(v) RyuConfig.ESPKill = v end)
+CreateToggle(SecESPInfo, "HP Text", RyuConfig.ESPHPText, function(v) RyuConfig.ESPHPText = v end)
+CreateToggle(SecESPInfo, "HP Bar", RyuConfig.ESPHPBar, function(v) RyuConfig.ESPHPBar = v end)
+CreateToggle(SecESPInfo, "Cooldown Revealer", RyuConfig.CooldownRevealer, function(v) RyuConfig.CooldownRevealer = v end)
+
+
+-- TAB: AIMBOT
+local TabAimbot = CreateMainTab("Aimbot")
+
+local SubTargetLock = CreateSubTab(TabAimbot, "Target Lock")
+local SecLockMain = CreateSection(SubTargetLock, "Main Lock")
+CreateToggle(SecLockMain, "Enable Lock", Logic.LockState.Enabled, function(v) Logic.LockState.Enabled = v end)
+CreateKeybind(SecLockMain, "Lock Keybind", RyuConfig.LockKeybind, function(v) RyuConfig.LockKeybind = v end)
+CreateToggle(SecLockMain, "Lock ESP", Logic.LockSettings.ESPEnabled, function(v) Logic.LockSettings.ESPEnabled = v end)
+CreateButton(SecLockMain, "Refresh Player List", Theme.SectionBG, refreshPlayerDropdown)
+CreateDropdown(SecLockMain, "Target Player", {"Auto"}, function(v) RyuConfig.LockSpecificPlayer = v end)
+
+local SecLockCfg = CreateSection(SubTargetLock, "Lock Config")
+CreateToggle(SecLockCfg, "Wall Check", Logic.LockSettings.WallCheck, function(v) Logic.LockSettings.WallCheck = v end)
+CreateToggle(SecLockCfg, "Auto Retarget", Logic.LockSettings.AutoRetarget, function(v) Logic.LockSettings.AutoRetarget = v end)
+CreateSlider(SecLockCfg, "Max Lock Distance", 10, 2000, Logic.LockSettings.MaxDistance, function(v) Logic.LockSettings.MaxDistance = v end)
+CreateSlider(SecLockCfg, "Prediction", 0, 1, Logic.LockSettings.Prediction, function(v) Logic.LockSettings.Prediction = v end)
+
+
+-- TAB: WORLD
+local TabWorld = CreateMainTab("World")
+
+local SubTeleport = CreateSubTab(TabWorld, "Teleports")
+local SecTeleport = CreateSection(SubTeleport, "Auto Teleport Settings")
+local TeleportLocations = { ["Under the Map"] = Vector3.new(-20.23, -61.53, -146.34), ["Unlicensed Studios"] = Vector3.new(196.86, 23.58, -37.27), ["Towers"] = Vector3.new(25.35, 183.08, 110.77), ["Train Button"] = Vector3.new(182.21, -9.33, 562.54), ["Bowling"] = Vector3.new(267.60, -59.89, -255.06), ["Restaurant"] = Vector3.new(-43.24, 23.63, -83.07), ["Storage House"] = Vector3.new(195.69, 23.58, 151.44), ["Sewers 1"] = Vector3.new(-148.14, -31.48, -127.22), ["Train Station"] = Vector3.new(185.27, -9.69, -97.17), ["Sewers 2"] = Vector3.new(60.84, -10.58, 167.47), ["Shenanigans Mall"] = Vector3.new(155.66, -26.38, -254.85), ["Rhythm Game"] = Vector3.new(12.23, -30.21, -315.03), ["Piano"] = Vector3.new(-86.38, 26.65, -252.48), ["Convenience Store"] = Vector3.new(-247.51, 26.96, -116.64), ["Court"] = Vector3.new(124.48, 23.78, -247.06), ["Graveyard"] = Vector3.new(228.55, 23.68, -130.48), ["Train Station Exit"] = Vector3.new(1.52, 24.72, 396.06), ["Tze's"] = Vector3.new(-55.30, 23.62, 245.42), ["Jail"] = Vector3.new(-243.84, 23.58, 126.97) }
+local LocationNames = {}
+for k, _ in pairs(TeleportLocations) do table.insert(LocationNames, k) end
+table.sort(LocationNames)
+
+local currentTPDest = LocationNames[1]
+CreateDropdown(SecTeleport, "Destination", LocationNames, function(v) currentTPDest = v end)
+CreateSlider(SecTeleport, "Teleport Speed (Studs/s)", 30, 1500, Logic.Pathfinding.Speed, function(v) Logic.Pathfinding.Speed = v end)
+CreateToggle(SecTeleport, "Show Path Visualization", Logic.Pathfinding.VisualizeOn, function(v) Logic.Pathfinding.VisualizeOn = v end)
+CreateButton(SecTeleport, "Start Teleport", Theme.SectionBG, function() local destPos = TeleportLocations[currentTPDest] if destPos then startPathfinding(destPos) end end)
+CreateButton(SecTeleport, "Stop Teleport", Theme.SectionBG, function() stopPathfinding() end)
+
+local SubServers = CreateSubTab(TabWorld, "Servers")
+local SecServerList = CreateSection(SubServers, "Server List")
+SrvDropController = CreateDropdown(SecServerList, "Select Server", {"Click 'Refresh' to load servers"}, function(v) Logic.SelectedServerData = Logic.ServerMap[v]; updateServerInfo(Logic.SelectedServerData) end)
+CreateButton(SecServerList, "Refresh Server List", Theme.SectionBG, function() task.spawn(function() fetchServers(); refreshDropdown() end) end)
+
+local SecServerInfo = CreateSection(SubServers, "Server Details")
+UI_SrvInfoLabel = CreateLabel(SecServerInfo, "No server selected.\nClick 'Refresh Server List' to load servers.")
+UI_SrvStatsLabel = CreateLabel(SecServerInfo, "No data. Refresh to load servers.")
+CreateButton(SecServerInfo, "Join Selected Server", Theme.SectionBG, function() if Logic.SelectedServerData and not Logic.SelectedServerData.IsCurrent then TeleportService:TeleportToPlaceInstance(game.PlaceId, Logic.SelectedServerData.JobId, Player) end end)
+CreateButton(SecServerInfo, "Join Lowest Ping Server", Theme.SectionBG, function()
+    local best = nil
+    for _, srv in ipairs(Logic.ServerList) do if not srv.IsCurrent and srv.Playing > 0 and srv.Ping > 0 then if not best or srv.Ping < best.Ping then best = srv end end end
+    if best then TeleportService:TeleportToPlaceInstance(game.PlaceId, best.JobId, Player) end
+end)
+
+
+--// INIT
+pcall(function()
+    if Tabs[1] and Tabs[1].Btn then
+        Tabs[1].IsOpen = true
+        Tabs[1].SubContainer.Size = UDim2.new(1, 0, 0, Tabs[1].SubLayout.AbsoluteContentSize.Y)
+        Tabs[1].Btn.TextColor3 = Theme.Text
+        Tabs[1].Btn.BackgroundColor3 = Theme.SectionBG
+    end
+    if Tabs[1] and Tabs[1].SubTabs[1] and Tabs[1].SubTabs[1].Page then
+        Tabs[1].SubTabs[1].Page.Visible = true
+        Tabs[1].SubTabs[1].Btn.TextColor3 = Theme.Text
+    end
+    UpdateSidebarCanvas()
+end)
+
+task.spawn(function()
+    task.wait(1)
+    refreshPlayerDropdown()
+end)
+
+task.spawn(function()
+    task.wait(2)
+    fetchServers()
+    refreshDropdown()
+end)
+
+--// ==========================================
+--// BACKGROUND LOOPS & ESP RENDER
+--// ==========================================
+
 Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
     local cam = workspace.CurrentCamera
     if not cam then return end
 
     local entities = getEntities()
-    local alive    = {}
+    local alive = {}
 
     for _, data in ipairs(entities) do
-        local char  = data.Model
-        local plr   = data.Player
+        local char = data.Model
+        local plr = data.Player
         local dName = data.Name
         alive[char] = true
 
@@ -2222,13 +1634,11 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
             continue
         end
 
-        local hrp  = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
-        local hum  = char:FindFirstChildOfClass("Humanoid")
+        local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+        local hum = char:FindFirstChildOfClass("Humanoid")
         local head = char:FindFirstChild("Head")
 
-        if not Logic.ESPObjects[char] then
-            Logic.ESPObjects[char] = createESP()
-        end
+        if not Logic.ESPObjects[char] then Logic.ESPObjects[char] = createESP() end
         local e = Logic.ESPObjects[char]
 
         if not (hrp and hum and hum.Health > 0) then
@@ -2238,10 +1648,10 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
         end
 
         local dist = (cam.CFrame.Position - hrp.Position).Magnitude
-        local box  = getCharBounds(char)
+        local box = getCharBounds(char)
         
-        if Toggles.ESPBox.Value and box then
-            for i = 1, 4 do e.BoxL[i].Color = Options.ESPBoxColor.Value end
+        if RyuConfig.ESPBox and box then
+            for i = 1, 4 do e.BoxL[i].Color = RyuConfig.ESPBoxColor end
             local tl = Vector2.new(box.X, box.Y); local tr = Vector2.new(box.X + box.W, box.Y)
             local bl = Vector2.new(box.X, box.Y + box.H); local br = Vector2.new(box.X + box.W, box.Y + box.H)
             setLinePair(e.BoxS[1], e.BoxL[1], tl, tr, true); setLinePair(e.BoxS[2], e.BoxL[2], tr, br, true)
@@ -2250,24 +1660,19 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
             for i = 1, 4 do e.BoxS[i].Visible = false; e.BoxL[i].Visible = false end
         end
         
-        if Toggles.ESPCorner.Value and box then
-            for i = 1, 8 do e.CorL[i].Color = Options.ESPCornerColor.Value end
+        if RyuConfig.ESPCorner and box then
+            for i = 1, 8 do e.CorL[i].Color = RyuConfig.ESPCornerColor end
             local x, y, w, h = box.X, box.Y, box.W, box.H
             local len = math.clamp(math.min(w, h) * 0.25, 5, 9999)
             local tl = Vector2.new(x, y); local tr = Vector2.new(x + w, y)
             local bl = Vector2.new(x, y + h); local br = Vector2.new(x + w, y + h)
-            local segs = {
-                {tl, tl + Vector2.new(len, 0)}, {tl, tl + Vector2.new(0, len)},
-                {tr, tr + Vector2.new(-len, 0)}, {tr, tr + Vector2.new(0, len)},
-                {bl, bl + Vector2.new(len, 0)}, {bl, bl + Vector2.new(0, -len)},
-                {br, br + Vector2.new(-len, 0)}, {br, br + Vector2.new(0, -len)},
-            }
+            local segs = { {tl, tl + Vector2.new(len, 0)}, {tl, tl + Vector2.new(0, len)}, {tr, tr + Vector2.new(-len, 0)}, {tr, tr + Vector2.new(0, len)}, {bl, bl + Vector2.new(len, 0)}, {bl, bl + Vector2.new(0, -len)}, {br, br + Vector2.new(-len, 0)}, {br, br + Vector2.new(0, -len)} }
             for i = 1, 8 do setLinePair(e.CorS[i], e.CorL[i], segs[i][1], segs[i][2], true) end
         else
             for i = 1, 8 do e.CorS[i].Visible = false; e.CorL[i].Visible = false end
         end
 
-        if Toggles.ESPSkeleton.Value then
+        if RyuConfig.ESPSkeleton then
             local bones = char:FindFirstChild("UpperTorso") and Logic.R15Bones or Logic.R6Bones
             local idx = 0
             for _, b in ipairs(bones) do
@@ -2278,10 +1683,8 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
                     local s1, o1 = w2v(p1.Position)
                     local s2, o2 = w2v(p2.Position)
                     if o1 and o2 then
-                        e.Skel[idx].Color   = Options.ESPSkeletonColor.Value
-                        e.Skel[idx].From    = s1
-                        e.Skel[idx].To      = s2
-                        e.Skel[idx].Visible = true
+                        e.Skel[idx].Color = RyuConfig.ESPSkeletonColor
+                        e.Skel[idx].From = s1; e.Skel[idx].To = s2; e.Skel[idx].Visible = true
                     else e.Skel[idx].Visible = false end
                 else e.Skel[idx].Visible = false end
             end
@@ -2290,13 +1693,13 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
             for i = 1, 14 do e.Skel[i].Visible = false end
         end
 
-        if Toggles.ESPHeadDot.Value and head then
+        if RyuConfig.ESPHeadDot and head then
             local hs, ho = w2v(head.Position)
             if ho then
                 local headTop = w2v(head.Position + Vector3.new(0, head.Size.Y * 0.5, 0))
                 local r = headTop and math.abs(hs.Y - headTop.Y) or 5
                 r = math.clamp(r, 3, 50)
-                e.HDot.Color = Options.ESPHeadDotColor.Value
+                e.HDot.Color = RyuConfig.ESPHeadDotColor
                 e.HDotS.Position = hs; e.HDotS.Radius = r + 1; e.HDotS.Visible = true
                 e.HDot.Position  = hs; e.HDot.Radius  = r;     e.HDot.Visible  = true
             else
@@ -2306,11 +1709,11 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
             e.HDotS.Visible = false; e.HDot.Visible = false
         end
 
-        if Toggles.ESPTracer.Value then
+        if RyuConfig.ESPTracer then
             local fp, fo = w2v(hrp.Position - Vector3.new(0, 3, 0))
             if fo then
                 local bot = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y)
-                e.Trc.Color = Options.ESPTracerColor.Value
+                e.Trc.Color = RyuConfig.ESPTracerColor
                 e.TrcS.From = bot; e.TrcS.To = fp; e.TrcS.Visible = true
                 e.Trc.From  = bot; e.Trc.To  = fp; e.Trc.Visible  = true
             else
@@ -2320,95 +1723,89 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
             e.TrcS.Visible = false; e.Trc.Visible = false
         end
 
-        if Toggles.ESPHPText.Value and box then
+        if RyuConfig.ESPHPText and box then
             local f = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
             e.HPTxt.Position = Vector2.new(box.X + box.W + 4, box.Y)
-            e.HPTxt.Text     = math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth)
-            e.HPTxt.Color    = hpColor(f)
-            e.HPTxt.Visible  = true
+            e.HPTxt.Text = math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth)
+            e.HPTxt.Color = hpColor(f)
+            e.HPTxt.Visible = true
         else
             e.HPTxt.Visible = false
         end
 
-        if Toggles.ESPHPBar.Value and box then
-            local f   = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-            local bx  = box.X - 6
+        if RyuConfig.ESPHPBar and box then
+            local f = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+            local bx = box.X - 6
             local top = Vector2.new(bx, box.Y)
             local bot = Vector2.new(bx, box.Y + box.H)
-            local ft  = Vector2.new(bx, box.Y + box.H * (1 - f))
+            local ft = Vector2.new(bx, box.Y + box.H * (1 - f))
 
-            e.BarO.From  = top; e.BarO.To  = bot; e.BarO.Visible  = true
+            e.BarO.From = top; e.BarO.To = bot; e.BarO.Visible = true
             e.BarBG.From = top; e.BarBG.To = bot; e.BarBG.Visible = true
-            e.BarF.From  = ft;  e.BarF.To  = bot; e.BarF.Color = hpColor(f); e.BarF.Visible = f > 0
+            e.BarF.From = ft; e.BarF.To = bot; e.BarF.Color = hpColor(f); e.BarF.Visible = f > 0
         else
             e.BarO.Visible = false; e.BarBG.Visible = false; e.BarF.Visible = false
         end
         
-        if Toggles.ESPOutline.Value then
+        if RyuConfig.ESPOutline then
             if not e.HL or e.HL.Parent ~= char then
                 safeRM(e.HL)
                 local hl = Instance.new("Highlight")
-                hl.FillTransparency    = 1
-                hl.OutlineColor        = Options.ESPOutlineColor.Value
+                hl.FillTransparency = 1
+                hl.OutlineColor = RyuConfig.ESPOutlineColor
                 hl.OutlineTransparency = 0
-                hl.DepthMode           = Enum.HighlightDepthMode.AlwaysOnTop
+                hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
                 hl.Parent = char
                 e.HL = hl
             end
-            e.HL.OutlineColor = Options.ESPOutlineColor.Value
+            e.HL.OutlineColor = RyuConfig.ESPOutlineColor
             e.HL.Enabled = true
         else
             if e.HL then e.HL.Enabled = false end
         end
 
-        if Toggles.CooldownRevealer.Value then
-            if not e.CooldownCleanup then
-                e.RevealGui, e.CooldownCleanup = CreateCooldownBillboard(char, plr, hrp)
-            end
+        if RyuConfig.CooldownRevealer then
+            if not e.CooldownCleanup then e.RevealGui, e.CooldownCleanup = CreateCooldownBillboard(char, plr, hrp) end
             if e.RevealGui then e.RevealGui.Enabled = true end
         else
-            if e.CooldownCleanup then
-                e.CooldownCleanup()
-                e.CooldownCleanup = nil
-                e.RevealGui = nil
-            end
+            if e.CooldownCleanup then e.CooldownCleanup(); e.CooldownCleanup = nil; e.RevealGui = nil end
         end
 
         if box then
             local ay = box.Y - 2
-            if Toggles.ESPCharacter.Value then
+            if RyuConfig.ESPCharacter then
                 ay = ay - 14
                 local ms = char:GetAttribute("Moveset") or (plr and plr:GetAttribute("Moveset")) or "Unknown"
-                e.CharTxt.Color    = Options.ESPCharacterColor.Value
+                e.CharTxt.Color = RyuConfig.ESPCharacterColor
                 e.CharTxt.Position = Vector2.new(box.CX, ay)
-                e.CharTxt.Text     = "[" .. tostring(ms) .. "]"
-                e.CharTxt.Visible  = true
+                e.CharTxt.Text = "[" .. tostring(ms) .. "]"
+                e.CharTxt.Visible = true
             else
                 e.CharTxt.Visible = false
             end
 
-            if Toggles.ESPName.Value then
+            if RyuConfig.ESPName then
                 ay = ay - 16
-                e.NameTxt.Color    = Options.ESPNameColor.Value
+                e.NameTxt.Color = RyuConfig.ESPNameColor
                 e.NameTxt.Position = Vector2.new(box.CX, ay)
-                e.NameTxt.Text     = dName
-                e.NameTxt.Visible  = true
+                e.NameTxt.Text = dName
+                e.NameTxt.Visible = true
             else
                 e.NameTxt.Visible = false
             end
             
             local by = box.Y + box.H + 2
-            if Toggles.ESPDistance.Value then
-                e.DistTxt.Color    = Options.ESPDistanceColor.Value
+            if RyuConfig.ESPDistance then
+                e.DistTxt.Color = RyuConfig.ESPDistanceColor
                 e.DistTxt.Position = Vector2.new(box.CX, by)
-                e.DistTxt.Text     = math.floor(dist) .. " studs"
-                e.DistTxt.Visible  = true
+                e.DistTxt.Text = math.floor(dist) .. " studs"
+                e.DistTxt.Visible = true
                 by = by + 14
             else
                 e.DistTxt.Visible = false
             end
 
-            if Toggles.ESPKill.Value then
+            if RyuConfig.ESPKill then
                 local kills = 0
                 if plr then
                     local ls = plr:FindFirstChild("leaderstats")
@@ -2417,18 +1814,15 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
                         if ks then kills = ks.Value end
                     end
                 end
-                e.KillTxt.Color    = Options.ESPKillColor.Value
+                e.KillTxt.Color = RyuConfig.ESPKillColor
                 e.KillTxt.Position = Vector2.new(box.CX, by)
-                e.KillTxt.Text     = "Kills: " .. tostring(kills)
-                e.KillTxt.Visible  = true
+                e.KillTxt.Text = "Kills: " .. tostring(kills)
+                e.KillTxt.Visible = true
             else
                 e.KillTxt.Visible = false
             end
         else
-            e.NameTxt.Visible = false
-            e.CharTxt.Visible = false
-            e.DistTxt.Visible = false
-            e.KillTxt.Visible = false
+            e.NameTxt.Visible = false; e.CharTxt.Visible = false; e.DistTxt.Visible = false; e.KillTxt.Visible = false
         end
     end
 
@@ -2440,439 +1834,4 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
             Logic.ESPObjects[char] = nil
         end
     end
-end)
-
-UI.ServerListGrp = UI.Tabs.Servers:AddLeftGroupbox("Server List", "list")
-UI.ServerInfoGrp = UI.Tabs.Servers:AddRightGroupbox("Server Details", "info")
-
-Logic.ServerList = {}
-Logic.ServerMap = {}
-Logic.SelectedServerData = nil
-
-local function estimateRegion(ping)
-    if ping <= 0 then return "Unknown"
-    elseif ping <= 40 then return "US East / Nearby"
-    elseif ping <= 70 then return "US Central"
-    elseif ping <= 100 then return "US West / Regional"
-    elseif ping <= 140 then return "EU West"
-    elseif ping <= 180 then return "EU East / Middle East"
-    elseif ping <= 220 then return "South America"
-    elseif ping <= 270 then return "East Asia"
-    elseif ping <= 320 then return "Southeast Asia / Oceania"
-    elseif ping <= 400 then return "Africa / South Asia"
-    else return "Very Far" end
-end
-
-local function pingQualityIcon(ping)
-    if ping <= 60 then return "[+++]"
-    elseif ping <= 120 then return "[++ ]"
-    elseif ping <= 200 then return "[+  ]"
-    else return "[!  ]" end
-end
-
-local function buildServerMap(serverList)
-    Logic.ServerMap = {}
-    local vals = {}
-    for i, entry in ipairs(serverList) do
-        local label = string.format("%s #%d | %d/%d | %dms%s",
-            pingQualityIcon(entry.Ping),
-            i,
-            entry.Playing,
-            entry.MaxPlayers,
-            entry.Ping,
-            entry.IsCurrent and " [YOU]" or ""
-        )
-        Logic.ServerMap[label] = entry
-        vals[#vals + 1] = label
-    end
-    return vals
-end
-
-local function updateServerInfo(entry)
-    if not UI.SrvInfoLabel then return end
-    
-    if not entry then
-        UI.SrvInfoLabel:SetText("No server selected.\n\nClick 'Refresh Server List' to load servers,\nthen select one from the dropdown.")
-        return
-    end
-
-    local fillPercent = entry.MaxPlayers > 0 and math.floor((entry.Playing / entry.MaxPlayers) * 100) or 0
-    local fillBar = string.rep("|", math.floor(fillPercent / 5)) .. string.rep(".", 20 - math.floor(fillPercent / 5))
-
-    local info = string.format(
-        "Job ID:\n%s\n\n" ..
-        "Players: %d / %d (%d%%)\n[%s]\n\n" ..
-        "Ping: %d ms  %s\n" ..
-        "Server FPS: %.1f\n\n" ..
-        "Estimated Region: %s\n" ..
-        "%s",
-        entry.JobId,
-        entry.Playing, entry.MaxPlayers, fillPercent,
-        fillBar,
-        entry.Ping, pingQualityIcon(entry.Ping),
-        entry.FPS,
-        entry.Region,
-        entry.IsCurrent and "\n>> This is YOUR current server <<" or ""
-    )
-    UI.SrvInfoLabel:SetText(info)
-end
-
-local function updateStatsLabel()
-    if not UI.SrvStatsLabel then return end
-
-    if #Logic.ServerList == 0 then
-        UI.SrvStatsLabel:SetText("No data. Refresh to load servers.")
-        return
-    end
-    
-    local totalPlayers, totalPing, minPing, maxPing = 0, 0, math.huge, 0
-    local fullServers, emptyServers = 0, 0
-    for _, srv in ipairs(Logic.ServerList) do
-        totalPlayers += srv.Playing
-        totalPing += srv.Ping
-        if srv.Ping < minPing then minPing = srv.Ping end
-        if srv.Ping > maxPing then maxPing = srv.Ping end
-        if srv.Playing >= srv.MaxPlayers then fullServers += 1 end
-        if srv.Playing == 0 then emptyServers += 1 end
-    end
-    local avgPing = math.floor(totalPing / #Logic.ServerList)
-    UI.SrvStatsLabel:SetText(string.format(
-        "Total Servers: %d\nTotal Players: %d\n\nAvg Ping: %dms\nBest Ping: %dms\nWorst Ping: %dms\n\nFull Servers: %d\nEmpty Servers: %d",
-        #Logic.ServerList, totalPlayers, avgPing, minPing, maxPing, fullServers, emptyServers
-    ))
-end
-
-local function refreshDropdown()
-    local vals = buildServerMap(Logic.ServerList)
-    if #vals > 0 then
-        Options.ServerDropdown:SetValues(vals)
-        Options.ServerDropdown:SetValue(vals[1])
-    else
-        Options.ServerDropdown:SetValues({ "No servers found" })
-    end
-    updateStatsLabel()
-end
-
-local function fetchServers()
-    Logic.ServerList = {}
-    Logic.ServerMap = {}
-    local placeId = game.PlaceId
-    local cursor = ""
-    local maxPages = 10
-    local idx = 0
-
-    Library:Notify({ Title = "Server Browser", Description = "Fetching servers... This may take a moment.", Time = 4 })
-
-    for page = 1, maxPages do
-        local url = string.format(
-            "https://games.roblox.com/v1/games/%d/servers/0?sortOrder=2&excludeFullGames=false&limit=100%s",
-            placeId, cursor ~= "" and ("&cursor=" .. cursor) or ""
-        )
-
-        local ok, res = pcall(game.HttpGet, game, url)
-        if not ok or not res then break end
-
-        local ok2, data = pcall(HttpService.JSONDecode, HttpService, res)
-        if not ok2 or not data or not data.data then break end
-
-        for _, srv in ipairs(data.data) do
-            idx += 1
-            local entry = {
-                JobId = srv.id or "",
-                Playing = srv.playing or 0,
-                MaxPlayers = srv.maxPlayers or 0,
-                Ping = srv.ping or 0,
-                FPS = srv.fps or 0,
-                Index = idx,
-                Region = estimateRegion(srv.ping or 0),
-                IsCurrent = (srv.id == game.JobId),
-            }
-            table.insert(Logic.ServerList, entry)
-        end
-
-        cursor = data.nextPageCursor or ""
-        if cursor == "" then break end
-        task.wait(0.4)
-    end
-
-    Library:Notify({ Title = "Server Browser", Description = "Found " .. tostring(#Logic.ServerList) .. " servers!", Time = 4 })
-    return Logic.ServerList
-end
-
-UI.SrvInfoLabel = UI.ServerInfoGrp:AddLabel("SrvInfo", {
-    Text = "No server selected.\n\nClick 'Refresh Server List' to load servers,\nthen select one from the dropdown.",
-    DoesWrap = true,
-})
-
-UI.ServerInfoGrp:AddDivider()
-
-UI.ServerInfoGrp:AddButton({
-    Text = "Join Selected Server",
-    Func = function()
-        if not Logic.SelectedServerData then
-            Library:Notify({ Title = "Servers", Description = "No server selected!", Time = 3 })
-            return
-        end
-        if Logic.SelectedServerData.IsCurrent then
-            Library:Notify({ Title = "Servers", Description = "You're already in this server!", Time = 3 })
-            return
-        end
-        Library:Notify({ Title = "Servers", Description = "Teleporting...", Time = 3 })
-        TeleportService:TeleportToPlaceInstance(game.PlaceId, Logic.SelectedServerData.JobId, Player)
-    end,
-    DoubleClick = true,
-    Tooltip = "Double-click to teleport to the selected server",
-})
-
-UI.ServerInfoGrp:AddButton({
-    Text = "Join Lowest Ping Server",
-    Func = function()
-        if #Logic.ServerList == 0 then
-            Library:Notify({ Title = "Servers", Description = "Refresh the server list first!", Time = 3 })
-            return
-        end
-        local best = nil
-        for _, srv in ipairs(Logic.ServerList) do
-            if not srv.IsCurrent and srv.Playing > 0 and srv.Ping > 0 then
-                if not best or srv.Ping < best.Ping then best = srv end
-            end
-        end
-        if best then
-            Library:Notify({ Title = "Servers", Description = "Joining best ping server (" .. best.Ping .. "ms, " .. best.Playing .. " players)...", Time = 3 })
-            TeleportService:TeleportToPlaceInstance(game.PlaceId, best.JobId, Player)
-        else
-            Library:Notify({ Title = "Servers", Description = "No valid server found!", Time = 3 })
-        end
-    end,
-    DoubleClick = true,
-    Tooltip = "Double-click to join the server with lowest ping",
-})
-
-UI.ServerInfoGrp:AddButton({
-    Text = "Join Smallest Server",
-    Func = function()
-        if #Logic.ServerList == 0 then
-            Library:Notify({ Title = "Servers", Description = "Refresh the server list first!", Time = 3 })
-            return
-        end
-        local smallest = nil
-        for _, srv in ipairs(Logic.ServerList) do
-            if not srv.IsCurrent and srv.Playing > 0 then
-                if not smallest or srv.Playing < smallest.Playing then smallest = srv end
-            end
-        end
-        if smallest then
-            Library:Notify({ Title = "Servers", Description = "Joining smallest server (" .. smallest.Playing .. " players, " .. smallest.Ping .. "ms)...", Time = 3 })
-            TeleportService:TeleportToPlaceInstance(game.PlaceId, smallest.JobId, Player)
-        else
-            Library:Notify({ Title = "Servers", Description = "No valid server found!", Time = 3 })
-        end
-    end,
-    DoubleClick = true,
-    Tooltip = "Double-click to join the server with fewest players",
-})
-
-UI.ServerInfoGrp:AddButton({
-    Text = "Join Random Server",
-    Func = function()
-        if #Logic.ServerList == 0 then
-            Library:Notify({ Title = "Servers", Description = "Refresh the server list first!", Time = 3 })
-            return
-        end
-        local candidates = {}
-        for _, srv in ipairs(Logic.ServerList) do
-            if not srv.IsCurrent then table.insert(candidates, srv) end
-        end
-        if #candidates > 0 then
-            local pick = candidates[math.random(1, #candidates)]
-            Library:Notify({ Title = "Servers", Description = "Joining random server (" .. pick.Playing .. " players, " .. pick.Ping .. "ms)...", Time = 3 })
-            TeleportService:TeleportToPlaceInstance(game.PlaceId, pick.JobId, Player)
-        else
-            Library:Notify({ Title = "Servers", Description = "No other servers available!", Time = 3 })
-        end
-    end,
-    DoubleClick = true,
-    Tooltip = "Double-click to join a random server",
-})
-
-UI.ServerInfoGrp:AddButton({
-    Text = "Rejoin Current Server",
-    Func = function()
-        Library:Notify({ Title = "Servers", Description = "Rejoining...", Time = 3 })
-        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, Player)
-    end,
-    DoubleClick = true,
-    Tooltip = "Double-click to rejoin your current server",
-})
-
-UI.ServerInfoGrp:AddDivider()
-
-UI.SrvStatsLabel = UI.ServerInfoGrp:AddLabel("SrvStats", {
-    Text = "No data. Refresh to load servers.",
-    DoesWrap = true,
-})
-
-UI.ServerListGrp:AddButton({
-    Text = "Refresh Server List",
-    Func = function()
-        task.spawn(function()
-            fetchServers()
-            refreshDropdown()
-        end)
-    end,
-    DoubleClick = false,
-    Tooltip = "Fetches all available servers (up to ~1000)",
-})
-
-UI.ServerListGrp:AddDivider()
-
-UI.ServerListGrp:AddDropdown("ServerDropdown", {
-    Values = { "Click 'Refresh' to load servers" },
-    Default = 1,
-    Multi = false,
-    Text = "Select Server",
-    Searchable = true,
-    MaxVisibleDropdownItems = 10,
-    Tooltip = "[+++] = Great ping | [!  ] = Poor ping",
-    Callback = function(Value)
-        Logic.SelectedServerData = Logic.ServerMap[Value]
-        updateServerInfo(Logic.SelectedServerData)
-    end,
-})
-
-UI.ServerListGrp:AddDivider()
-
-UI.ServerListGrp:AddDropdown("ServerSortBy", {
-    Values = { "Default (Roblox)", "Most Players", "Least Players", "Lowest Ping", "Highest Ping", "Highest FPS" },
-    Default = 1,
-    Multi = false,
-    Text = "Sort By",
-    Tooltip = "Re-sorts the server list",
-    Callback = function(Value)
-        if #Logic.ServerList == 0 then return end
-
-        local sorted = {}
-        for i, v in ipairs(Logic.ServerList) do sorted[i] = v end
-
-        if Value == "Most Players" then
-            table.sort(sorted, function(a, b) return a.Playing > b.Playing end)
-        elseif Value == "Least Players" then
-            table.sort(sorted, function(a, b) return a.Playing < b.Playing end)
-        elseif Value == "Lowest Ping" then
-            table.sort(sorted, function(a, b) return a.Ping < b.Ping end)
-        elseif Value == "Highest Ping" then
-            table.sort(sorted, function(a, b) return a.Ping > b.Ping end)
-        elseif Value == "Highest FPS" then
-            table.sort(sorted, function(a, b) return a.FPS > b.FPS end)
-        end
-
-        local vals = buildServerMap(sorted)
-        Options.ServerDropdown:SetValues(vals)
-        if #vals > 0 then Options.ServerDropdown:SetValue(vals[1]) end
-    end,
-})
-
-UI.ServerListGrp:AddSlider("MinPlayersFilter", {
-    Text = "Min Players Filter",
-    Default = 0,
-    Min = 0,
-    Max = 50,
-    Rounding = 0,
-    Tooltip = "Only show servers with at least this many players",
-})
-
-UI.ServerListGrp:AddSlider("MaxPingFilter", {
-    Text = "Max Ping Filter",
-    Default = 999,
-    Min = 10,
-    Max = 999,
-    Rounding = 0,
-    Tooltip = "Only show servers with ping below this value (999 = no filter)",
-})
-
-UI.ServerListGrp:AddButton({
-    Text = "Apply Filters",
-    Func = function()
-        if #Logic.ServerList == 0 then
-            Library:Notify({ Title = "Servers", Description = "Refresh the server list first!", Time = 3 })
-            return
-        end
-        local minP = Options.MinPlayersFilter.Value
-        local maxPing = Options.MaxPingFilter.Value
-
-        local filtered = {}
-        for _, entry in ipairs(Logic.ServerList) do
-            if entry.Playing >= minP and (maxPing >= 999 or entry.Ping <= maxPing) then
-                table.insert(filtered, entry)
-            end
-        end
-
-        local vals = buildServerMap(filtered)
-        Options.ServerDropdown:SetValues(#vals > 0 and vals or { "No servers match filters" })
-        if #vals > 0 then Options.ServerDropdown:SetValue(vals[1]) end
-        Library:Notify({ Title = "Servers", Description = "Showing " .. #vals .. " servers after filtering.", Time = 3 })
-    end,
-    Tooltip = "Apply min players and max ping filters",
-})
-
-task.spawn(function()
-    task.wait(2)
-    fetchServers()
-    refreshDropdown()
-end)
-
-UI.UIBox = UI.Tabs.UISettings:AddLeftGroupbox("UI Configuration", "palette")
-
-UI.UIBox:AddButton("Unload UI", function() Library:Unload() end)
-
-UI.UIBox:AddLabel("Menu Bind"):AddKeyPicker("MenuBind", { 
-    Default = "RightShift", 
-    NoUI = true, 
-    Text = "Menu Toggle Key" 
-})
-
-Library.ToggleKeybind = Options.MenuBind 
-
--- Die ThemeManager und SaveManager Settings wurden entfernt
--- Wir setzen hier manuell eine Standard-Accent-Farbe für das Ryu Hub (Rot)
-if Library.AccentColor then
-    Library:SetAccentColor(Color3.fromRGB(255, 50, 50)) 
-end
-
-Library:OnUnload(function()
-    if Logic.Connections.ESP then Logic.Connections.ESP:Disconnect() end
-    if Logic.Connections.LockZoom then Logic.Connections.LockZoom:Disconnect() end
-    if Logic.Connections.PlayerAdded then Logic.Connections.PlayerAdded:Disconnect() end
-    if Logic.Connections.PlayerRemoving then Logic.Connections.PlayerRemoving:Disconnect() end
-    if Logic.Connections.DashInput then Logic.Connections.DashInput:Disconnect() end
-    pcall(function() RunService:UnbindFromRenderStep("RyuHubTargetLock") end)
-    
-    if Logic.LockState.ESPGui then 
-        pcall(function() Logic.LockState.ESPGui:Destroy() end)
-    end
-    if Logic.LockState.LockBodyGyro then
-        pcall(function() Logic.LockState.LockBodyGyro:Destroy() end)
-    end
-    
-    if Logic.LockState.FOVCircle then pcall(function() Logic.LockState.FOVCircle:Remove() end) end
-    if Logic.LockState.TargetInfoName then pcall(function() Logic.LockState.TargetInfoName:Remove() end) end
-    if Logic.LockState.TargetInfoHP then pcall(function() Logic.LockState.TargetInfoHP:Remove() end) end
-    if Logic.LockState.TargetInfoDist then pcall(function() Logic.LockState.TargetInfoDist:Remove() end) end
-    if Logic.LockState.TargetInfoLine then pcall(function() Logic.LockState.TargetInfoLine:Remove() end) end
-    stopPathfinding() 
-    if workspace.CurrentCamera then
-        workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
-        local char = Player.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if hum then 
-            workspace.CurrentCamera.CameraSubject = hum 
-            hum.AutoRotate = true
-        end
-    end
-
-    for _, e in pairs(Logic.ESPObjects) do
-        hideAll(e)
-        removeAll(e)
-    end
-    Logic.ESPObjects = {}
 end)
