@@ -1080,13 +1080,14 @@ local function fetchServers()
     return Logic.ServerList
 end
 
-
 --// ==========================================
 --// UI BUILDER HELPER FUNCTIONS
 --// ==========================================
 
 local itemOrderCounter = 0
 local Tabs = {}
+local refreshPlayerDropdown -- Forward declaration für den Button
+local LockPlayerDropdown -- Forward declaration für das Dropdown
 
 local function UpdateSidebarCanvas()
     local totalH = 10
@@ -1366,7 +1367,9 @@ local function CreateButton(section, text, color, callback)
     Instance.new("UIStroke", btn).Color = Theme.Stroke
     AddClickPop(btn)
     
-    btn.MouseButton1Click:Connect(function() pcall(callback) end)
+    btn.MouseButton1Click:Connect(function() 
+        if callback then pcall(callback) end 
+    end)
     return btn
 end
 
@@ -1540,8 +1543,8 @@ local SecLockMain = CreateSection(SubTargetLock, "Main Lock")
 CreateToggle(SecLockMain, "Enable Lock", Logic.LockState.Enabled, function(v) Logic.LockState.Enabled = v end)
 CreateKeybind(SecLockMain, "Lock Keybind", RyuConfig.LockKeybind, function(v) RyuConfig.LockKeybind = v end)
 CreateToggle(SecLockMain, "Lock ESP", Logic.LockSettings.ESPEnabled, function(v) Logic.LockSettings.ESPEnabled = v end)
-CreateButton(SecLockMain, "Refresh Player List", Theme.SectionBG, refreshPlayerDropdown)
-CreateDropdown(SecLockMain, "Target Player", {"Auto"}, function(v) RyuConfig.LockSpecificPlayer = v end)
+CreateButton(SecLockMain, "Refresh Player List", Theme.SectionBG, function() if refreshPlayerDropdown then refreshPlayerDropdown() end end)
+LockPlayerDropdown = CreateDropdown(SecLockMain, "Target Player", {"Auto"}, function(v) RyuConfig.LockSpecificPlayer = v end)
 
 local SecLockCfg = CreateSection(SubTargetLock, "Lock Config")
 CreateToggle(SecLockCfg, "Wall Check", Logic.LockSettings.WallCheck, function(v) Logic.LockSettings.WallCheck = v end)
@@ -1597,6 +1600,40 @@ pcall(function()
     end
     UpdateSidebarCanvas()
 end)
+
+refreshPlayerDropdown = function()
+    local vals = {"Auto"}
+    local charsFolder = workspace:FindFirstChild("Characters")
+    
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= Player then
+            table.insert(vals, p.Name)
+        end
+    end
+    
+    if charsFolder then
+        for _, model in ipairs(charsFolder:GetChildren()) do
+            if model:IsA("Model") and not Players:GetPlayerFromCharacter(model) then
+                local hum = model:FindFirstChildOfClass("Humanoid")
+                if hum and hum.Health > 0 then
+                    local npcName = "[NPC] " .. model.Name
+                    if not table.find(vals, npcName) then
+                        table.insert(vals, npcName)
+                    end
+                end
+            end
+        end
+    end
+    
+    pcall(function()
+        if LockPlayerDropdown then
+            LockPlayerDropdown.Refresh(vals)
+        end
+        if not table.find(vals, RyuConfig.LockSpecificPlayer) then
+            RyuConfig.LockSpecificPlayer = "Auto"
+        end
+    end)
+end
 
 task.spawn(function()
     task.wait(1)
