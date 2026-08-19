@@ -9,9 +9,6 @@ local PathfindingService = game:GetService("PathfindingService")
 local Player = Players.LocalPlayer
 local Mouse = Player:GetMouse()
 
-local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/ValoranterDev/Obs0/refs/heads/main/Library.lua"))()
-
-local repoForAddons = "https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
 local ThemeManager = loadstring(game:HttpGet(repoForAddons .. "addons/ThemeManager.lua"))()
 local SaveManager = loadstring(game:HttpGet(repoForAddons .. "addons/SaveManager.lua"))()
 
