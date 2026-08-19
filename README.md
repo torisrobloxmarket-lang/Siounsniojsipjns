@@ -1,6 +1,6 @@
 --// ==========================================
 --// RYU HUB - UI OVERLAY & FULL LOGIC INTEGRATION
---// 100% MONOCHROME CLEAN TEMPLATE
+--// 100% MONOCHROME CLEAN TEMPLATE (FIXED)
 --// ==========================================
 
 local LPH_NO_VIRTUALIZE = function(f) return f end
@@ -46,7 +46,7 @@ local Theme = {
     SectionBG = Color3.fromRGB(30, 30, 30),
     Text = Color3.fromRGB(255, 255, 255),
     SubText = Color3.fromRGB(150, 150, 150),
-    Accent = Color3.fromRGB(255, 50, 50), -- Roter Akzent passend zu Ryu
+    Accent = Color3.fromRGB(255, 50, 50),
     ToggleOff = Color3.fromRGB(45, 45, 45),
     ToggleOn = Color3.fromRGB(255, 255, 255),
     Stroke = Color3.fromRGB(60, 60, 60)
@@ -54,7 +54,6 @@ local Theme = {
 
 --// CONFIGURATION & STATE
 local RyuConfig = {
-    -- Combat / Blackflash
     BlackFlashEnabled = false,
     CameraLockEnabled = true,
     DashDistance = 15,
@@ -63,8 +62,6 @@ local RyuConfig = {
     LockTime = 0.1,
     DashEasingStyle = Enum.EasingStyle.Cubic,
     DashEasingDirection = Enum.EasingDirection.Out,
-    
-    -- Side Dash Assist
     EnableDashAssist = false,
     DashCameraLock = false,
     DashOnlyIfFacing = false,
@@ -75,8 +72,6 @@ local RyuConfig = {
     DashCurveStrength = 10,
     DashArchHeight = 3,
     DashLockDuration = 0.35,
-
-    -- ESP Visuals
     ESPBox = false, ESPBoxColor = Color3.fromRGB(255, 65, 65),
     ESPCorner = false, ESPCornerColor = Color3.fromRGB(0, 255, 255),
     ESPOutline = false, ESPOutlineColor = Color3.fromRGB(255, 255, 255),
@@ -88,8 +83,6 @@ local RyuConfig = {
     ESPDistance = false, ESPDistanceColor = Color3.fromRGB(120, 200, 255),
     ESPKill = false, ESPKillColor = Color3.fromRGB(255, 170, 0),
     ESPHPText = false, ESPHPBar = false, CooldownRevealer = false,
-
-    -- Lock System
     LockKeybind = Enum.KeyCode.C,
     LockSpecificPlayer = "Auto",
 }
@@ -111,974 +104,198 @@ Logic.DashAnimLeft.AnimationId = "rbxassetid://75203303352791"
 Logic.DashAnimRight.AnimationId = "rbxassetid://117223862448096"
 
 --// ==========================================
---// LOGIC FUNCTIONS
+--// MAIN GUI CONTAINERS & ANIMATIONS
 --// ==========================================
 
-_G.MiscState = _G.MiscState or {}
-local Invisibility = { Connections = {} }
+local MainSize = UDim2.new(0, math.min(750, camera.ViewportSize.X - 40), 0, math.min(480, camera.ViewportSize.Y - 40))
+local SidebarWidth = 160
 
-function Invisibility.toggle(state, silent)
-    local char = Player.Character
-    if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    local animator = hum and hum:FindFirstChildOfClass("Animator")
-    if not (hum and hrp and animator) then return end
-    local Camera = workspace.CurrentCamera
+local RyuHub = Instance.new("ScreenGui")
+RyuHub.Name = "RyuHubUI"
+RyuHub.ResetOnSpawn = false
+RyuHub.IgnoreGuiInset = true
+RyuHub.Parent = guiParent
 
-    if state then
-        _G.MiscState.IsInvisible = true
-        if not silent then hum.AutoRotate = false hrp.Anchored = true end
-
-        Invisibility.Connections["InvisNoclip"] = RunService.Stepped:Connect(function()
-            if not _G.MiscState.IsInvisible then return end
-            for _, part in ipairs(char:GetDescendants()) do if part:IsA("BasePart") then part.CanCollide = false end end
-        end)
-
-        _G.MiscState.InvisibleFakeTorso = Instance.new("Part")
-        _G.MiscState.InvisibleFakeTorso.Name = "FakeTorso"
-        _G.MiscState.InvisibleFakeTorso.Size = Vector3.new(2,2,1)
-        _G.MiscState.InvisibleFakeTorso.Transparency = 1
-        _G.MiscState.InvisibleFakeTorso.CanCollide = false
-        _G.MiscState.InvisibleFakeTorso.Anchored = true
-        _G.MiscState.InvisibleFakeTorso.Parent = workspace
-        Camera.CameraType = Enum.CameraType.Custom
-        Camera.CameraSubject = _G.MiscState.InvisibleFakeTorso
-
-        if not silent then
-            RunService:BindToRenderStep("MeditationFocus", Enum.RenderPriority.Camera.Value - 1, function()
-                if not _G.MiscState.IsInvisible or not hrp or not hrp.Parent or not _G.MiscState.InvisibleFakeTorso then return end
-                local camCF = Camera.CFrame
-                local lookDir = Vector3.new(camCF.LookVector.X, 0, camCF.LookVector.Z)
-                if lookDir.Magnitude > 0.001 then hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + lookDir.Unit) end
-                _G.MiscState.InvisibleFakeTorso.CFrame = CFrame.new(hrp.Position + Vector3.new(0, 1.5, 0))
-            end)
+local function AddClickPop(element)
+    local orig = element.Size
+    element.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            pcall(function() TweenService:Create(element, TweenInfo.new(0.1), {Size = UDim2.new(orig.X.Scale, orig.X.Offset - 4, orig.Y.Scale, orig.Y.Offset - 4)}):Play() end)
         end
+    end)
+    element.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            pcall(function() TweenService:Create(element, TweenInfo.new(0.3), {Size = orig}):Play() end)
+        end
+    end)
+end
 
-        pcall(function()
-            local animObj = ReplicatedStorage.Modules.MVP.Meditation.Character
-            _G.MiscState.InvisibleTrack = animator:LoadAnimation(animObj)
-            _G.MiscState.InvisibleTrack.Priority = Enum.AnimationPriority.Action4
-            _G.MiscState.InvisibleTrack:Play()
-            task.wait(0.1)
-            _G.MiscState.InvisibleTrack.TimePosition = 0.1
-            _G.MiscState.InvisibleTrack:AdjustSpeed(0)
-            for _, t in ipairs(animator:GetPlayingAnimationTracks()) do if t ~= _G.MiscState.InvisibleTrack then t:Stop(0) end end
-            Invisibility.Connections["InvisAnim"] = animator.AnimationPlayed:Connect(function(newTrack) if newTrack ~= _G.MiscState.InvisibleTrack then newTrack:Stop(0) end end)
-        end)
+-- Toggle Button
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
+ToggleBtn.Position = UDim2.new(0, 15, 0, 60)
+ToggleBtn.BackgroundColor3 = Theme.Sidebar
+ToggleBtn.Text = ""
+ToggleBtn.Parent = RyuHub
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
+
+local btnStroke = Instance.new("UIStroke", ToggleBtn)
+btnStroke.Color = Theme.Accent
+btnStroke.Thickness = 2
+btnStroke.Transparency = 0.5
+
+local Katana = Instance.new("Frame", ToggleBtn)
+Katana.Size = UDim2.new(1, 0, 1, 0)
+Katana.BackgroundTransparency = 1
+Katana.Rotation = 45
+
+local Blade = Instance.new("Frame", Katana)
+Blade.Size = UDim2.new(0, 2, 0, 24)
+Blade.Position = UDim2.new(0.5, -1, 0.5, -18)
+Blade.BackgroundColor3 = Theme.Text
+Blade.BorderSizePixel = 0
+
+local Guard = Instance.new("Frame", Katana)
+Guard.Size = UDim2.new(0, 12, 0, 2)
+Guard.Position = UDim2.new(0.5, -6, 0.5, 6)
+Guard.BackgroundColor3 = Theme.SubText
+Guard.BorderSizePixel = 0
+
+local Handle = Instance.new("Frame", Katana)
+Handle.Size = UDim2.new(0, 4, 0, 10)
+Handle.Position = UDim2.new(0.5, -2, 0.5, 8)
+Handle.BackgroundColor3 = Theme.Stroke
+Handle.BorderSizePixel = 0
+
+Instance.new("UICorner", Blade).CornerRadius = UDim.new(1, 0)
+Instance.new("UICorner", Guard).CornerRadius = UDim.new(1, 0)
+Instance.new("UICorner", Handle).CornerRadius = UDim.new(0, 1)
+AddClickPop(ToggleBtn)
+
+-- Main Frame
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 0, 0, 0)
+MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+MainFrame.BackgroundColor3 = Theme.Background
+MainFrame.BorderSizePixel = 0
+MainFrame.Visible = false
+MainFrame.ClipsDescendants = true
+MainFrame.Active = true
+MainFrame.Parent = RyuHub
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
+
+local mainStroke = Instance.new("UIStroke", MainFrame)
+mainStroke.Color = Theme.Stroke
+mainStroke.Thickness = 1.5
+
+local DragText = Instance.new("TextLabel", MainFrame)
+DragText.Size = UDim2.new(1, 0, 1, 0)
+DragText.Position = UDim2.new(0, 0, 0, 0)
+DragText.BackgroundTransparency = 1
+DragText.Text = "DISCORD.GG/RYUHUB"
+DragText.Font = Enum.Font.GothamBlack
+DragText.TextSize = 50
+DragText.TextColor3 = Theme.Text
+DragText.TextTransparency = 0.95
+DragText.ZIndex = 0
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    if MainFrame.Visible then
+        pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play() end)
+        task.delay(0.3, function() MainFrame.Visible = false end)
     else
-        _G.MiscState.IsInvisible = false
-        if Invisibility.Connections["InvisNoclip"] then Invisibility.Connections["InvisNoclip"]:Disconnect(); Invisibility.Connections["InvisNoclip"] = nil end
-        if Invisibility.Connections["InvisAnim"] then Invisibility.Connections["InvisAnim"]:Disconnect(); Invisibility.Connections["InvisAnim"] = nil end
-        pcall(function() RunService:UnbindFromRenderStep("MeditationFocus") end)
-        if char and char.Parent then for _, part in ipairs(char:GetDescendants()) do if part:IsA("BasePart") then part.CanCollide = true end end end
-        if hrp and hrp.Parent then hrp.Anchored = false end
-        if hum and hum.Parent then hum.AutoRotate = true; Camera.CameraSubject = hum end
-        if _G.MiscState.InvisibleFakeTorso then _G.MiscState.InvisibleFakeTorso:Destroy(); _G.MiscState.InvisibleFakeTorso = nil end
-        if _G.MiscState.InvisibleTrack then pcall(function() _G.MiscState.InvisibleTrack:Stop(0) end); pcall(function() _G.MiscState.InvisibleTrack:Destroy() end); _G.MiscState.InvisibleTrack = nil end
+        MainFrame.Visible = true
+        pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = MainSize, Position = UDim2.new(0.5, -MainSize.X.Offset / 2, 0.5, -MainSize.Y.Offset / 2)}):Play() end)
     end
-end
+end)
 
-local function getWaypointSpacing(speed)
-    if speed <= 30 then return 4 elseif speed <= 100 then return 6 elseif speed <= 300 then return 10 elseif speed <= 600 then return 16 else return 24 end
-end
+local ContentWrapper = Instance.new("Frame", MainFrame)
+ContentWrapper.Size = UDim2.new(1, 0, 1, 0)
+ContentWrapper.BackgroundTransparency = 1
+ContentWrapper.BorderSizePixel = 0
 
-local function clearPathVisualization()
-    for _, p in ipairs(Logic.Pathfinding.VisualParts) do pcall(function() p:Destroy() end) end
-    Logic.Pathfinding.VisualParts = {}
-    if Logic.Pathfinding.VisualFolder and Logic.Pathfinding.VisualFolder.Parent then Logic.Pathfinding.VisualFolder:Destroy() end
-    Logic.Pathfinding.VisualFolder = nil
-end
+local Topbar = Instance.new("Frame", ContentWrapper)
+Topbar.Size = UDim2.new(1, 0, 0, 60)
+Topbar.BackgroundTransparency = 1
 
-local function visualizePath(waypoints)
-    clearPathVisualization()
-    if not Logic.Pathfinding.VisualizeOn then return end
-    local folder = Instance.new("Folder")
-    folder.Name = "PathVisuals"
-    folder.Parent = workspace
-    Logic.Pathfinding.VisualFolder = folder
+local Title = Instance.new("TextLabel", Topbar)
+Title.Size = UDim2.new(0, 300, 1, 0)
+Title.Position = UDim2.new(0, 20, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "RYU HUB"
+Title.Font = Enum.Font.GothamBlack
+Title.TextSize = 22
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.TextColor3 = Theme.Text
 
-    for i, wp in ipairs(waypoints) do
-        local isJump = (wp.Action == Enum.PathWaypointAction.Jump)
-        local node = Instance.new("Part")
-        node.Shape = Enum.PartType.Ball
-        node.Size = isJump and Vector3.new(1.4, 1.4, 1.4) or Vector3.new(0.9, 0.9, 0.9)
-        node.Position = wp.Position
-        node.Anchored = true
-        node.CanCollide = false
-        node.Material = Enum.Material.Neon
-        node.Transparency = 0.25
-        node.Color = isJump and Color3.fromRGB(255, 180, 30) or Color3.fromRGB(30, 180, 255)
-        node.Parent = folder
-        table.insert(Logic.Pathfinding.VisualParts, node)
+local SubTitle = Instance.new("TextLabel", Topbar)
+SubTitle.Size = UDim2.new(0, 300, 0, 15)
+SubTitle.Position = UDim2.new(0, 20, 0, 38)
+SubTitle.BackgroundTransparency = 1
+SubTitle.Text = "Jujutsu Shenanigans"
+SubTitle.TextColor3 = Theme.SubText
+SubTitle.Font = Enum.Font.Gotham
+SubTitle.TextSize = 11
+SubTitle.TextXAlignment = Enum.TextXAlignment.Left
 
-        if i > 1 then
-            local prevPos = waypoints[i - 1].Position
-            local currPos = wp.Position
-            local mid = (prevPos + currPos) / 2
-            local dist = (currPos - prevPos).Magnitude
-            local line = Instance.new("Part")
-            line.Anchored = true
-            line.CanCollide = false
-            line.Material = Enum.Material.Neon
-            line.Color = Color3.fromRGB(50, 100, 255)
-            line.Transparency = 0.55
-            line.Size = Vector3.new(0.22, 0.22, dist)
-            line.CFrame = CFrame.lookAt(mid, currPos)
-            line.Parent = folder
-            table.insert(Logic.Pathfinding.VisualParts, line)
-        end
+local CloseBtn = Instance.new("TextButton", Topbar)
+CloseBtn.Size = UDim2.new(0, 28, 0, 28)
+CloseBtn.Position = UDim2.new(1, -40, 0, 15)
+CloseBtn.BackgroundColor3 = Theme.SectionBG
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Theme.Text
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 14
+Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
+Instance.new("UIStroke", CloseBtn).Color = Theme.Stroke
+
+CloseBtn.MouseButton1Click:Connect(function()
+    pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play() end)
+    task.delay(0.3, function() MainFrame.Visible = false end)
+end)
+
+-- Window Dragging
+local mDragging, mDragStart, mStartPos = false, nil, nil
+Topbar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
+        mDragging = true
+        mDragStart = input.Position
+        mStartPos = MainFrame.Position 
     end
-end
-
-local function batchWaypoints(waypoints, minSegmentLength)
-    local batched = {}
-    local lastAdded = waypoints[1]
-    table.insert(batched, waypoints[1])
-    for i = 2, #waypoints do
-        local wp = waypoints[i]
-        local isJump = (wp.Action == Enum.PathWaypointAction.Jump)
-        local isLast = (i == #waypoints)
-        local distFromLast = (wp.Position - lastAdded.Position).Magnitude
-        if isJump or isLast or distFromLast >= minSegmentLength then
-            table.insert(batched, wp)
-            lastAdded = wp
-        end
+end)
+Topbar.InputChanged:Connect(function(input)
+    if mDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - mDragStart
+        MainFrame.Position = UDim2.new(mStartPos.X.Scale, mStartPos.X.Offset + delta.X, mStartPos.Y.Scale, mStartPos.Y.Offset + delta.Y)
     end
-    return batched
-end
-
-local function tweenToPosition(hrp, targetPos, speed)
-    local distance = (hrp.Position - targetPos).Magnitude
-    if distance < 0.5 then return true end
-    local duration = math.max(distance / speed, 0.001)
-    local direction = (targetPos - hrp.Position)
-    local flatDir = Vector3.new(direction.X, 0, direction.Z)
-    local targetCF = flatDir.Magnitude > 0.1 and CFrame.new(targetPos, targetPos + flatDir.Unit) or CFrame.new(targetPos) * hrp.CFrame.Rotation
-
-    local tween = TweenService:Create(hrp, TweenInfo.new(duration, Enum.EasingStyle.Linear), { CFrame = targetCF })
-    Logic.Pathfinding.CurrentTween = tween
-    tween:Play()
-
-    local done = false
-    local conn
-    conn = tween.Completed:Connect(function() done = true if conn then conn:Disconnect() end end)
-    while not done and Logic.Pathfinding.Active do RunService.Heartbeat:Wait() end
-    if not done and Logic.Pathfinding.CurrentTween == tween then tween:Cancel() end
-    return done and Logic.Pathfinding.Active
-end
-
-local function stepToPosition(hrp, targetPos, speed)
-    local startPos = hrp.Position
-    local direction = (targetPos - startPos)
-    local distance = direction.Magnitude
-    if distance < 0.5 then return true end
-    local dirUnit = direction.Unit
-    local flatDir = Vector3.new(dirUnit.X, 0, dirUnit.Z)
-    local lookCF = flatDir.Magnitude > 0.01 and CFrame.lookAt(Vector3.zero, flatDir) or CFrame.new()
-
-    local traveled = 0
-    while traveled < distance and Logic.Pathfinding.Active do
-        local dt = RunService.Heartbeat:Wait()
-        local step = speed * dt
-        traveled = math.min(traveled + step, distance)
-        hrp.CFrame = CFrame.new(startPos + dirUnit * traveled) * lookCF.Rotation
-    end
-    return traveled >= distance and Logic.Pathfinding.Active
-end
-
-local function stopPathfinding()
-    Logic.Pathfinding.Active = false
-    if _G.MiscState and _G.MiscState.IsInvisible then Invisibility.toggle(false, false) end
-    if Logic.Pathfinding.CurrentTween then pcall(function() Logic.Pathfinding.CurrentTween:Cancel() end) end
-    local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-    if hrp then hrp.Anchored = false end
-    local hum = Player.Character and Player.Character:FindFirstChildOfClass("Humanoid")
-    if hum then hum.PlatformStand = false end
-    clearPathVisualization()
-end
-
-local function startPathfinding(targetPos)
-    if Logic.Pathfinding.Active then stopPathfinding(); task.wait(0.15) end
-    Logic.Pathfinding.Active = true
-
-    task.spawn(function()
-        while Logic.Pathfinding.Active do
-            local speed = Logic.Pathfinding.Speed
-            local agentParams = { AgentRadius = 3, AgentHeight = 6, AgentCanJump = true, AgentCanClimb = true, WaypointSpacing = getWaypointSpacing(speed) }
-            local path = PathfindingService:CreatePath(agentParams)
-
-            local hrp = Player.Character and Player.Character:FindFirstChild("HumanoidRootPart")
-            local humanoid = Player.Character and Player.Character:FindFirstChildOfClass("Humanoid")
-            if not hrp or not humanoid then task.wait(1) continue end
-
-            if (hrp.Position - targetPos).Magnitude < 6 then stopPathfinding() break end
-
-            local ok, _ = pcall(function() path:ComputeAsync(hrp.Position, targetPos) end)
-            if not ok or path.Status == Enum.PathStatus.NoPath then task.wait(1.5) continue end
-
-            local batchedWP = batchWaypoints(path:GetWaypoints(), math.max(speed * 0.05, 2))
-            visualizePath(path:GetWaypoints())
-
-            local pathBlocked = false
-            local blockedConn = path.Blocked:Connect(function() pathBlocked = true end)
-
-            hrp.Anchored = true
-            humanoid.PlatformStand = true
-            local completed = true
-            for i = 2, #batchedWP do
-                if not Logic.Pathfinding.Active or pathBlocked then completed = false break end
-                local success
-                if Logic.Pathfinding.Speed > 500 then success = stepToPosition(hrp, batchedWP[i].Position, Logic.Pathfinding.Speed)
-                else success = tweenToPosition(hrp, batchedWP[i].Position, Logic.Pathfinding.Speed) end
-                if not success then completed = false break end
-            end
-
-            if blockedConn then blockedConn:Disconnect() end
-            if completed and Logic.Pathfinding.Active then stopPathfinding() break end
-            task.wait(0.3)
-        end
-    end)
-end
-
-local function getLockTarget()
-    if tick() - Logic.LockState.LastTargetSearch < 0.5 then return nil end
-    Logic.LockState.LastTargetSearch = tick()
-
-    local char = Player.Character
-    if not char then return nil end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return nil end
-
-    if RyuConfig.LockSpecificPlayer ~= "Auto" then
-        local selectedName = RyuConfig.LockSpecificPlayer
-        local isNPC = string.sub(selectedName, 1, 6) == "[NPC] "
-        
-        if isNPC then
-            local npcName = string.sub(selectedName, 7)
-            local charsFolder = workspace:FindFirstChild("Characters")
-            if charsFolder then
-                for _, model in ipairs(charsFolder:GetChildren()) do
-                    if model.Name == npcName and model:IsA("Model") then
-                        local tHum = model:FindFirstChildOfClass("Humanoid")
-                        local tRoot = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Torso")
-                        if tHum and tHum.Health > 0 and tRoot then
-                            local dist = (root.Position - tRoot.Position).Magnitude
-                            if dist <= Logic.LockSettings.MaxDistance then
-                                if Logic.LockSettings.WallCheck then
-                                    local rayParams = RaycastParams.new()
-                                    rayParams.FilterDescendantsInstances = {char, model}
-                                    rayParams.FilterType = Enum.RaycastFilterType.Exclude
-                                    local ray = workspace:Raycast(root.Position, (tRoot.Position - root.Position).Unit * dist, rayParams)
-                                    if ray then return nil end
-                                end
-                                return model
-                            end
-                        end
-                    end
-                end
-            end
-            return nil
-        else
-            local targetPlayer = Players:FindFirstChild(selectedName)
-            if targetPlayer and targetPlayer.Character then
-                local tChar = targetPlayer.Character
-                local tHum = tChar:FindFirstChildOfClass("Humanoid")
-                local tRoot = tChar:FindFirstChild("HumanoidRootPart") or tChar:FindFirstChild("Torso")
-                if tHum and tHum.Health > 0 and tRoot and tChar ~= char then
-                    local dist = (root.Position - tRoot.Position).Magnitude
-                    if dist <= Logic.LockSettings.MaxDistance then
-                        if Logic.LockSettings.WallCheck then
-                            local rayParams = RaycastParams.new()
-                            rayParams.FilterDescendantsInstances = {char, tChar}
-                            rayParams.FilterType = Enum.RaycastFilterType.Exclude
-                            local ray = workspace:Raycast(root.Position, (tRoot.Position - root.Position).Unit * dist, rayParams)
-                            if ray then return nil end
-                        end
-                        return tChar
-                    end
-                end
-            end
-            return nil
-        end
-    end
-
-    local best, shortest = nil, math.huge
-    local charsFolder = workspace:FindFirstChild("Characters")
-    local entities = charsFolder and charsFolder:GetChildren() or {}
-    if #entities == 0 then for _, p in ipairs(Players:GetPlayers()) do if p.Character then table.insert(entities, p.Character) end end end
-
-    for _, tChar in ipairs(entities) do
-        if tChar:IsA("Model") and tChar ~= char then
-            local tHum = tChar:FindFirstChildOfClass("Humanoid")
-            local tRoot = tChar:FindFirstChild("HumanoidRootPart") or tChar:FindFirstChild("Torso")
-
-            if tHum and tHum.Health > 0 and tRoot then
-                local worldDist = (root.Position - tRoot.Position).Magnitude
-                if worldDist > Logic.LockSettings.MaxDistance then continue end
-                
-                if Logic.LockSettings.WallCheck then
-                    local rayParams = RaycastParams.new()
-                    rayParams.FilterDescendantsInstances = {char, tChar}
-                    rayParams.FilterType = Enum.RaycastFilterType.Exclude
-                    local ray = workspace:Raycast(root.Position, (tRoot.Position - root.Position).Unit * worldDist, rayParams)
-                    if ray then continue end
-                end
-
-                if Logic.LockSettings.TargetMode == "Closest" then
-                    if worldDist < shortest then shortest = worldDist; best = tChar end
-                else
-                    local pos, onScreen = camera:WorldToViewportPoint(tRoot.Position)
-                    if onScreen then
-                        local d = (Vector2.new(Mouse.X, Mouse.Y) - Vector2.new(pos.X, pos.Y)).Magnitude
-                        if Logic.LockSettings.ShowFOV and Logic.LockSettings.FOVRadius > 0 then
-                            if d > Logic.LockSettings.FOVRadius then continue end
-                        end
-                        if d < shortest then shortest = d; best = tChar end
-                    end
-                end
-            end
-        end
-    end
-    return best
-end
-
-local function hideTargetInfoHUD()
-    if Logic.LockState.TargetInfoName then Logic.LockState.TargetInfoName.Visible = false end
-    if Logic.LockState.TargetInfoHP then Logic.LockState.TargetInfoHP.Visible = false end
-    if Logic.LockState.TargetInfoDist then Logic.LockState.TargetInfoDist.Visible = false end
-    if Logic.LockState.TargetInfoLine then Logic.LockState.TargetInfoLine.Visible = false end
-end
-
-local function hideFOVCircle()
-    if Logic.LockState.FOVCircle then Logic.LockState.FOVCircle.Visible = false end
-end
-
-local function getClosestTarget(maxDist)
-    local char = Player.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if not root then return nil end
-
-    local closest = nil
-    local minDistance = math.huge
-    local charactersFolder = workspace:FindFirstChild("Characters")
-    local targetsToSearch = charactersFolder and charactersFolder:GetChildren() or workspace:GetChildren()
-
-    for _, model in ipairs(targetsToSearch) do
-        if model ~= char and model:IsA("Model") then
-            local enemyRoot = model:FindFirstChild("HumanoidRootPart")
-            local enemyHum = model:FindFirstChild("Humanoid")
-            if enemyRoot and enemyHum and enemyHum.Health > 0 then
-                local dist = (enemyRoot.Position - root.Position).Magnitude
-                if dist < minDistance and dist <= maxDist then
-                    minDistance = dist
-                    closest = model
-                end
-            end
-        end
-    end
-    return closest
-end
-
-local isDashingArc = false
-local function getBezierPoint(t, p0, p1, p2)
-    return (1 - t)^2 * p0 + 2 * (1 - t) * t * p1 + t^2 * p2
-end
-
-local function executeDashArc(direction)
-    if isDashingArc then return end 
-    isDashingArc = true
-
-    local character = Player.Character
-    if not character then isDashingArc = false return end
-    local root = character:FindFirstChild("HumanoidRootPart")
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    if not root or not humanoid then isDashingArc = false return end
-
-    local targetChar = getClosestTarget(RyuConfig.DashDetectionRange)
-    local target = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
-
-    if not target then isDashingArc = false return end
-
-    if RyuConfig.DashOnlyIfFacing then
-        local toPlayer = (root.Position - target.Position).Unit
-        local dot = target.CFrame.LookVector:Dot(toPlayer)
-        if dot < -0.1 then isDashingArc = false return end
-    end
-
-    root.Anchored = true
-    humanoid.AutoRotate = false
-    root.AssemblyLinearVelocity = Vector3.zero
-    for _, mover in pairs(root:GetChildren()) do
-        if mover:IsA("BodyVelocity") or mover:IsA("LinearVelocity") or mover:IsA("AlignPosition") or mover:IsA("VectorForce") or mover:IsA("BodyPosition") then
-            mover:Destroy()
-        end
-    end
-
-    local animator = humanoid:FindFirstChildOfClass("Animator")
-    local dashTrack = nil
-    if animator then
-        for _, track in pairs(animator:GetPlayingAnimationTracks()) do
-            if track.Animation and (track.Animation.AnimationId:match("117223862448096") or track.Animation.AnimationId:match("75203303352791")) then track:Stop(0) end
-        end
-        local animToUse = (direction == "Left") and Logic.DashAnimLeft or Logic.DashAnimRight
-        dashTrack = animator:LoadAnimation(animToUse)
-        dashTrack.Priority = Enum.AnimationPriority.Action4
-        dashTrack:Play(0.05, 1, 1 / RyuConfig.DashFlightDuration)
-    end
-
-    local p0 = root.Position
-    local sideMult = (direction == "Left") and -1 or 1
-    local progress = Instance.new("NumberValue")
-    progress.Value = 0
-    local dashName = "RyuHubFakeDash_" .. tostring(tick())
-
-    local tween = TweenService:Create(progress, TweenInfo.new(RyuConfig.DashFlightDuration, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut), { Value = 1 })
-    local Camera = workspace.CurrentCamera
-    local prevCamType = Camera.CameraType
-
-    RunService:BindToRenderStep(dashName, 20000, function()
-        if not target or not target.Parent or not root then
-            RunService:UnbindFromRenderStep(dashName)
-            if root then root.Anchored = false end
-            if humanoid then humanoid.AutoRotate = true end
-            if dashTrack then dashTrack:Stop() end
-            if RyuConfig.DashCameraLock then Camera.CameraType = prevCamType end
-            isDashingArc = false
-            return
-        end
-
-        root.Anchored = true
-        humanoid.AutoRotate = false
-        root.AssemblyLinearVelocity = Vector3.zero
-        local val = progress.Value
-        local tPos = target.Position
-        local tLook = target.CFrame.LookVector
-        local flatLook = Vector3.new(tLook.X, 0, tLook.Z)
-        if flatLook.Magnitude > 0.001 then flatLook = flatLook.Unit else flatLook = Vector3.new(0, 0, -1) end
-
-        local tRight = target.CFrame.RightVector
-        local flatRight = Vector3.new(tRight.X, 0, tRight.Z)
-        if flatRight.Magnitude > 0.001 then flatRight = flatRight.Unit else flatRight = Vector3.new(1, 0, 0) end
-
-        local p2 = tPos + (flatLook * -RyuConfig.DashBehindDistance)
-        local midPoint = (p0 + p2) / 2
-        local p1 = midPoint + (flatRight * (RyuConfig.DashCurveStrength * sideMult)) + Vector3.new(0, RyuConfig.DashArchHeight, 0)
-
-        local currentPos = getBezierPoint(val, p0, p1, p2)
-        local lookPos = Vector3.new(tPos.X, currentPos.Y, tPos.Z)
-        if (lookPos - currentPos).Magnitude > 0.1 then root.CFrame = CFrame.lookAt(currentPos, lookPos) else root.CFrame = CFrame.new(currentPos) end
-
-        if RyuConfig.DashCameraLock then
-            Camera.CameraType = Enum.CameraType.Scriptable
-            local dirToEnemy = (tPos - root.Position).Unit
-            local targetCamCF = CFrame.lookAt(root.Position - (dirToEnemy * 11) + Vector3.new(0, 4.5, 0), tPos)
-            Camera.CFrame = Camera.CFrame:Lerp(targetCamCF, 0.35)
-        end
-    end)
-
-    tween:Play()
-    tween.Completed:Connect(function()
-        RunService:UnbindFromRenderStep(dashName)
-        progress:Destroy()
-        if dashTrack then dashTrack:Stop(0.1) end
-        if RyuConfig.DashCameraLock then Camera.CameraType = prevCamType end
-
-        local lockStart = tick()
-        local lockName = "RyuHubDashLock_" .. tostring(lockStart)
-        RunService:BindToRenderStep(lockName, 20000, function()
-            if tick() - lockStart > RyuConfig.DashLockDuration or not target or not target.Parent or not root then
-                RunService:UnbindFromRenderStep(lockName)
-                if root then root.Anchored = false; root.AssemblyLinearVelocity = Vector3.zero end
-                if humanoid then humanoid.AutoRotate = true end
-                isDashingArc = false 
-                return
-            end
-            root.Anchored = true
-            if humanoid then humanoid.AutoRotate = false end
-            root.AssemblyLinearVelocity = Vector3.zero
-            local lockedPos = root.Position
-            local facePos = Vector3.new(target.Position.X, lockedPos.Y, target.Position.Z)
-            if (facePos - lockedPos).Magnitude > 0.1 then root.CFrame = CFrame.lookAt(lockedPos, facePos) end
-        end)
-    end)
-end
-
-local function autoFireDivergentFist()
-    local character = Player.Character
-    if character and character:FindFirstChild("Moveset") then
-        local divergentFistMove = character.Moveset:FindFirstChild("Divergent Fist")
-        if divergentFistMove and Logic.TargetRemote then
-            Logic.TargetRemote:FireServer(divergentFistMove, nil)
-        end
-    end
-end
-
-local function performDashLogic(target)
-    local MAX_DASH_DISTANCE = RyuConfig.DashDistance
-    local FIRE_DELAY = RyuConfig.FireDelay
-    local DASH_DURATION = RyuConfig.DashDuration
-    local POST_DASH_LOCK_TIME = RyuConfig.LockTime
-
-    local easingStyleEnum = RyuConfig.DashEasingStyle or Enum.EasingStyle.Cubic
-    local easingDirectionEnum = RyuConfig.DashEasingDirection or Enum.EasingDirection.Out
-
-    local char = Player.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    local humanoid = char and char:FindFirstChild("Humanoid")
-    local enemyRoot = target:FindFirstChild("HumanoidRootPart")
-
-    if not root or not enemyRoot then task.delay(FIRE_DELAY, autoFireDivergentFist) return end
-
-    local initialEnemyCFrame = enemyRoot.CFrame
-    local initialEnemyPos = initialEnemyCFrame.Position
-    local startPos = root.Position
-    local objectSpacePos = initialEnemyCFrame:PointToObjectSpace(startPos)
-    local isBehind = objectSpacePos.Z > 0
-    local distanceToEnemy = (startPos - initialEnemyPos).Magnitude
-
-    local isDash = true
-    local dashType = "Arch"
-    local endPos = startPos
-    local controlPos = startPos
-
-    if isBehind and distanceToEnemy <= 10 then
-        isDash = false
-    elseif isBehind and distanceToEnemy > 10 then
-        dashType = "Straight"
-        endPos = (initialEnemyCFrame * CFrame.new(0, 0, 5)).Position
-    else
-        dashType = "Arch"
-        endPos = (initialEnemyCFrame * CFrame.new(0, 0, 4)).Position
-        local distance = (endPos - startPos).Magnitude
-        local archWidth = math.clamp(distance / 1.5, 5, 25)
-        local direction = endPos - startPos
-        local perp = Vector3.new(-direction.Z, 0, direction.X)
-        if perp.Magnitude > 0.001 then perp = perp.Unit else perp = Vector3.new(1, 0, 0) end
-
-        local midPos = (startPos + endPos) / 2
-        local cp1 = midPos + (perp * archWidth)
-        local cp2 = midPos - (perp * archWidth)
-        local enemyRightVector = initialEnemyCFrame.RightVector
-        local playerIsOnRightSide = (startPos - initialEnemyPos):Dot(enemyRightVector) > 0
-        local cp1IsOnRightSide = (cp1 - initialEnemyPos):Dot(enemyRightVector) > 0
-
-        controlPos = (playerIsOnRightSide == cp1IsOnRightSide) and cp1 or cp2
-    end
-
-    if humanoid then humanoid.AutoRotate = false end
-
-    local startTime = tick()
-    local hasFired = false
-    local dashConn
-
-    local function finalizeMovement(finalCFrame)
-        if dashConn then dashConn:Disconnect() end
-        if humanoid then humanoid.AutoRotate = true end
-        if finalCFrame and root and root.Parent then root.CFrame = finalCFrame end
-        if not hasFired then hasFired = true; autoFireDivergentFist() end
-    end
-
-    dashConn = RunService.Heartbeat:Connect(function()
-        if not root or not root.Parent then return finalizeMovement(nil) end
-
-        local elapsed = tick() - startTime
-        if elapsed >= FIRE_DELAY and not hasFired then hasFired = true; autoFireDivergentFist() end
-
-        local currentPos = startPos
-        if isDash then
-            local alpha = math.clamp(elapsed / DASH_DURATION, 0, 1)
-            local easedAlpha = TweenService:GetValue(alpha, easingStyleEnum, easingDirectionEnum)
-
-            if dashType == "Straight" then currentPos = startPos:Lerp(endPos, easedAlpha)
-            elseif dashType == "Arch" then currentPos = (1 - easedAlpha)^2 * startPos + 2 * (1 - easedAlpha) * easedAlpha * controlPos + easedAlpha^2 * endPos end
-        end
-
-        root.CFrame = CFrame.lookAt(currentPos, initialEnemyPos)
-
-        if RyuConfig.CameraLockEnabled then
-            local cam = workspace.CurrentCamera
-            if cam then cam.CFrame = CFrame.lookAt(cam.CFrame.Position, initialEnemyPos) end
-        end
-
-        local totalWaitTime = isDash and (DASH_DURATION + POST_DASH_LOCK_TIME) or (FIRE_DELAY + POST_DASH_LOCK_TIME)
-        if elapsed >= totalWaitTime then finalizeMovement(CFrame.lookAt(currentPos, initialEnemyPos)) end
-    end)
-end
-
-local function onAnimationPlayed(animTrack)
-    local animId = animTrack.Animation and animTrack.Animation.AnimationId or ""
-
-    if RyuConfig.EnableDashAssist and not isDashingArc then
-        if animId:match("75203303352791") then task.spawn(function() executeDashArc("Left") end)
-        elseif animId:match("117223862448096") then task.spawn(function() executeDashArc("Right") end) end
-    end
-
-    if RyuConfig.BlackFlashEnabled then
-        local idMatch = string.match(animId, "%d+")
-        if idMatch and Logic.TargetAnimations[idMatch] then
-            if (tick() - Logic.LastFiredTick) <= Logic.TIME_WINDOW then
-                Logic.LastFiredTick = 0
-                local closestTarget = getClosestTarget(RyuConfig.DashDistance)
-                if closestTarget then performDashLogic(closestTarget) else task.delay(RyuConfig.FireDelay, autoFireDivergentFist) end
-            end
-        end
-    end
-end
-
-local function setupCharacter(character)
-    local humanoid = character:WaitForChild("Humanoid", 10)
-    if humanoid then
-        local animator = humanoid:WaitForChild("Animator", 10)
-        if animator then animator.AnimationPlayed:Connect(onAnimationPlayed) end
-    end
-end
-
-local function w2v(pos)
-    local cam = workspace.CurrentCamera
-    if not cam then return nil, false end
-    local sp, on = cam:WorldToViewportPoint(pos)
-    return Vector2.new(sp.X, sp.Y), on
-end
-
-local function hpColor(f)
-    f = math.clamp(f, 0, 1)
-    return Color3.fromRGB(255 * (1 - f), 255 * f, 50)
-end
-
-local function getCharBounds(char)
-    local cam = workspace.CurrentCamera
-    if not cam then return nil end
-    local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
-    if not hrp then return nil end
-    local head = char:FindFirstChild("Head")
-    local pos  = hrp.Position
-    local topY = head and (head.Position.Y + 0.5) or (pos.Y + 2.8)
-    local botY = pos.Y - 3.1
-    local topWorld = Vector3.new(pos.X, topY, pos.Z)
-    local botWorld = Vector3.new(pos.X, botY, pos.Z)
-    local topSP, topOn = cam:WorldToViewportPoint(topWorld)
-    local botSP, botOn = cam:WorldToViewportPoint(botWorld)
-
-    if not topOn or not botOn then return nil end
-    local h  = math.abs(botSP.Y - topSP.Y)
-    local w  = h * 0.5
-    local cx = (topSP.X + botSP.X) / 2
-    local my = math.min(topSP.Y, botSP.Y)
-    return { X = cx - w / 2, Y = my, W = w, H = h, CX = cx, CY = (topSP.Y + botSP.Y) / 2 }
-end
-
-local function getEntities()
-    local out = {}
-    local folder = workspace:FindFirstChild("Characters")
-    local targetsToSearch = folder and folder:GetChildren() or workspace:GetChildren()
-    for _, char in ipairs(targetsToSearch) do
-        if char:IsA("Model") and char:FindFirstChildOfClass("Humanoid") then
-            local plr = Players:GetPlayerFromCharacter(char)
-            out[#out + 1] = { Model = char, Player = plr, Name = plr and plr.DisplayName or char.Name }
-        end
-    end
-    return out
-end
-
-local function mkLine(thick)
-    local l = Drawing.new("Line")
-    l.Visible = false; l.Thickness = thick or 1
-    return l
-end
-
-local function mkCircle(thick, filled)
-    local c = Drawing.new("Circle")
-    c.Visible = false; c.Thickness = thick or 2; c.Filled = filled or false; c.NumSides = 30
-    return c
-end
-
-local function mkText(size)
-    local t = Drawing.new("Text")
-    t.Visible = false; t.Size = size or 14; t.Center = true; t.Outline = true; t.OutlineColor = Color3.new(0, 0, 0); t.Font = 2
-    return t
-end
-
-local function CreateCooldownBillboard(character, player, rootPart)
-    if not player or not rootPart then return nil, nil end
-
-    local Reveal = Instance.new("BillboardGui")
-    Reveal.Name = "Reveal"
-    Reveal.SizeOffset = Vector2.new(1.1, 0)
-    Reveal.StudsOffset = Vector3.new(0, 1, 0) 
-    Reveal.MaxDistance = 75
-    Reveal.ClipsDescendants = false
-    Reveal.AlwaysOnTop = true
-    Reveal.Size = UDim2.new(2, 0, 4, 0)
-    Reveal.Adornee = rootPart
-    Reveal.Parent = rootPart
-
-    local Moveset = Instance.new("Frame")
-    Moveset.Name = "Moveset"
-    Moveset.Visible = true
-    Moveset.ClipsDescendants = false
-    Moveset.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    Moveset.BackgroundTransparency = 1
-    Moveset.BorderSizePixel = 0
-    Moveset.Size = UDim2.new(0.45, 0, 1, 0)
-    Moveset.Parent = Reveal
-
-    local UIListLayout = Instance.new("UIListLayout")
-    UIListLayout.Name = "UIListLayout"
-    UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    UIListLayout.Padding = UDim.new(0.04, 0) 
-    UIListLayout.Parent = Moveset
-
-    local Ult = Instance.new("Frame")
-    Ult.Name = "Ult"
-    Ult.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    Ult.BackgroundTransparency = 0.5
-    Ult.Position = UDim2.new(0.55, 0, 0, 0)
-    Ult.BorderSizePixel = 0
-    Ult.Size = UDim2.new(0.25, 0, 1, 0)
-    Ult.Parent = Reveal
-    local UltStroke = Instance.new("UIStroke"); UltStroke.Thickness = 2; UltStroke.Transparency = 0.5; UltStroke.Color = Color3.fromRGB(0, 0, 0); UltStroke.Parent = Ult
-
-    local UltFill = Instance.new("Frame")
-    UltFill.Name = "Fill"
-    UltFill.AnchorPoint = Vector2.new(0, 1)
-    UltFill.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    UltFill.BackgroundTransparency = 0.25
-    UltFill.Position = UDim2.new(0, 0, 1, 0)
-    UltFill.BorderSizePixel = 0
-    UltFill.Size = UDim2.new(1, 0, 0, 0) 
-    UltFill.Parent = Ult
-    local UltFillGradient = Instance.new("UIGradient"); UltFillGradient.Color = Logic.CooldownGradient; UltFillGradient.Parent = UltFill
-
-    local Evasive = Instance.new("Frame")
-    Evasive.Name = "Evasive"
-    Evasive.AnchorPoint = Vector2.new(1, 0)
-    Evasive.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    Evasive.BackgroundTransparency = 0.5
-    Evasive.Position = UDim2.new(0.95, 0, 0, 0)
-    Evasive.BorderSizePixel = 0
-    Evasive.Size = UDim2.new(0.1, 0, 1, 0)
-    Evasive.Parent = Reveal
-    local EvasiveStroke = Instance.new("UIStroke"); EvasiveStroke.Thickness = 2; EvasiveStroke.Transparency = 0.5; EvasiveStroke.Color = Color3.fromRGB(0, 0, 0); EvasiveStroke.Parent = Evasive
-
-    local EvasiveFill = Instance.new("Frame")
-    EvasiveFill.Name = "Fill"
-    EvasiveFill.AnchorPoint = Vector2.new(0, 1)
-    EvasiveFill.BackgroundColor3 = Color3.fromRGB(0, 85, 127) 
-    EvasiveFill.BackgroundTransparency = 0
-    EvasiveFill.Position = UDim2.new(0, 0, 1, 0)
-    EvasiveFill.BorderSizePixel = 0
-    EvasiveFill.Size = UDim2.new(1, 0, 0, 0)
-    EvasiveFill.Parent = Evasive
-    local EvasiveFillGradient = Instance.new("UIGradient"); EvasiveFillGradient.Color = Logic.CooldownGradient; EvasiveFillGradient.Parent = EvasiveFill
-
-    local connections = {}
-    local moveFrames = {}
-
-    local function addMoveCooldown(moveValue)
-        if moveFrames[moveValue] then return end
-        local Move = Instance.new("Frame")
-        Move.Name = moveValue.Name; Move.BackgroundColor3 = Color3.fromRGB(31, 31, 31); Move.BackgroundTransparency = 0.5; Move.BorderSizePixel = 0; Move.Size = UDim2.new(1, 0, 0.22, 0); Move.Parent = Moveset
-        local MoveStroke = Instance.new("UIStroke"); MoveStroke.Thickness = 2; MoveStroke.Transparency = 0.5; MoveStroke.Color = Color3.fromRGB(0, 0, 0); MoveStroke.Parent = Move
-
-        local MoveCooldown = Instance.new("Frame")
-        MoveCooldown.Name = "Cooldown"; MoveCooldown.AnchorPoint = Vector2.new(0.5, 1); MoveCooldown.BackgroundColor3 = Color3.fromRGB(255, 255, 255); MoveCooldown.BackgroundTransparency = 0.25; MoveCooldown.Position = UDim2.new(0.5, 0, 1, 0); MoveCooldown.BorderSizePixel = 0; MoveCooldown.Size = UDim2.new(1, 0, 0, 0); MoveCooldown.ZIndex = 1; MoveCooldown.Parent = Move
-        local MoveGradient = Instance.new("UIGradient"); MoveGradient.Color = Logic.CooldownGradient; MoveGradient.Parent = MoveCooldown
-        
-        local MoveText = Instance.new("TextLabel")
-        MoveText.Name = "MoveNameText"; MoveText.Parent = Move; MoveText.Size = UDim2.new(1, -4, 1, -4); MoveText.Position = UDim2.new(0, 2, 0, 2); MoveText.BackgroundTransparency = 1; MoveText.Text = moveValue.Name; MoveText.TextColor3 = Color3.fromRGB(255, 255, 255); MoveText.TextScaled = true; MoveText.Font = Enum.Font.GothamBold; MoveText.ZIndex = 2 
-        local TextStroke = Instance.new("UIStroke"); TextStroke.Parent = MoveText; TextStroke.Thickness = 1.2; TextStroke.Color = Color3.fromRGB(0, 0, 0)
-
-        moveFrames[moveValue] = Move
-
-        table.insert(connections, moveValue:GetAttributeChangedSignal("ReadyAt"):Connect(function()
-            local maxCd = moveValue.Value or 0
-            local readyAt = moveValue:GetAttribute("ReadyAt")
-            if maxCd <= 0 or not readyAt then
-                if MoveCooldown then MoveCooldown.Size = UDim2.new(1, 0, 0, 0) end
-                return
-            end
-            task.spawn(function()
-                while MoveCooldown and MoveCooldown.Parent and Reveal and Reveal.Parent do
-                    local currentTime = workspace:GetServerTimeNow()
-                    local remaining = readyAt - currentTime
-                    if remaining <= 0 then MoveCooldown.Size = UDim2.new(1, 0, 0, 0) break else MoveCooldown.Size = UDim2.new(1, 0, math.clamp(remaining / maxCd, 0, 1), 0) end
-                    task.wait()
-                end
-            end)
-        end))
-    end
-
-    local function trackMoveset()
-        local moveset = character:FindFirstChild("Moveset")
-        if not moveset then return end
-        for _, child in ipairs(moveset:GetChildren()) do if child:IsA("NumberValue") then addMoveCooldown(child) end end
-        table.insert(connections, moveset.ChildAdded:Connect(function(child) if child:IsA("NumberValue") then addMoveCooldown(child) end end))
-    end
-
-    table.insert(connections, character.ChildAdded:Connect(function(child) if child.Name == "Moveset" then trackMoveset() end end))
-    trackMoveset()
-
-    local function updateUltimate()
-        local ultValue = math.clamp((player:GetAttribute("Ultimate") or 0) / 100, 0, 1)
-        if UltFill then UltFill.Size = UDim2.new(1, 0, ultValue, 0) end
-    end
-
-    local function updateEvade()
-        local evadeValue = math.clamp((character:GetAttribute("Evade") or 0) / 50, 0, 1)
-        if EvasiveFill then EvasiveFill.Size = UDim2.new(1, 0, evadeValue, 0) end
-    end
-
-    updateUltimate()
-    updateEvade()
-
-    table.insert(connections, player:GetAttributeChangedSignal("Ultimate"):Connect(updateUltimate))
-    table.insert(connections, character:GetAttributeChangedSignal("Evade"):Connect(updateEvade))
-
-    local function Cleanup()
-        if Reveal then Reveal:Destroy() end
-        for _, conn in ipairs(connections) do conn:Disconnect() end
-        table.clear(connections)
-    end
-
-    return Reveal, Cleanup
-end
-
-local function createESP()
-    local e = {}
-    e.BoxS = {}; e.BoxL = {}
-    for i = 1, 4 do e.BoxS[i] = mkLine(3.5); e.BoxS[i].Color = Logic.ShadowColor; e.BoxL[i] = mkLine(1.5) end
-    e.CorS = {}; e.CorL = {}
-    for i = 1, 8 do e.CorS[i] = mkLine(3.5); e.CorS[i].Color = Logic.ShadowColor; e.CorL[i] = mkLine(1.5) end
-    e.Skel = {}
-    for i = 1, 14 do e.Skel[i] = mkLine(1.5) end
-    e.HDotS = mkCircle(4, false); e.HDotS.Color = Logic.ShadowColor; e.HDot  = mkCircle(2, false)
-    e.TrcS = mkLine(3); e.TrcS.Color = Logic.ShadowColor; e.Trc  = mkLine(1.5)
-    e.HPTxt = mkText(13); e.HPTxt.Center = false
-    e.BarO  = mkLine(7);  e.BarO.Color = Logic.ShadowColor; e.BarBG = mkLine(5);  e.BarBG.Color = Color3.fromRGB(40, 40, 40); e.BarF  = mkLine(3)
-    e.NameTxt = mkText(14); e.CharTxt = mkText(12); e.DistTxt = mkText(12); e.KillTxt = mkText(12); e.HL = nil
-    e.RevealGui = nil; e.CooldownCleanup = nil
-    return e
-end
-
-local function hideAll(e)
-    if not e then return end
-    for i = 1, 4 do e.BoxS[i].Visible = false; e.BoxL[i].Visible = false end
-    for i = 1, 8 do e.CorS[i].Visible = false; e.CorL[i].Visible = false end
-    for i = 1, 14 do e.Skel[i].Visible = false end
-    e.HDotS.Visible = false; e.HDot.Visible  = false
-    e.TrcS.Visible  = false; e.Trc.Visible   = false
-    e.HPTxt.Visible  = false; e.BarO.Visible   = false; e.BarBG.Visible = false; e.BarF.Visible = false
-    e.NameTxt.Visible = false; e.CharTxt.Visible = false; e.DistTxt.Visible = false; e.KillTxt.Visible = false
-    if e.RevealGui then e.RevealGui.Enabled = false end
-end
-
-local function safeRM(obj)
-    if not obj then return end
-    pcall(function() if typeof(obj) == "Instance" then obj:Destroy() elseif type(obj) == "userdata" and obj.Remove then obj:Remove() end end)
-end
-
-local function removeAll(e)
-    if not e then return end
-    for i = 1, 4 do safeRM(e.BoxS[i]); safeRM(e.BoxL[i]) end
-    for i = 1, 8 do safeRM(e.CorS[i]); safeRM(e.CorL[i]) end
-    for i = 1, 14 do safeRM(e.Skel[i]) end
-    safeRM(e.HDotS); safeRM(e.HDot); safeRM(e.TrcS); safeRM(e.Trc); safeRM(e.HPTxt); safeRM(e.BarO); safeRM(e.BarBG); safeRM(e.BarF)
-    safeRM(e.NameTxt); safeRM(e.CharTxt); safeRM(e.DistTxt); safeRM(e.KillTxt); safeRM(e.HL)
-    if e.CooldownCleanup then e.CooldownCleanup() end
-end
-
-local function setLinePair(shadow, line, from, to, vis)
-    shadow.From = from; shadow.To = to; shadow.Visible = vis
-    line.From   = from; line.To   = to; line.Visible   = vis
-end
-
-local function estimateRegion(ping)
-    if ping <= 0 then return "Unknown" elseif ping <= 40 then return "US East / Nearby" elseif ping <= 70 then return "US Central" elseif ping <= 100 then return "US West / Regional" elseif ping <= 140 then return "EU West" elseif ping <= 180 then return "EU East / Middle East" elseif ping <= 220 then return "South America" elseif ping <= 270 then return "East Asia" elseif ping <= 320 then return "Southeast Asia / Oceania" elseif ping <= 400 then return "Africa / South Asia" else return "Very Far" end
-end
-
-local function pingQualityIcon(ping)
-    if ping <= 60 then return "[+++]" elseif ping <= 120 then return "[++ ]" elseif ping <= 200 then return "[+  ]" else return "[!  ]" end
-end
-
-local function buildServerMap(serverList)
-    Logic.ServerMap = {}
-    local vals = {}
-    for i, entry in ipairs(serverList) do
-        local label = string.format("%s #%d | %d/%d | %dms%s", pingQualityIcon(entry.Ping), i, entry.Playing, entry.MaxPlayers, entry.Ping, entry.IsCurrent and " [YOU]" or "")
-        Logic.ServerMap[label] = entry
-        vals[#vals + 1] = label
-    end
-    return vals
-end
-
-local UI_SrvInfoLabel, UI_SrvStatsLabel
-local SrvDropController
-
-local function updateServerInfo(entry)
-    if not UI_SrvInfoLabel then return end
-    if not entry then UI_SrvInfoLabel.Text = "No server selected.\n\nClick 'Refresh Server List' to load servers,\nthen select one from the dropdown."; return end
-
-    local fillPercent = entry.MaxPlayers > 0 and math.floor((entry.Playing / entry.MaxPlayers) * 100) or 0
-    local fillBar = string.rep("|", math.floor(fillPercent / 5)) .. string.rep(".", 20 - math.floor(fillPercent / 5))
-
-    local info = string.format("Job ID:\n%s\n\nPlayers: %d / %d (%d%%)\n[%s]\n\nPing: %d ms  %s\nServer FPS: %.1f\n\nEstimated Region: %s\n%s",
-        entry.JobId, entry.Playing, entry.MaxPlayers, fillPercent, fillBar, entry.Ping, pingQualityIcon(entry.Ping), entry.FPS, entry.Region, entry.IsCurrent and "\n>> This is YOUR current server <<" or "")
-    UI_SrvInfoLabel.Text = info
-end
-
-local function updateStatsLabel()
-    if not UI_SrvStatsLabel then return end
-    if #Logic.ServerList == 0 then UI_SrvStatsLabel.Text = "No data. Refresh to load servers."; return end
-    
-    local totalPlayers, totalPing, minPing, maxPing = 0, 0, math.huge, 0
-    local fullServers, emptyServers = 0, 0
-    for _, srv in ipairs(Logic.ServerList) do
-        totalPlayers += srv.Playing; totalPing += srv.Ping
-        if srv.Ping < minPing then minPing = srv.Ping end
-        if srv.Ping > maxPing then maxPing = srv.Ping end
-        if srv.Playing >= srv.MaxPlayers then fullServers += 1 end
-        if srv.Playing == 0 then emptyServers += 1 end
-    end
-    local avgPing = math.floor(totalPing / #Logic.ServerList)
-    UI_SrvStatsLabel.Text = string.format("Total Servers: %d\nTotal Players: %d\n\nAvg Ping: %dms\nBest Ping: %dms\nWorst Ping: %dms\n\nFull Servers: %d\nEmpty Servers: %d", #Logic.ServerList, totalPlayers, avgPing, minPing, maxPing, fullServers, emptyServers)
-end
-
-local function refreshDropdown()
-    local vals = buildServerMap(Logic.ServerList)
-    if SrvDropController then
-        if #vals > 0 then
-            SrvDropController.Refresh(vals)
-        else
-            SrvDropController.Refresh({ "No servers found" })
-        end
-    end
-    updateStatsLabel()
-end
-
-local function fetchServers()
-    Logic.ServerList = {}; Logic.ServerMap = {}
-    local placeId = game.PlaceId
-    local cursor = ""; local maxPages = 10; local idx = 0
-
-    for page = 1, maxPages do
-        local url = string.format("https://games.roblox.com/v1/games/%d/servers/0?sortOrder=2&excludeFullGames=false&limit=100%s", placeId, cursor ~= "" and ("&cursor=" .. cursor) or "")
-        local ok, res = pcall(game.HttpGet, game, url)
-        if not ok or not res then break end
-        local ok2, data = pcall(HttpService.JSONDecode, HttpService, res)
-        if not ok2 or not data or not data.data then break end
-
-        for _, srv in ipairs(data.data) do
-            idx += 1
-            local entry = { JobId = srv.id or "", Playing = srv.playing or 0, MaxPlayers = srv.maxPlayers or 0, Ping = srv.ping or 0, FPS = srv.fps or 0, Index = idx, Region = estimateRegion(srv.ping or 0), IsCurrent = (srv.id == game.JobId) }
-            table.insert(Logic.ServerList, entry)
-        end
-        cursor = data.nextPageCursor or ""
-        if cursor == "" then break end
-        task.wait(0.4)
-    end
-    return Logic.ServerList
-end
+end)
+Topbar.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then mDragging = false end
+end)
+
+local Line = Instance.new("Frame", ContentWrapper)
+Line.Size = UDim2.new(1, -40, 0, 1)
+Line.Position = UDim2.new(0, 20, 0, 65)
+Line.BackgroundColor3 = Theme.Stroke
+Line.BorderSizePixel = 0
+
+-- Sidebar Layout
+local Sidebar = Instance.new("ScrollingFrame", ContentWrapper)
+Sidebar.Size = UDim2.new(0, SidebarWidth, 1, -85)
+Sidebar.Position = UDim2.new(0, 10, 0, 75)
+Sidebar.BackgroundTransparency = 1
+Sidebar.ScrollBarThickness = 0
+
+local SideLayout = Instance.new("UIListLayout", Sidebar)
+SideLayout.Padding = UDim.new(0, 6)
+SideLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+SideLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+-- Content Container
+local ContentContainer = Instance.new("Frame", ContentWrapper)
+ContentContainer.Size = UDim2.new(1, -(SidebarWidth + 25), 1, -85)
+ContentContainer.Position = UDim2.new(0, SidebarWidth + 15, 0, 75)
+ContentContainer.BackgroundTransparency = 1
 
 --// ==========================================
 --// UI BUILDER HELPER FUNCTIONS
@@ -1647,7 +864,7 @@ task.spawn(function()
 end)
 
 --// ==========================================
---// BACKGROUND LOOPS & ESP RENDER
+--// BACKGROUND LOOPS & LOGIC HOOKS
 --// ==========================================
 
 Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
