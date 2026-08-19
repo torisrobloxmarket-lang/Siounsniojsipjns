@@ -1,6 +1,6 @@
 --// ==========================================
 --// RYU HUB - TJS EDITION (FULL LOGIC INTEGRATION)
---// 100% MONOCHROME CLEAN TEMPLATE
+--// 100% MONOCHROME CLEAN TEMPLATE (FIXED NOTIFICATIONS)
 --// ==========================================
 
 local LPH_NO_VIRTUALIZE = function(f) return f end
@@ -18,11 +18,23 @@ local RunService = game:GetService("RunService")
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
 local PathfindingService = game:GetService("PathfindingService")
+local StarterGui = game:GetService("StarterGui")
 
 local LocalPlayer = Players.LocalPlayer
 local Player = LocalPlayer
 local Mouse = Player:GetMouse()
 local camera = Workspace.CurrentCamera
+
+--// NATIVE NOTIFICATION SYSTEM (FIX FÜR DEN NIL VALUE ERROR)
+local function SendNotification(title, text, duration)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = title or "Ryu Hub",
+            Text = text or "",
+            Duration = duration or 3
+        })
+    end)
+end
 
 --// GUI PARENT RESOLVER
 local guiParent
@@ -103,7 +115,7 @@ table.sort(LocationNames)
 local currentTPDest = LocationNames[1]
 
 --// ==========================================
---// SYSTEM FUNCTIONS (LOADED FIRST TO PREVENT NIL CRASHES)
+--// SYSTEM FUNCTIONS 
 --// ==========================================
 
 _G.MiscState = _G.MiscState or {}
@@ -148,6 +160,7 @@ function Invisibility.toggle(state, silent)
             for _, t in ipairs(animator:GetPlayingAnimationTracks()) do if t ~= _G.MiscState.InvisibleTrack then t:Stop(0) end end
             Invisibility.Connections["InvisAnim"] = animator.AnimationPlayed:Connect(function(newTrack) if newTrack ~= _G.MiscState.InvisibleTrack then newTrack:Stop(0) end end)
         end)
+        SendNotification("Invisibility", "Invisibility Enabled", 2)
     else
         _G.MiscState.IsInvisible = false
         if Invisibility.Connections["InvisNoclip"] then Invisibility.Connections["InvisNoclip"]:Disconnect(); Invisibility.Connections["InvisNoclip"] = nil end
@@ -158,6 +171,7 @@ function Invisibility.toggle(state, silent)
         if hum and hum.Parent then hum.AutoRotate = true; Camera.CameraSubject = hum end
         if _G.MiscState.InvisibleFakeTorso then _G.MiscState.InvisibleFakeTorso:Destroy(); _G.MiscState.InvisibleFakeTorso = nil end
         if _G.MiscState.InvisibleTrack then pcall(function() _G.MiscState.InvisibleTrack:Stop(0) end); pcall(function() _G.MiscState.InvisibleTrack:Destroy() end); _G.MiscState.InvisibleTrack = nil end
+        SendNotification("Invisibility", "Invisibility Disabled", 2)
     end
 end
 
@@ -248,10 +262,18 @@ local function startPathfinding(targetPos)
             local humanoid = Player.Character and Player.Character:FindFirstChildOfClass("Humanoid")
             if not hrp or not humanoid then task.wait(1) continue end
 
-            if (hrp.Position - targetPos).Magnitude < 6 then stopPathfinding() break end
+            if (hrp.Position - targetPos).Magnitude < 6 then 
+                SendNotification("Teleport", "Destination reached!", 3)
+                stopPathfinding() 
+                break 
+            end
 
             local ok, _ = pcall(function() path:ComputeAsync(hrp.Position, targetPos) end)
-            if not ok or path.Status == Enum.PathStatus.NoPath then task.wait(1.5) continue end
+            if not ok or path.Status == Enum.PathStatus.NoPath then 
+                SendNotification("Teleport", "No path found! Retrying...", 2)
+                task.wait(1.5) 
+                continue 
+            end
 
             local batchedWP = batchWaypoints(path:GetWaypoints(), math.max(speed * 0.05, 2))
             visualizePath(path:GetWaypoints())
@@ -269,7 +291,11 @@ local function startPathfinding(targetPos)
             end
 
             if blockedConn then blockedConn:Disconnect() end
-            if completed and Logic.Pathfinding.Active then stopPathfinding() break end
+            if completed and Logic.Pathfinding.Active then 
+                SendNotification("Teleport", "Destination reached!", 3)
+                stopPathfinding() 
+                break 
+            end
             task.wait(0.3)
         end
     end)
@@ -544,6 +570,7 @@ end
 local function fetchServers()
     Logic.ServerList = {}; Logic.ServerMap = {}
     local placeId = game.PlaceId; local cursor = ""; local maxPages = 10; local idx = 0
+    SendNotification("Server Browser", "Fetching servers... This may take a moment.", 4)
     for page = 1, maxPages do
         local url = string.format("https://games.roblox.com/v1/games/%d/servers/0?sortOrder=2&excludeFullGames=false&limit=100%s", placeId, cursor ~= "" and ("&cursor=" .. cursor) or "")
         local ok, res = pcall(game.HttpGet, game, url)
@@ -558,24 +585,13 @@ local function fetchServers()
         cursor = data.nextPageCursor or ""
         if cursor == "" then break end; task.wait(0.4)
     end
+    SendNotification("Server Browser", "Found " .. tostring(#Logic.ServerList) .. " servers!", 4)
     return Logic.ServerList
 end
 
 --// ==========================================
 --// UI BUILDER & POPULATION
 --// ==========================================
-
-local MainSize = UDim2.new(0, math.min(750, camera.ViewportSize.X - 40), 0, math.min(480, camera.ViewportSize.Y - 40))
-local SidebarWidth = 160
-
-local RyuHub = Instance.new("ScreenGui")
-RyuHub.Name = "RyuHubUI"; RyuHub.ResetOnSpawn = false; RyuHub.IgnoreGuiInset = true; RyuHub.Parent = guiParent
-
-local function AddClickPop(element)
-    local orig = element.Size
-    element.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then pcall(function() TweenService:Create(element, TweenInfo.new(0.1), {Size = UDim2.new(orig.X.Scale, orig.X.Offset - 4, orig.Y.Scale, orig.Y.Offset - 4)}):Play() end) end end)
-    element.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then pcall(function() TweenService:Create(element, TweenInfo.new(0.3), {Size = orig}):Play() end) end end)
-end
 
 local ToggleBtn = Instance.new("TextButton")
 ToggleBtn.Size = UDim2.new(0, 50, 0, 50); ToggleBtn.Position = UDim2.new(0, 15, 0, 60); ToggleBtn.BackgroundColor3 = Theme.Sidebar; ToggleBtn.Text = ""; ToggleBtn.Parent = RyuHub
@@ -586,6 +602,12 @@ local Blade = Instance.new("Frame", Katana); Blade.Size = UDim2.new(0, 2, 0, 24)
 local Guard = Instance.new("Frame", Katana); Guard.Size = UDim2.new(0, 12, 0, 2); Guard.Position = UDim2.new(0.5, -6, 0.5, 6); Guard.BackgroundColor3 = Theme.SubText; Guard.BorderSizePixel = 0
 local Handle = Instance.new("Frame", Katana); Handle.Size = UDim2.new(0, 4, 0, 10); Handle.Position = UDim2.new(0.5, -2, 0.5, 8); Handle.BackgroundColor3 = Theme.Stroke; Handle.BorderSizePixel = 0
 Instance.new("UICorner", Blade).CornerRadius = UDim.new(1, 0); Instance.new("UICorner", Guard).CornerRadius = UDim.new(1, 0); Instance.new("UICorner", Handle).CornerRadius = UDim.new(0, 1)
+
+local function AddClickPop(element)
+    local orig = element.Size
+    element.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then pcall(function() TweenService:Create(element, TweenInfo.new(0.1), {Size = UDim2.new(orig.X.Scale, orig.X.Offset - 4, orig.Y.Scale, orig.Y.Offset - 4)}):Play() end) end end)
+    element.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then pcall(function() TweenService:Create(element, TweenInfo.new(0.3), {Size = orig}):Play() end) end end)
+end
 AddClickPop(ToggleBtn)
 
 local MainFrame = Instance.new("Frame")
@@ -811,7 +833,7 @@ CreateToggle(SecESPInfo, "Cooldown Revealer", RyuConfig.CooldownRevealer, functi
 local TabAimbot = CreateMainTab("Aimbot")
 local SubTargetLock = CreateSubTab(TabAimbot, "Target Lock")
 local SecLockMain = CreateSection(SubTargetLock, "Main Lock")
-CreateToggle(SecLockMain, "Enable Lock", Logic.LockState.Enabled, function(v) Logic.LockState.Enabled = v end)
+CreateToggle(SecLockMain, "Enable Lock", Logic.LockState.Enabled, function(v) Logic.LockState.Enabled = v; if v then SendNotification("Ryu Hub Lock", "Lock ENABLED - searching for targets...", 2) else SendNotification("Ryu Hub Lock", "Lock DISABLED", 2) end end)
 CreateKeybind(SecLockMain, "Lock Keybind", RyuConfig.LockKeybind, function(v) RyuConfig.LockKeybind = v end)
 CreateToggle(SecLockMain, "Lock ESP", Logic.LockSettings.ESPEnabled, function(v) Logic.LockSettings.ESPEnabled = v end)
 
@@ -834,6 +856,7 @@ refreshPlayerDropdown = function()
         if LockPlayerDropdown then LockPlayerDropdown.Refresh(vals) end
         if not table.find(vals, RyuConfig.LockSpecificPlayer) then RyuConfig.LockSpecificPlayer = "Auto" end
     end)
+    SendNotification("Ryu Hub Lock", "Player list refreshed! Found " .. (#vals - 1) .. " targets.", 2)
 end
 
 CreateButton(SecLockMain, "Refresh Player List", Theme.SectionBG, function() refreshPlayerDropdown() end)
@@ -852,8 +875,8 @@ local SecTeleport = CreateSection(SubTeleport, "Auto Teleport Settings")
 CreateDropdown(SecTeleport, "Destination", LocationNames, function(v) currentTPDest = v end)
 CreateSlider(SecTeleport, "Teleport Speed (Studs/s)", 30, 1500, Logic.Pathfinding.Speed, function(v) Logic.Pathfinding.Speed = v end)
 CreateToggle(SecTeleport, "Show Path Visualization", Logic.Pathfinding.VisualizeOn, function(v) Logic.Pathfinding.VisualizeOn = v end)
-CreateButton(SecTeleport, "Start Teleport", Theme.SectionBG, function() local destPos = TeleportLocations[currentTPDest]; if destPos then startPathfinding(destPos) end end)
-CreateButton(SecTeleport, "Stop Teleport", Theme.SectionBG, function() stopPathfinding() end)
+CreateButton(SecTeleport, "Start Teleport", Theme.SectionBG, function() local destPos = TeleportLocations[currentTPDest]; if destPos then SendNotification("Teleport", "Pathfinding to " .. currentTPDest .. "...", 2); startPathfinding(destPos) end end)
+CreateButton(SecTeleport, "Stop Teleport", Theme.SectionBG, function() stopPathfinding(); SendNotification("Teleport", "Teleport manually stopped.", 2) end)
 
 local SubServers = CreateSubTab(TabWorld, "Servers")
 local SecServerList = CreateSection(SubServers, "Server List")
@@ -870,11 +893,11 @@ CreateButton(SecServerList, "Refresh Server List", Theme.SectionBG, function() t
 local SecServerInfo = CreateSection(SubServers, "Server Details")
 UI_SrvInfoLabel = CreateLabel(SecServerInfo, "No server selected.\nClick 'Refresh Server List' to load servers.")
 UI_SrvStatsLabel = CreateLabel(SecServerInfo, "No data. Refresh to load servers.")
-CreateButton(SecServerInfo, "Join Selected Server", Theme.SectionBG, function() if Logic.SelectedServerData and not Logic.SelectedServerData.IsCurrent then TeleportService:TeleportToPlaceInstance(game.PlaceId, Logic.SelectedServerData.JobId, Player) end end)
+CreateButton(SecServerInfo, "Join Selected Server", Theme.SectionBG, function() if Logic.SelectedServerData and not Logic.SelectedServerData.IsCurrent then SendNotification("Servers", "Teleporting...", 2); TeleportService:TeleportToPlaceInstance(game.PlaceId, Logic.SelectedServerData.JobId, Player) end end)
 CreateButton(SecServerInfo, "Join Lowest Ping Server", Theme.SectionBG, function()
     local best = nil
     for _, srv in ipairs(Logic.ServerList) do if not srv.IsCurrent and srv.Playing > 0 and srv.Ping > 0 then if not best or srv.Ping < best.Ping then best = srv end end end
-    if best then TeleportService:TeleportToPlaceInstance(game.PlaceId, best.JobId, Player) end
+    if best then SendNotification("Servers", "Joining best ping server (" .. best.Ping .. "ms)...", 2); TeleportService:TeleportToPlaceInstance(game.PlaceId, best.JobId, Player) end
 end)
 
 --// INIT UI
@@ -1011,7 +1034,10 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
         alive[char] = true
 
         if plr == Player then
-            if Logic.ESPObjects[char] then hideAll(Logic.ESPObjects[char]); if Logic.ESPObjects[char].HL then Logic.ESPObjects[char].HL.Enabled = false end end
+            if Logic.ESPObjects[char] then
+                hideAll(Logic.ESPObjects[char])
+                if Logic.ESPObjects[char].HL then Logic.ESPObjects[char].HL.Enabled = false end
+            end
             continue
         end
 
@@ -1022,7 +1048,12 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
         if not Logic.ESPObjects[char] then Logic.ESPObjects[char] = createESP() end
         local e = Logic.ESPObjects[char]
 
-        if not (hrp and hum and hum.Health > 0) then hideAll(e); if e.HL then e.HL.Enabled = false end continue end
+        if not (hrp and hum and hum.Health > 0) then
+            hideAll(e)
+            if e.HL then e.HL.Enabled = false end
+            continue
+        end
+
         local dist = (cam.CFrame.Position - hrp.Position).Magnitude
         local box = getCharBounds(char)
         
@@ -1032,91 +1063,182 @@ Logic.Connections.ESP = RunService.Heartbeat:Connect(function()
             local bl = Vector2.new(box.X, box.Y + box.H); local br = Vector2.new(box.X + box.W, box.Y + box.H)
             setLinePair(e.BoxS[1], e.BoxL[1], tl, tr, true); setLinePair(e.BoxS[2], e.BoxL[2], tr, br, true)
             setLinePair(e.BoxS[3], e.BoxL[3], br, bl, true); setLinePair(e.BoxS[4], e.BoxL[4], bl, tl, true)
-        else for i = 1, 4 do e.BoxS[i].Visible = false; e.BoxL[i].Visible = false end end
+        else
+            for i = 1, 4 do e.BoxS[i].Visible = false; e.BoxL[i].Visible = false end
+        end
         
         if RyuConfig.ESPCorner and box then
             for i = 1, 8 do e.CorL[i].Color = RyuConfig.ESPCornerColor end
-            local x, y, w, h = box.X, box.Y, box.W, box.H; local len = math.clamp(math.min(w, h) * 0.25, 5, 9999)
-            local tl = Vector2.new(x, y); local tr = Vector2.new(x + w, y); local bl = Vector2.new(x, y + h); local br = Vector2.new(x + w, y + h)
+            local x, y, w, h = box.X, box.Y, box.W, box.H
+            local len = math.clamp(math.min(w, h) * 0.25, 5, 9999)
+            local tl = Vector2.new(x, y); local tr = Vector2.new(x + w, y)
+            local bl = Vector2.new(x, y + h); local br = Vector2.new(x + w, y + h)
             local segs = { {tl, tl + Vector2.new(len, 0)}, {tl, tl + Vector2.new(0, len)}, {tr, tr + Vector2.new(-len, 0)}, {tr, tr + Vector2.new(0, len)}, {bl, bl + Vector2.new(len, 0)}, {bl, bl + Vector2.new(0, -len)}, {br, br + Vector2.new(-len, 0)}, {br, br + Vector2.new(0, -len)} }
             for i = 1, 8 do setLinePair(e.CorS[i], e.CorL[i], segs[i][1], segs[i][2], true) end
-        else for i = 1, 8 do e.CorS[i].Visible = false; e.CorL[i].Visible = false end end
+        else
+            for i = 1, 8 do e.CorS[i].Visible = false; e.CorL[i].Visible = false end
+        end
 
         if RyuConfig.ESPSkeleton then
             local bones = char:FindFirstChild("UpperTorso") and Logic.R15Bones or Logic.R6Bones
             local idx = 0
             for _, b in ipairs(bones) do
-                idx += 1; local p1 = char:FindFirstChild(b[1]); local p2 = char:FindFirstChild(b[2])
+                idx += 1
+                local p1 = char:FindFirstChild(b[1])
+                local p2 = char:FindFirstChild(b[2])
                 if p1 and p2 then
-                    local s1, o1 = w2v(p1.Position); local s2, o2 = w2v(p2.Position)
-                    if o1 and o2 then e.Skel[idx].Color = RyuConfig.ESPSkeletonColor; e.Skel[idx].From = s1; e.Skel[idx].To = s2; e.Skel[idx].Visible = true else e.Skel[idx].Visible = false end
+                    local s1, o1 = w2v(p1.Position)
+                    local s2, o2 = w2v(p2.Position)
+                    if o1 and o2 then
+                        e.Skel[idx].Color = RyuConfig.ESPSkeletonColor
+                        e.Skel[idx].From = s1; e.Skel[idx].To = s2; e.Skel[idx].Visible = true
+                    else e.Skel[idx].Visible = false end
                 else e.Skel[idx].Visible = false end
             end
             for i = idx + 1, 14 do e.Skel[i].Visible = false end
-        else for i = 1, 14 do e.Skel[i].Visible = false end end
+        else
+            for i = 1, 14 do e.Skel[i].Visible = false end
+        end
 
         if RyuConfig.ESPHeadDot and head then
             local hs, ho = w2v(head.Position)
             if ho then
-                local headTop = w2v(head.Position + Vector3.new(0, head.Size.Y * 0.5, 0)); local r = headTop and math.abs(hs.Y - headTop.Y) or 5
-                r = math.clamp(r, 3, 50); e.HDot.Color = RyuConfig.ESPHeadDotColor; e.HDotS.Position = hs; e.HDotS.Radius = r + 1; e.HDotS.Visible = true; e.HDot.Position = hs; e.HDot.Radius = r; e.HDot.Visible = true
-            else e.HDotS.Visible = false; e.HDot.Visible = false end
-        else e.HDotS.Visible = false; e.HDot.Visible = false end
+                local headTop = w2v(head.Position + Vector3.new(0, head.Size.Y * 0.5, 0))
+                local r = headTop and math.abs(hs.Y - headTop.Y) or 5
+                r = math.clamp(r, 3, 50)
+                e.HDot.Color = RyuConfig.ESPHeadDotColor
+                e.HDotS.Position = hs; e.HDotS.Radius = r + 1; e.HDotS.Visible = true
+                e.HDot.Position  = hs; e.HDot.Radius  = r;     e.HDot.Visible  = true
+            else
+                e.HDotS.Visible = false; e.HDot.Visible = false
+            end
+        else
+            e.HDotS.Visible = false; e.HDot.Visible = false
+        end
 
         if RyuConfig.ESPTracer then
             local fp, fo = w2v(hrp.Position - Vector3.new(0, 3, 0))
             if fo then
-                local bot = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y); e.Trc.Color = RyuConfig.ESPTracerColor; e.TrcS.From = bot; e.TrcS.To = fp; e.TrcS.Visible = true; e.Trc.From = bot; e.Trc.To = fp; e.Trc.Visible = true
-            else e.TrcS.Visible = false; e.Trc.Visible = false end
-        else e.TrcS.Visible = false; e.Trc.Visible = false end
+                local bot = Vector2.new(cam.ViewportSize.X / 2, cam.ViewportSize.Y)
+                e.Trc.Color = RyuConfig.ESPTracerColor
+                e.TrcS.From = bot; e.TrcS.To = fp; e.TrcS.Visible = true
+                e.Trc.From  = bot; e.Trc.To  = fp; e.Trc.Visible  = true
+            else
+                e.TrcS.Visible = false; e.Trc.Visible = false
+            end
+        else
+            e.TrcS.Visible = false; e.Trc.Visible = false
+        end
 
         if RyuConfig.ESPHPText and box then
             local f = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-            e.HPTxt.Position = Vector2.new(box.X + box.W + 4, box.Y); e.HPTxt.Text = math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth); e.HPTxt.Color = hpColor(f); e.HPTxt.Visible = true
-        else e.HPTxt.Visible = false end
+            e.HPTxt.Position = Vector2.new(box.X + box.W + 4, box.Y)
+            e.HPTxt.Text = math.floor(hum.Health) .. "/" .. math.floor(hum.MaxHealth)
+            e.HPTxt.Color = hpColor(f)
+            e.HPTxt.Visible = true
+        else
+            e.HPTxt.Visible = false
+        end
 
         if RyuConfig.ESPHPBar and box then
-            local f = math.clamp(hum.Health / hum.MaxHealth, 0, 1); local bx = box.X - 6; local top = Vector2.new(bx, box.Y); local bot = Vector2.new(bx, box.Y + box.H); local ft = Vector2.new(bx, box.Y + box.H * (1 - f))
-            e.BarO.From = top; e.BarO.To = bot; e.BarO.Visible = true; e.BarBG.From = top; e.BarBG.To = bot; e.BarBG.Visible = true; e.BarF.From = ft; e.BarF.To = bot; e.BarF.Color = hpColor(f); e.BarF.Visible = f > 0
-        else e.BarO.Visible = false; e.BarBG.Visible = false; e.BarF.Visible = false end
+            local f = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+            local bx = box.X - 6
+            local top = Vector2.new(bx, box.Y)
+            local bot = Vector2.new(bx, box.Y + box.H)
+            local ft = Vector2.new(bx, box.Y + box.H * (1 - f))
+
+            e.BarO.From = top; e.BarO.To = bot; e.BarO.Visible = true
+            e.BarBG.From = top; e.BarBG.To = bot; e.BarBG.Visible = true
+            e.BarF.From = ft; e.BarF.To = bot; e.BarF.Color = hpColor(f); e.BarF.Visible = f > 0
+        else
+            e.BarO.Visible = false; e.BarBG.Visible = false; e.BarF.Visible = false
+        end
         
         if RyuConfig.ESPOutline then
-            if not e.HL or e.HL.Parent ~= char then safeRM(e.HL); local hl = Instance.new("Highlight"); hl.FillTransparency = 1; hl.OutlineColor = RyuConfig.ESPOutlineColor; hl.OutlineTransparency = 0; hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop; hl.Parent = char; e.HL = hl end
-            e.HL.OutlineColor = RyuConfig.ESPOutlineColor; e.HL.Enabled = true
-        else if e.HL then e.HL.Enabled = false end end
+            if not e.HL or e.HL.Parent ~= char then
+                safeRM(e.HL)
+                local hl = Instance.new("Highlight")
+                hl.FillTransparency = 1
+                hl.OutlineColor = RyuConfig.ESPOutlineColor
+                hl.OutlineTransparency = 0
+                hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                hl.Parent = char
+                e.HL = hl
+            end
+            e.HL.OutlineColor = RyuConfig.ESPOutlineColor
+            e.HL.Enabled = true
+        else
+            if e.HL then e.HL.Enabled = false end
+        end
 
         if RyuConfig.CooldownRevealer then
             if not e.CooldownCleanup then e.RevealGui, e.CooldownCleanup = CreateCooldownBillboard(char, plr, hrp) end
             if e.RevealGui then e.RevealGui.Enabled = true end
-        else if e.CooldownCleanup then e.CooldownCleanup(); e.CooldownCleanup = nil; e.RevealGui = nil end end
+        else
+            if e.CooldownCleanup then e.CooldownCleanup(); e.CooldownCleanup = nil; e.RevealGui = nil end
+        end
 
         if box then
             local ay = box.Y - 2
             if RyuConfig.ESPCharacter then
-                ay = ay - 14; local ms = char:GetAttribute("Moveset") or (plr and plr:GetAttribute("Moveset")) or "Unknown"
-                e.CharTxt.Color = RyuConfig.ESPCharacterColor; e.CharTxt.Position = Vector2.new(box.CX, ay); e.CharTxt.Text = "[" .. tostring(ms) .. "]"; e.CharTxt.Visible = true
-            else e.CharTxt.Visible = false end
+                ay = ay - 14
+                local ms = char:GetAttribute("Moveset") or (plr and plr:GetAttribute("Moveset")) or "Unknown"
+                e.CharTxt.Color = RyuConfig.ESPCharacterColor
+                e.CharTxt.Position = Vector2.new(box.CX, ay)
+                e.CharTxt.Text = "[" .. tostring(ms) .. "]"
+                e.CharTxt.Visible = true
+            else
+                e.CharTxt.Visible = false
+            end
 
             if RyuConfig.ESPName then
-                ay = ay - 16; e.NameTxt.Color = RyuConfig.ESPNameColor; e.NameTxt.Position = Vector2.new(box.CX, ay); e.NameTxt.Text = dName; e.NameTxt.Visible = true
-            else e.NameTxt.Visible = false end
+                ay = ay - 16
+                e.NameTxt.Color = RyuConfig.ESPNameColor
+                e.NameTxt.Position = Vector2.new(box.CX, ay)
+                e.NameTxt.Text = dName
+                e.NameTxt.Visible = true
+            else
+                e.NameTxt.Visible = false
+            end
             
             local by = box.Y + box.H + 2
             if RyuConfig.ESPDistance then
-                e.DistTxt.Color = RyuConfig.ESPDistanceColor; e.DistTxt.Position = Vector2.new(box.CX, by); e.DistTxt.Text = math.floor(dist) .. " studs"; e.DistTxt.Visible = true; by = by + 14
-            else e.DistTxt.Visible = false end
+                e.DistTxt.Color = RyuConfig.ESPDistanceColor
+                e.DistTxt.Position = Vector2.new(box.CX, by)
+                e.DistTxt.Text = math.floor(dist) .. " studs"
+                e.DistTxt.Visible = true
+                by = by + 14
+            else
+                e.DistTxt.Visible = false
+            end
 
             if RyuConfig.ESPKill then
                 local kills = 0
-                if plr then local ls = plr:FindFirstChild("leaderstats"); if ls then local ks = ls:FindFirstChild("Kills") or ls:FindFirstChild("kills") or ls:FindFirstChild("KOs") or ls:FindFirstChild("KO"); if ks then kills = ks.Value end end end
-                e.KillTxt.Color = RyuConfig.ESPKillColor; e.KillTxt.Position = Vector2.new(box.CX, by); e.KillTxt.Text = "Kills: " .. tostring(kills); e.KillTxt.Visible = true
-            else e.KillTxt.Visible = false end
+                if plr then
+                    local ls = plr:FindFirstChild("leaderstats")
+                    if ls then
+                        local ks = ls:FindFirstChild("Kills") or ls:FindFirstChild("kills") or ls:FindFirstChild("KOs") or ls:FindFirstChild("KO")
+                        if ks then kills = ks.Value end
+                    end
+                end
+                e.KillTxt.Color = RyuConfig.ESPKillColor
+                e.KillTxt.Position = Vector2.new(box.CX, by)
+                e.KillTxt.Text = "Kills: " .. tostring(kills)
+                e.KillTxt.Visible = true
+            else
+                e.KillTxt.Visible = false
+            end
         else
             e.NameTxt.Visible = false; e.CharTxt.Visible = false; e.DistTxt.Visible = false; e.KillTxt.Visible = false
         end
     end
 
     for char, e in pairs(Logic.ESPObjects) do
-        if not alive[char] or not char.Parent then hideAll(e); if e.HL then e.HL.Enabled = false; safeRM(e.HL) end; removeAll(e); Logic.ESPObjects[char] = nil end
+        if not alive[char] or not char.Parent then
+            hideAll(e)
+            if e.HL then e.HL.Enabled = false; safeRM(e.HL) end
+            removeAll(e)
+            Logic.ESPObjects[char] = nil
+        end
     end
 end)
