@@ -1,6 +1,6 @@
 --// ==========================================
 --// RYU HUB - UI OVERLAY (TJS EDITION)
---// RAZORBILL COMBAT ENGINE INTEGRATION + NEW ABILITIES
+--// RAZORBILL COMBAT ENGINE INTEGRATION + NEW ABILITIES (STABLE)
 --// ==========================================
 
 local CoreGui = game:GetService("CoreGui")
@@ -29,7 +29,7 @@ end)
 if not guiParent then guiParent = LocalPlayer:WaitForChild("PlayerGui") end
 
 for _, v in pairs(guiParent:GetChildren()) do 
-    if v.Name == "RyuHubUI" or v.Name == "RyuBFMobileGui" then v:Destroy() end 
+    if v.Name == "RyuHubUI" or v.Name == "RyuChainMobileGui" then v:Destroy() end 
 end
 
 --// THEME
@@ -192,7 +192,6 @@ CloseBtn.MouseButton1Click:Connect(function()
     task.delay(0.3, function() MainFrame.Visible = false end)
 end)
 
--- Window Dragging
 local mDragging, mDragStart, mStartPos = false, nil, nil
 Topbar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
@@ -219,7 +218,6 @@ Line.Position = UDim2.new(0, 20, 0, 65)
 Line.BackgroundColor3 = Theme.Stroke
 Line.BorderSizePixel = 0
 
--- Sidebar Layout
 local Sidebar = Instance.new("ScrollingFrame", ContentWrapper)
 Sidebar.Size = UDim2.new(0, SidebarWidth, 1, -85)
 Sidebar.Position = UDim2.new(0, 10, 0, 75)
@@ -598,9 +596,8 @@ local function CreateKeybind(section, text, defaultKey, callback)
     end)
 end
 
-
 --// ==========================================
---// CONFIG & GLOBAL VARIABLES
+--// RAZORBILL LOGIC INTEGRATION + ABILITIES
 --// ==========================================
 local RyuConfig = {
     -- Auto BF & Chain
@@ -700,7 +697,7 @@ local StraightAnimations = {
 
 local isMobilePlayer = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
 
--- Fetch Remote for Hooking
+-- Safely Hooking Remote for Black Flash Chain
 task.spawn(function()
     Logic.TargetRemote = ReplicatedStorage:WaitForChild("Knit")
         :WaitForChild("Knit")
@@ -713,24 +710,36 @@ end)
 local oldNamecall
 oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
     local method = getnamecallmethod()
-    if not checkcaller() and method == "FireServer" and self == Logic.TargetRemote and RyuConfig.BlackFlashEnabled then
-        Logic.LastFiredTick = tick()
+    if not checkcaller() and method == "FireServer" and typeof(self) == "Instance" then
+        if (self == Logic.TargetRemote or self.Name == "Activated") and RyuConfig.BlackFlashEnabled then
+            Logic.LastFiredTick = tick()
+        end
     end
     return oldNamecall(self, ...)
 end)
 
-local function autoFireDivergentFist()
-    local character = LocalPlayer.Character
-    if character and character:FindFirstChild("Moveset") then
-        local move1 = character.Moveset:FindFirstChild("Divergent Fist")
-        local move2 = character.Moveset:FindFirstChild("Focus Strike")
-        if move1 and Logic.TargetRemote then
-            Logic.TargetRemote:FireServer(move1, nil)
-        elseif move2 then
-            pcall(function()
-                ReplicatedStorage.Knit.Knit.Services.FocusStrikeService.RE.Activated:FireServer(move2, nil)
-            end)
+local function fireActivatedRemote()
+    pcall(function()
+        local char = LocalPlayer.Character
+        if not char then return end
+        local moveset = char:FindFirstChild("Moveset")
+        if not moveset then return end
+        
+        local move = moveset:FindFirstChild("Divergent Fist") or moveset:FindFirstChild("Focus Strike")
+        if move then
+            local re = ReplicatedStorage.Knit.Knit.Services.DivergentFistService.RE.Activated
+            if re then re:FireServer(move) end
         end
+    end)
+end
+
+local function triggerBlackFlash()
+    if isMobilePlayer then
+        fireActivatedRemote()
+    else
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game)
+        task.wait()
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game)
     end
 end
 
@@ -767,7 +776,6 @@ local function getClosestTarget(maxDist)
     return closest
 end
 
--- Math Helper for Bezier Curve
 local function getBezierPoint(t, p0, p1, p2)
     return (1 - t)^2 * p0 + 2 * (1 - t) * t * p1 + t^2 * p2
 end
@@ -782,7 +790,8 @@ local function LoadInvAnim(data, h)
     local anim = Instance.new("Animation")
     anim.AnimationId = data.AnimationId
     local t = h:LoadAnimation(anim)
-    repeat RunService.Heartbeat:Wait() until t.Length > 0
+    local t0 = tick()
+    repeat RunService.Heartbeat:Wait() until t.Length > 0 or tick() - t0 > 1
     return t
 end
 
@@ -823,7 +832,7 @@ local function performDashLogic(target)
     local enemyRoot = getHRP(target)
 
     if not root or not enemyRoot then
-        task.delay(FIRE_DELAY, autoFireDivergentFist)
+        task.delay(FIRE_DELAY, triggerBlackFlash)
         return
     end
 
@@ -884,7 +893,7 @@ local function performDashLogic(target)
 
         if not hasFired then
             hasFired = true
-            autoFireDivergentFist()
+            triggerBlackFlash()
         end
     end
 
@@ -895,7 +904,7 @@ local function performDashLogic(target)
 
         if elapsed >= FIRE_DELAY and not hasFired then
             hasFired = true
-            autoFireDivergentFist()
+            triggerBlackFlash()
         end
 
         local currentPos = startPos
@@ -1125,7 +1134,9 @@ local function onAnimationPlayed(animTrack)
     -- Invisible Block
     if RyuConfig.InvisibleBlock and animId == "rbxassetid://101865783312435" then
         animTrack:Stop()
-        PlayInvAnim(LocalPlayer, {AnimationId = "rbxassetid://0", StartTime = 0, EndTime = 0.1, Speed = 0})
+        task.spawn(function()
+            PlayInvAnim(LocalPlayer, {AnimationId = "rbxassetid://0", StartTime = 0, EndTime = 0.1, Speed = 0})
+        end)
     end
 
     -- Auto Todo Perfect Slap
@@ -1143,12 +1154,11 @@ local function onAnimationPlayed(animTrack)
         if idMatch and Logic.TargetAnimations[idMatch] then
             if (tick() - Logic.LastFiredTick) <= Logic.TIME_WINDOW then
                 Logic.LastFiredTick = 0
-
                 local closestTarget = getClosestTarget(RyuConfig.DashDistance)
                 if closestTarget then
                     performDashLogic(closestTarget)
                 else
-                    task.delay(RyuConfig.FireDelay, autoFireDivergentFist)
+                    task.delay(RyuConfig.FireDelay, triggerBlackFlash)
                 end
             end
         end
@@ -1323,7 +1333,7 @@ end)
 --// ==========================================
 --// NEW ABILITIES: NO STUN, AUTO RATIO
 --// ==========================================
-pcall(function()
+task.spawn(function()
     local bl = {
         ["Block"] = true, ["Stun"] = true, ["Knockback"] = true,
         ["Hold"] = false, ["Wakeup"] = false, ["Counter"] = false,
@@ -1332,20 +1342,23 @@ pcall(function()
         ["DisWeapon"] = false, ["DisableChase"] = false
     }
 
-    Workspace:WaitForChild("Characters").DescendantAdded:Connect(function(obj)
-        if RyuConfig.NoStun then
-            pcall(function()
-                if bl[obj.Name] then
-                    local parent = obj.Parent
-                    local char = parent and parent.Parent
-                    if char and char.Name == LocalPlayer.Character.Name then
-                        task.wait()
-                        obj:Destroy()
+    local chars = Workspace:WaitForChild("Characters", 10)
+    if chars then
+        chars.DescendantAdded:Connect(function(obj)
+            if RyuConfig.NoStun then
+                pcall(function()
+                    if bl[obj.Name] then
+                        local parent = obj.Parent
+                        local char = parent and parent.Parent
+                        if char and char.Name == LocalPlayer.Character.Name then
+                            task.wait()
+                            obj:Destroy()
+                        end
                     end
-                end
-            end)
-        end
-    end)
+                end)
+            end
+        end)
+    end
 end)
 
 pcall(function()
@@ -1624,11 +1637,9 @@ local flyBodyGyro
 -- Infinite Side Dash Exploit Hook
 if hookfunction and tick then
     local oldTick = tick
-    local fakeTime = oldTick()
     hookfunction(tick, function(...)
-        if RyuConfig.InfSideDash then
-            fakeTime = fakeTime + 100
-            return fakeTime
+        if RyuConfig.InfSideDash and not checkcaller() then
+            return oldTick(...) + 10000
         end
         return oldTick(...)
     end)
