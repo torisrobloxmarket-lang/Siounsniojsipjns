@@ -1,1351 +1,1846 @@
-local __lic="bf731cc2eb04c797";
--- JujutsuShenanigans.lua — Premium combat suite for Jujutsu Shenanigans
--- PlaceId: 9391468976  |  v2.1 (data-driven combos)
---
--- VERIFIED against the live game:
---  * Combat state = CHARACTER ATTRIBUTES. Canonical state names (ListData.States):
---      Stun, IFrame, NoM1, NoSprint, NoDash, DisableChase, Block, DirectionLock,
---      SpeedMultiplier, JumpMultiplier, Scale, InSkill   (+ Ragdoll, Burst, Evade, Dead)
---  * Character = `Moveset` attribute on the model (e.g. "Gojo").
---  * REAL move data: each char's Moveset FOLDER holds NumberValues:
---      .Name  = move name        .Value = cooldown (s)
---      attr Key      = skill slot key ("1".."4")
---      attr LastUse  = last-use timestamp        attr Service = handling service
---    Move names/ult/theme per character come from ReplicatedStorage.Modules.ListData.MoveList.
---  * Keybinds (InputContext "Combat"): Skill 1-8 = 1..8 | Melee = M1 | Dash = Q
---      Block = F | Awaken = G | Special = R | Sprint = LeftShift
---  * VirtualInputManager confirmed to drive the game's InputContext system.
---  * DEFENSE is EVENT-DRIVEN (v5): the game has ONLY M1 punches + abilities (skills 1-8), no M2. Each
---    enemy Moveset move's LastUse attr stamps when that ability fires (exact move name, no defer), and the
---    char's LastM1 attr changes on a punch. Both feed a distance-scaled parry window (rangeLead s/stud, so
---    far hits block LATER not early). Unblockable abilities (grab/pull/ragdoll, by effect OR name) -> dash.
+--// ==========================================
+--// RYU HUB - UI OVERLAY (TJS EDITION)
+--// RAZORBILL COMBAT ENGINE INTEGRATION + NEW ABILITIES
+--// ==========================================
 
-local S = function(f) local ok, res = pcall(f); if ok then return res end end
-local Players      = game:GetService('Players')
-local RS           = game:GetService('ReplicatedStorage')
-local RunService   = game:GetService('RunService')
-local UIS          = game:GetService('UserInputService')
-local VIM          = game:GetService('VirtualInputManager')
-local TweenService = game:GetService('TweenService')
-local Lighting     = game:GetService('Lighting')
-local lp           = Players.LocalPlayer
+local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local PathfindingService = game:GetService("PathfindingService")
 
-----------------------------------------------------------------------
--- OvertimeUI loader
-----------------------------------------------------------------------
-local UI
-do
-    local ok, lib = pcall(function()
-        return loadstring(game:HttpGet("https://raw.githubusercontent.com/overtimepog/OvertimeUI/main/OvertimeUI.lua"))()
-    end)
-    if ok then UI = lib else warn("[JJS] OvertimeUI failed:", lib); return end
-end
+local LocalPlayer = Players.LocalPlayer
+local camera = Workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
 
-----------------------------------------------------------------------
--- REAL PER-CHARACTER DATA
-----------------------------------------------------------------------
-local function C3(r,g,b) return Color3.new(r,g,b) end
-local CHAR_DATA = {
-    Gojo      ={ult='HONORED ONE',     col=C3(.666,1,1),          k={'Lapse Blue','Reversal Red','Rapid Punches','Twofold Kick'}},
-    Itadori   ={ult='VESSEL',          col=C3(1,.607,.607),       k={'Cursed Strikes','Crushing Blow','Divergent Fist','Manji Kick'}},
-    Hakari    ={ult='RESTLESS GAMBLER',col=C3(.666,1,.498),       k={'Reserve Balls','Shutter Doors','Rough Energy','Fever Breaker'}},
-    Megumi    ={ult='TEN SHADOWS',     col=C3(.470,.470,.470),    k={'Rabbit Escape','Nue','Toad','Divine Dog: Totality'}},
-    Mahoraga  ={ult='MAHORAGA',        col=C3(1,1,1),             k={'Divine Pummel','Ground Pitch','Earthquake','Takedown'}},
-    Mahito    ={ult='PERFECTION',      col=C3(1,.666,1),          k={'Stockpile','Soul Fire','Focus Strike','Body Repel'}},
-    Choso     ={ult='BLOOD MANIPULATOR',col=C3(.666,.294,.294),   k={'Piercing Blood','Flowing Red Scale','Supernova','Blood Edge'}},
-    Todo      ={ult='SWITCHER',        col=C3(.666,1,1),          k={'Swift Kick','Brute Force','Pebble Throw','Elbow Drop'}},
-    Locust    ={ult='LOCUST',          col=C3(.666,1,.498),       k={'Crushing Jaws','Clever','Wing Throw','Black Mucus'}},
-    Hiromi    ={ult='DEFENSE ATTORNEY',col=C3(.450,.388,.301),    k={'Extended Swings','Justice Served',"Judgement's Reach",'Pressing Charges'}},
-    Yuki      ={ult='STAR RAGE',       col=C3(.666,.666,1),       k={'Garuda Rebound','Rising Rage','Mass Breaker','Garuda Stab'}},
-    Heian     ={ult='HEIAN',           col=C3(1,.333,0),          k={'Strong Dismantle','Open FURNACE','Cleave Rush','Kamutoke'}},
-    Yuta      ={ult='CURSED PARTNERS', col=C3(1,.666,1),          k={'Severing Path','Resolute Slash','Veilstep','Second Wind'}},
-    Charles   ={ult='ASPIRING MANGAKA',col=C3(1,.921,.921),       k={'Despair','Shut Up!','Eye Catching','Sacrilege'}},
-    Mechamaru ={ult='PUPPET MASTER',   col=C3(.882,.039,.294),    k={'Ultra Spin','Boost On','Ultra Cannon','Heat Emission'}},
-    Naoya     ={ult='HEAD OF THE HEI', col=C3(.501,.494,1),       k={'Projection Breaker','Bleedout','Decisive Strike','Cursory Impact'}},
-    Nanami    ={ult='SALARYMAN',       col=C3(.368,.749,1),       k={'Cleaving Whirlwind','Severance Kick','Blunt Cut','Stabilize'}},
-    Goku      ={ult='MONKEY KID',      col=C3(1,.082,.203),       k={'Kamehameha','Ki Spam','Staff Extend','Staff Uppercut'}},
-    Haruta    ={ult='LUCKY COWARD',    col=C3(.654,.490,.796),    k={'Ambush','Backstab','Trip','Cheap Shot'}},
-    MeiMei    ={ult='CROW CHARMER',    col=C3(.137,.156,.313),    k={'Impetus Updraft','Circling','Gliding Flight','Bird Control'}},
-    Hanami    ={ult='DISASTER PLANTS', col=C3(.674,.796,.639),    k={'Root Swarm','Surging Thorns','Bud Shot','Defense Response'}},
-    Ryu       ={ult='TRUE CANNON',     col=C3(.666,1,1),          k={'Granite Blast','Unsatisfied','Second Helping','Appetizer'}},
-    Kurourushi={ult='BLACK DEATH',     col=C3(.396,.137,.172),    k={'Festering Strikes','Detach','Chokehold','Roach Swarm'}},
-}
-local SKILL_KEY = {['1']='One',['2']='Two',['3']='Three',['4']='Four',['5']='Five',['6']='Six',['7']='Seven',['8']='Eight'}
-
-local COMBO_PRESETS  = {'ROUTE','SMART','1-2-3-4','4-3-2-1'}
-local APPROACH_MODES = {'Off','Dash','Step'}
-local TARGET_MODES   = {'Closest','Lowest HP'}
-
-local COMBO_ROUTES = {
-    Gojo    = {'M1','M1','M1','M1','3','4','M1','M1','M1','Q','2'},
-    Itadori = {'1','M1','M1','M1','M1','2','M1','M1','M1','M1','1','M1','M1','M1'},
-    Hakari  = {'M1','M1','M1','M1','2','M1','M1','M1','1','3','Q','M1','M1','M1','M1','M1'},
-}
-
-----------------------------------------------------------------------
--- STATE
-----------------------------------------------------------------------
-local VERSION = '5.0.3'
-local BASE_ACCENT = Color3.fromRGB(150,99,255)
-local ACCENT = BASE_ACCENT
-local state = {
-    autoCombo=false, autoBlock=true, autoDodge=true, autoEscape=true, antiStun=false, antiRagdoll=false, autoAwaken=false, aimTarget=true, glueTarget=false,
-    perfectBlock=true, autoPunish=true, useSpecial=true,
-    dodgeRange=34, dashCd=0.7, specialCd=6,
-    parryM1=true,
-    parryHold=0.45, parryLead=0.0, rangeLead=0.006,
-    parryMargin=10, parryUnknown=45, dodgeLead=0.0,
-    dashAssist=false, flankRange=30, flankCd=1.0,
-    comboEscape=false, escapeReturn=0.45,
-    autoBlackFlash=false, bfDelay=0.37,
-    targetMode=1, aimKey=Enum.UserInputType.MouseButton2,
-    comboKey=Enum.KeyCode.K,
-    comboPreset=2, approachMode=3, engageDist=2, engageRange=200, comboRange=8, blockRange=14, auraRange=9, comboSpeed=0.30,
-    lockBreak=50,
-    esp=true, chams=false, fullbright=false, espRange=400,
-    fly=false, flySpeed=70, noclip=false, infJump=false,
-    walkSpeedOn=false, walkSpeed=16, jumpOn=false, jumpPower=50,
-    targetLock=false, antiAFK=true, fov=70, rainbow=false, autoTheme=true,
-}
-
-----------------------------------------------------------------------
--- ORIGINAL STATE SNAPSHOT (restored on unload)
-----------------------------------------------------------------------
-local ORIG = {
-    fov           = workspace.CurrentCamera.FieldOfView,
-    brightness    = Lighting.Brightness,
-    clockTime     = Lighting.ClockTime,
-    fogEnd        = Lighting.FogEnd,
-    globalShadows = Lighting.GlobalShadows,
-    walkSpeed     = S(function() return lp.Character:FindFirstChildOfClass('Humanoid').WalkSpeed end) or 16,
-    jumpPower     = S(function() return lp.Character:FindFirstChildOfClass('Humanoid').JumpPower end) or 50,
-}
-
-----------------------------------------------------------------------
--- BOOKKEEPING
-----------------------------------------------------------------------
-local conns = {}
-local function track(c) conns[#conns+1]=c; return c end
-local espObjs    = {}
-local unloaded   = false
-local blockUntil = 0
-local blockFrom  = math.huge
-local blockThreat
-local blocking   = false
-local genuineThreat   -- forward decl, filled after helpers
-local validEnemy      -- forward decl
-local learnedRange    = {}
-local lastBlockedEnemy
-local lastBlockedAt   = 0
-local lastPunish      = 0
-local prevBlocking    = false
-
-----------------------------------------------------------------------
--- REAL ACTIVATION
-----------------------------------------------------------------------
-local COMBAT = (RS:FindFirstChild('Keybind') and RS.Keybind:FindFirstChild('Combat')) or nil
-local hasGC = typeof(getconnections)=='function'
-local function fireAction(name)
-    if not (COMBAT and hasGC) then return false end
-    local a=COMBAT:FindFirstChild(name); if not a then return false end
-    local ok,cs=pcall(getconnections, a.Pressed); if not ok then return false end
-    local fired=false
-    for _,c in ipairs(cs) do pcall(function() c:Fire() end); fired=true end
-    return fired
-end
-local function releaseAction(name)
-    if not (COMBAT and hasGC) then return end
-    local a=COMBAT:FindFirstChild(name); if not a then return end
-    local ok,cs=pcall(getconnections, a.Released); if not ok then return end
-    for _,c in ipairs(cs) do pcall(function() c:Fire() end) end
-end
-local function serverNow() return workspace:GetServerTimeNow() end
-
-local m1Held=false
-local function holdM1(on)
-    on = on and true or false
-    if on==m1Held then return end
-    m1Held=on
-    local cam=workspace.CurrentCamera; local vp=cam and cam.ViewportSize
-    local x = vp and math.floor(vp.X/2) or 960
-    local y = vp and math.floor(vp.Y/2) or 540
-    S(function() VIM:SendMouseButtonEvent(x, y, 0, on, game, 0) end)
-end
-local function clickM1()
-    if m1Held then holdM1(false) end
-    local cam=workspace.CurrentCamera; local vp=cam and cam.ViewportSize
-    local x = vp and math.floor(vp.X/2) or 960
-    local y = vp and math.floor(vp.Y/2) or 540
-    S(function() VIM:SendMouseButtonEvent(x, y, 0, true,  game, 0) end)
-    task.wait(0.03)
-    S(function() VIM:SendMouseButtonEvent(x, y, 0, false, game, 0) end)
-end
-
-local scriptLocked=false; local lastLockFire=0
-local comboLockUntil=0
-local function ensureLock(on)
-    local cur = lp:GetAttribute('LockOn')==true
-    if on then
-        if not cur and tick()-lastLockFire>0.25 then fireAction('Lock On'); lastLockFire=tick() end
-        scriptLocked=true
-    elseif scriptLocked then
-        if cur then
-            if tick()-lastLockFire>0.25 then fireAction('Lock On'); lastLockFire=tick() end
-        else scriptLocked=false end
+--// GUI PARENT RESOLVER & CLEANUP
+local guiParent
+pcall(function()
+    if type(gethui) == "function" then
+        guiParent = gethui()
+    elseif syn and syn.protect_gui then
+        guiParent = CoreGui
     end
+end)
+if not guiParent then guiParent = LocalPlayer:WaitForChild("PlayerGui") end
+
+for _, v in pairs(guiParent:GetChildren()) do 
+    if v.Name == "RyuHubUI" or v.Name == "RyuBFMobileGui" then v:Destroy() end 
 end
 
-local KnitMC = S(function() return require(RS.Knit.Knit).GetController('MovementController') end)
-local function gameDash()
-    if KnitMC and KnitMC.DashRequest then return pcall(function() KnitMC:DashRequest() end) end
-    return fireAction('Dash')
-end
+--// THEME
+local Theme = {
+    Background = Color3.fromRGB(15, 15, 15),
+    Sidebar = Color3.fromRGB(22, 22, 22),
+    SectionBG = Color3.fromRGB(30, 30, 30),
+    Text = Color3.fromRGB(255, 255, 255),
+    SubText = Color3.fromRGB(150, 150, 150),
+    Accent = Color3.fromRGB(255, 255, 255),
+    ToggleOff = Color3.fromRGB(45, 45, 45),
+    ToggleOn = Color3.fromRGB(255, 255, 255),
+    Stroke = Color3.fromRGB(60, 60, 60)
+}
 
-----------------------------------------------------------------------
--- CHARACTER HELPERS
-----------------------------------------------------------------------
-local function char()    return lp.Character end
-local function hum()     local c=char(); return c and c:FindFirstChildOfClass('Humanoid') end
-local function hrp()     local c=char(); return c and c:FindFirstChild('HumanoidRootPart') end
-local function myName()  local c=char(); return c and tostring(c:GetAttribute('Moveset') or 'Unknown') end
-local function active(v) return v==true or (type(v)=='number' and v>0) end
-local function attr(o,n) return o and o:GetAttribute(n) end
+local MainSize = UDim2.new(0, math.min(750, camera.ViewportSize.X - 40), 0, math.min(480, camera.ViewportSize.Y - 40))
+local SidebarWidth = 160
 
-local function stateOn(c, name)
-    if not c then return false end
-    if active(c:GetAttribute(name)) then return true end
-    local info=c:FindFirstChild('Info')
-    if info then
-        local v=info:FindFirstChild(name)
-        if v then if v:IsA('ValueBase') then return v.Value and v.Value~=false and true or false else return true end end
-    end
-    return false
-end
+local RyuHub = Instance.new("ScreenGui")
+RyuHub.Name = "RyuHubUI"
+RyuHub.ResetOnSpawn = false
+RyuHub.IgnoreGuiInset = true
+RyuHub.Parent = guiParent
 
-local function liveMoveset(c)
-    c = c or char()
-    local ms = c and c:FindFirstChild('Moveset')
-    local out = {}
-    if ms then
-        local now=serverNow()
-        for _,mv in ipairs(ms:GetChildren()) do
-            local key = mv:GetAttribute('Key')
-            if key and SKILL_KEY[tostring(key)] then
-                local cd=(mv:IsA('ValueBase') and mv.Value) or 0
-                local lu=tonumber(mv:GetAttribute('LastUse')) or 0
-                out[#out+1] = {key=tostring(key), name=mv.Name, cd=cd, lastUse=lu, inst=mv,
-                               tip=tostring(mv:GetAttribute('Tip') or ''):upper(),
-                               left=math.max(0, cd-(now-lu)), ready=((now-lu) >= cd)}
-            end
+local function AddClickPop(element)
+    local orig = element.Size
+    element.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            pcall(function() TweenService:Create(element, TweenInfo.new(0.1), {Size = UDim2.new(orig.X.Scale, orig.X.Offset - 4, orig.Y.Scale, orig.Y.Offset - 4)}):Play() end)
         end
-        table.sort(out, function(a,b) return a.key<b.key end)
+    end)
+    element.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            pcall(function() TweenService:Create(element, TweenInfo.new(0.3), {Size = orig}):Play() end)
+        end
+    end)
+end
+
+--// TOGGLE BUTTON
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
+ToggleBtn.Position = UDim2.new(0, 15, 0, 60)
+ToggleBtn.BackgroundColor3 = Theme.Sidebar
+ToggleBtn.Text = ""
+ToggleBtn.Parent = RyuHub
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(1, 0)
+
+local btnStroke = Instance.new("UIStroke", ToggleBtn)
+btnStroke.Color = Theme.Accent
+btnStroke.Thickness = 2
+btnStroke.Transparency = 0.5
+
+local Katana = Instance.new("Frame", ToggleBtn)
+Katana.Size = UDim2.new(1, 0, 1, 0)
+Katana.BackgroundTransparency = 1
+Katana.Rotation = 45
+
+local Blade = Instance.new("Frame", Katana)
+Blade.Size = UDim2.new(0, 2, 0, 24)
+Blade.Position = UDim2.new(0.5, -1, 0.5, -18)
+Blade.BackgroundColor3 = Theme.Text
+Blade.BorderSizePixel = 0
+
+local Guard = Instance.new("Frame", Katana)
+Guard.Size = UDim2.new(0, 12, 0, 2)
+Guard.Position = UDim2.new(0.5, -6, 0.5, 6)
+Guard.BackgroundColor3 = Theme.SubText
+Guard.BorderSizePixel = 0
+
+local Handle = Instance.new("Frame", Katana)
+Handle.Size = UDim2.new(0, 4, 0, 10)
+Handle.Position = UDim2.new(0.5, -2, 0.5, 8)
+Handle.BackgroundColor3 = Theme.Stroke
+Handle.BorderSizePixel = 0
+
+Instance.new("UICorner", Blade).CornerRadius = UDim.new(1, 0)
+Instance.new("UICorner", Guard).CornerRadius = UDim.new(1, 0)
+Instance.new("UICorner", Handle).CornerRadius = UDim.new(0, 1)
+AddClickPop(ToggleBtn)
+
+--// MAIN CONTAINER
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 0, 0, 0)
+MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+MainFrame.BackgroundColor3 = Theme.Background
+MainFrame.BorderSizePixel = 0
+MainFrame.Visible = false
+MainFrame.ClipsDescendants = true
+MainFrame.Active = true
+MainFrame.Parent = RyuHub
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 12)
+
+local mainStroke = Instance.new("UIStroke", MainFrame)
+mainStroke.Color = Theme.Stroke
+mainStroke.Thickness = 1.5
+
+local DragText = Instance.new("TextLabel", MainFrame)
+DragText.Size = UDim2.new(1, 0, 1, 0)
+DragText.Position = UDim2.new(0, 0, 0, 0)
+DragText.BackgroundTransparency = 1
+DragText.Text = "DISCORD.GG/RYUHUB"
+DragText.Font = Enum.Font.GothamBlack
+DragText.TextSize = 50
+DragText.TextColor3 = Theme.Text
+DragText.TextTransparency = 0.95
+DragText.ZIndex = 0
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    if MainFrame.Visible then
+        pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play() end)
+        task.delay(0.3, function() MainFrame.Visible = false end)
+    else
+        MainFrame.Visible = true
+        pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = MainSize, Position = UDim2.new(0.5, -MainSize.X.Offset / 2, 0.5, -MainSize.Y.Offset / 2)}):Play() end)
     end
-    return out
-end
-
-----------------------------------------------------------------------
--- INPUT (movement-only VIM helpers)
-----------------------------------------------------------------------
-local heldKeys = {}
-local function setHold(name, down)
-    if heldKeys[name]==down then return end
-    heldKeys[name]=down
-    local kc=Enum.KeyCode[name]; if kc then pcall(function() VIM:SendKeyEvent(down, kc, false, game) end) end
-end
-
-----------------------------------------------------------------------
--- OvertimeUI WINDOW
-----------------------------------------------------------------------
-local Window = UI:CreateWindow({
-    Name      = "Jujutsu Shenanigans",
-    Preset    = "Sleek",
-    Accent    = Color3.fromRGB(150, 99, 255),
-    AccentGlow= true,
-    Layout    = "left",
-    Roundness = 1.2,
-    SaveFile  = "JujutsuShenanigans.cfg",
-    AutoSave  = true,
-})
-if not Window then return end   -- re-run unloads old instance
-
-Window:SetToggleKey("RightShift")
-Window:SetDiscord("https://discord.com/invite/KrrT48SQ4g")
-
--- Dynamic label handles (updated in heartbeat)
-local subLabel     -- character name + ult line
-local skillLabels  = {}   -- [1..4] with :SetText()
-
-----------------------------------------------------------------------
--- COMBAT TAB
-----------------------------------------------------------------------
-local combatTab   = Window:CreateTab("Combat")
-local autoSection = combatTab:CreateSection("Automation")
-
-local comboToggleHandle
-comboToggleHandle = autoSection:CreateToggle({
-    Name         = "Auto Combo (helper)",
-    CurrentValue = state.autoCombo,
-    SaveId       = "jjs_auto_combo",
-    Callback     = function(v) state.autoCombo = v end,
-})
-comboToggleHandle:AddKeybind({
-    CurrentKeybind = "K",
-    Callback = function()
-        state.autoCombo = not state.autoCombo
-        comboToggleHandle:SetValue(state.autoCombo)
-    end,
-})
-
-autoSection:CreateToggle({ Name="Auto Escape (anti-combo)",          CurrentValue=state.autoEscape,    SaveId="jjs_auto_escape",    Callback=function(v) state.autoEscape=v    end })
-autoSection:CreateToggle({ Name="Combo Escape (dash out + punish)",  CurrentValue=state.comboEscape,   SaveId="jjs_combo_escape",   Callback=function(v) state.comboEscape=v   end })
-autoSection:CreateToggle({ Name="Anti Stun",                         CurrentValue=state.antiStun,      SaveId="jjs_anti_stun",      Callback=function(v) state.antiStun=v      end })
-autoSection:CreateToggle({ Name="Anti Ragdoll",                      CurrentValue=state.antiRagdoll,   SaveId="jjs_anti_ragdoll",   Callback=function(v) state.antiRagdoll=v   end })
-autoSection:CreateToggle({ Name="Auto Block",                        CurrentValue=state.autoBlock,     SaveId="jjs_auto_block",     Callback=function(v) state.autoBlock=v     end })
-autoSection:CreateToggle({ Name="Auto Counter (parry timing)",       CurrentValue=state.perfectBlock,  SaveId="jjs_auto_counter",   Callback=function(v) state.perfectBlock=v  end })
-autoSection:CreateToggle({ Name="Auto Punish (combo after block)",   CurrentValue=state.autoPunish,    SaveId="jjs_auto_punish",    Callback=function(v) state.autoPunish=v    end })
-autoSection:CreateToggle({ Name="Auto Dodge (dash unblockables)",    CurrentValue=state.autoDodge,     SaveId="jjs_auto_dodge",     Callback=function(v) state.autoDodge=v     end })
-autoSection:CreateToggle({ Name="Block Enemy M1s",                   CurrentValue=state.parryM1,       SaveId="jjs_block_m1",       Callback=function(v) state.parryM1=v       end })
-autoSection:CreateToggle({ Name="Dash Assist (flank behind target)", CurrentValue=state.dashAssist,    SaveId="jjs_dash_assist",    Callback=function(v) state.dashAssist=v    end })
-autoSection:CreateToggle({ Name="Aim At Target (hold key)",          CurrentValue=state.aimTarget,     SaveId="jjs_aim_target",     Callback=function(v) state.aimTarget=v     end })
-autoSection:CreateKeybind({ Name="Aim Key (hold)", CurrentKeybind="MouseButton2", Callback=function() end })
-autoSection:CreateToggle({ Name="Auto Awaken",                       CurrentValue=state.autoAwaken,    SaveId="jjs_auto_awaken",    Callback=function(v) state.autoAwaken=v    end })
-autoSection:CreateToggle({ Name="Use Special (R)",                   CurrentValue=state.useSpecial,    SaveId="jjs_use_special",    Callback=function(v) state.useSpecial=v    end })
-autoSection:CreateToggle({ Name="Auto Black Flash (Itadori M1)",     CurrentValue=state.autoBlackFlash,SaveId="jjs_auto_black_flash",Callback=function(v) state.autoBlackFlash=v end })
-
-local targetBtn   = autoSection:CreateButton({ Name="Target: Closest", Callback=function() state.targetMode  = state.targetMode  % #TARGET_MODES  + 1 end })
-local presetBtn   = autoSection:CreateButton({ Name="Combo: ROUTE",    Callback=function() state.comboPreset  = state.comboPreset  % #COMBO_PRESETS  + 1 end })
-local approachBtn = autoSection:CreateButton({ Name="Approach: Step",  Callback=function() state.approachMode = state.approachMode % #APPROACH_MODES + 1 end })
-
-local function refreshPresetLabel()
-    local p=COMBO_PRESETS[state.comboPreset]
-    if p=='ROUTE' then p='ROUTE '..(COMBO_ROUTES[myName()] and 'OK' or '(no data->SMART)') end
-    if presetBtn   and presetBtn.SetText   then presetBtn:SetText('Combo: '..p) end
-    if approachBtn and approachBtn.SetText then approachBtn:SetText('Approach: '..APPROACH_MODES[state.approachMode]) end
-    if targetBtn   and targetBtn.SetText   then targetBtn:SetText('Target: '..TARGET_MODES[state.targetMode]) end
-end
-
--- Skills HUD
-local skillsSection = combatTab:CreateSection("Skills HUD")
-subLabel = skillsSection:CreateLabel({ Text="Loading character...", Color=Color3.fromRGB(180,180,200) })
-for i=1,4 do
-    skillLabels[i] = skillsSection:CreateLabel({ Text=tostring(i).."  --", Color=Color3.fromRGB(200,200,210) })
-end
-
--- Glue Target
-local glueSection = combatTab:CreateSection("Glue Target")
-glueSection:CreateToggle({ Name="Glue Target (follow until dead)", CurrentValue=state.glueTarget, SaveId="jjs_glue_target", Callback=function(v) state.glueTarget=v end })
-glueSection:CreateSlider({ Name="Engage Range",  Range={20,1500}, Increment=10,   CurrentValue=state.engageRange, Suffix="s", SaveId="jjs_engage_range", Callback=function(v) state.engageRange=v end })
-glueSection:CreateSlider({ Name="Dash Cooldown", Range={0.3,2},   Increment=0.05, CurrentValue=state.dashCd,      Suffix="s", SaveId="jjs_dash_cd", Callback=function(v) state.dashCd=v      end })
-
--- Tuning
-local tuningSection = combatTab:CreateSection("Tuning")
-tuningSection:CreateSlider({ Name="Engage Dist",      Range={3,20},     Increment=0.5,  CurrentValue=state.engageDist,    Suffix="s", SaveId="jjs_engage_dist",    Callback=function(v) state.engageDist=v    end })
-tuningSection:CreateSlider({ Name="Combo Speed",      Range={0.15,0.6}, Increment=0.01, CurrentValue=state.comboSpeed,    Suffix="s", SaveId="jjs_combo_speed",    Callback=function(v) state.comboSpeed=v   end })
-tuningSection:CreateSlider({ Name="Black Flash Delay",Range={0.25,0.50},Increment=0.01, CurrentValue=state.bfDelay,       Suffix="s", SaveId="jjs_bf_delay",       Callback=function(v) state.bfDelay=v      end })
-tuningSection:CreateSlider({ Name="Dodge/Block Range",Range={10,40},    Increment=1,    CurrentValue=state.dodgeRange,    Suffix="s", SaveId="jjs_dodge_range",    Callback=function(v) state.dodgeRange=v   end })
-tuningSection:CreateSlider({ Name="Parry Hold",       Range={0.15,0.8}, Increment=0.01, CurrentValue=state.parryHold,     Suffix="s", SaveId="jjs_parry_hold",     Callback=function(v) state.parryHold=v    end })
-tuningSection:CreateSlider({ Name="Flank Range",      Range={12,60},    Increment=1,    CurrentValue=state.flankRange,    Suffix="s", SaveId="jjs_flank_range",    Callback=function(v) state.flankRange=v   end })
-tuningSection:CreateSlider({ Name="Flank Cooldown",   Range={0.4,3},    Increment=0.1,  CurrentValue=state.flankCd,       Suffix="s", SaveId="jjs_flank_cd",       Callback=function(v) state.flankCd=v      end })
-
-----------------------------------------------------------------------
--- VISUALS TAB
-----------------------------------------------------------------------
-local visualTab = Window:CreateTab("Visuals")
-local worldLeft = visualTab:CreateLeftGroupbox("World")
-local colRight  = visualTab:CreateRightGroupbox("Colors")
-
-worldLeft:CreateToggle({ Name="Name / HP ESP",     CurrentValue=state.esp,        SaveId="jjs_esp",        Callback=function(v) state.esp=v        end })
-worldLeft:CreateToggle({ Name="Chams (Highlight)", CurrentValue=state.chams,      SaveId="jjs_chams",      Callback=function(v) state.chams=v      end })
-worldLeft:CreateToggle({ Name="Fullbright",        CurrentValue=state.fullbright, SaveId="jjs_fullbright", Callback=function(v) state.fullbright=v end })
-worldLeft:CreateSlider({ Name="ESP Range", Range={50,1000}, Increment=10, CurrentValue=state.espRange, Suffix="s", SaveId="jjs_esp_range", Callback=function(v) state.espRange=v end })
-
-colRight:CreateToggle({ Name="Auto Theme (char color)", CurrentValue=state.autoTheme, SaveId="jjs_auto_theme", Callback=function(v) state.autoTheme=v end })
-colRight:CreateToggle({ Name="Rainbow Accent",          CurrentValue=state.rainbow,   SaveId="jjs_rainbow",   Callback=function(v) state.rainbow=v   end })
-
-----------------------------------------------------------------------
--- MOVE TAB
-----------------------------------------------------------------------
-local moveTab     = Window:CreateTab("Move")
-local moveSection = moveTab:CreateSection("Teleport")
-
-moveSection:CreateToggle({ Name="Fly (hold WASD)", CurrentValue=state.fly,         SaveId="jjs_fly",         Callback=function(v) state.fly=v         end })
-moveSection:CreateSlider({ Name="Fly Speed", Range={20,250}, Increment=5, CurrentValue=state.flySpeed, SaveId="jjs_fly_speed", Callback=function(v) state.flySpeed=v end })
-moveSection:CreateToggle({ Name="Noclip",          CurrentValue=state.noclip,      SaveId="jjs_noclip",      Callback=function(v) state.noclip=v      end })
-moveSection:CreateToggle({ Name="Infinite Jump",   CurrentValue=state.infJump,     SaveId="jjs_inf_jump",     Callback=function(v) state.infJump=v     end })
-moveSection:CreateToggle({ Name="WalkSpeed",       CurrentValue=state.walkSpeedOn, SaveId="jjs_walk_speed_on", Callback=function(v) state.walkSpeedOn=v end })
-moveSection:CreateSlider({ Name="Speed", Range={16,120}, Increment=1, CurrentValue=state.walkSpeed, SaveId="jjs_walk_speed", Callback=function(v) state.walkSpeed=v end })
-moveSection:CreateToggle({ Name="JumpPower",       CurrentValue=state.jumpOn,      SaveId="jjs_jump_on",      Callback=function(v) state.jumpOn=v      end })
-moveSection:CreateSlider({ Name="Power", Range={50,250}, Increment=5, CurrentValue=state.jumpPower, SaveId="jjs_jump_power", Callback=function(v) state.jumpPower=v end })
-
-----------------------------------------------------------------------
--- MISC TAB
-----------------------------------------------------------------------
-local miscTab       = Window:CreateTab("Misc")
-local serverSection = miscTab:CreateSection("Server")
-
-serverSection:CreateToggle({ Name="Target Lock (camera)", CurrentValue=state.targetLock, SaveId="jjs_target_lock", Callback=function(v) state.targetLock=v end })
-serverSection:CreateToggle({ Name="Anti-AFK",             CurrentValue=state.antiAFK,    SaveId="jjs_anti_afk",    Callback=function(v) state.antiAFK=v    end })
-serverSection:CreateSlider({ Name="FOV", Range={40,120}, Increment=1, CurrentValue=state.fov, SaveId="jjs_fov", Callback=function(v) state.fov=v end })
-serverSection:CreateButton({ Name="Respawn Character", Callback=function() local h=hum(); if h then h.Health=0 end end })
-serverSection:CreateButton({ Name="Rejoin Server",     Callback=function() S(function() game:GetService('TeleportService'):Teleport(game.PlaceId,lp) end) end })
-serverSection:CreateButton({ Name="Unload Suite",      Callback=function() _G.__JJS_UNLOAD__() end })
-
-local otherSection = miscTab:CreateSection("Other")
-otherSection:CreateLabel({ Text="v"..VERSION, Color=Color3.fromRGB(150,99,255) })
-
-Window:OnClose(function()
-    if _G.__JJS_UNLOAD__ then _G.__JJS_UNLOAD__() end
 end)
 
-----------------------------------------------------------------------
--- ESP (raw BillboardGui, no library dependency)
-----------------------------------------------------------------------
-local function new(cls, props, parent)
-    local o=Instance.new(cls); for k,v in pairs(props or {}) do o[k]=v end; if parent then o.Parent=parent end; return o
-end
-local function makeESP(c)
-    local head=S(function() return c:FindFirstChild('Head') end); if not head then return end
-    local bg=new('BillboardGui',{Name='__JJSESP__',Size=UDim2.new(0,210,0,42),StudsOffset=Vector3.new(0,3.2,0),AlwaysOnTop=true,MaxDistance=1000,Adornee=head},head)
-    local nl=new('TextLabel',{Size=UDim2.new(1,0,0,15),BackgroundTransparency=1,Text=c.Name,TextColor3=Color3.new(1,1,1),Font=Enum.Font.GothamBold,TextSize=13,TextStrokeTransparency=0.5},bg)
-    local hpBg=new('Frame',{Size=UDim2.new(0.8,0,0,5),Position=UDim2.new(0.1,0,0,17),BackgroundColor3=Color3.fromRGB(30,30,30),BorderSizePixel=0},bg)
-    new('UICorner',{CornerRadius=UDim.new(0,2)},hpBg)
-    local hp=new('Frame',{Size=UDim2.new(1,0,1,0),BackgroundColor3=Color3.fromRGB(60,220,80),BorderSizePixel=0},hpBg)
-    new('UICorner',{CornerRadius=UDim.new(0,2)},hp)
-    local dl=new('TextLabel',{Size=UDim2.new(1,0,0,13),Position=UDim2.new(0,0,0,24),BackgroundTransparency=1,Text='',TextColor3=Color3.fromRGB(190,190,200),Font=Enum.Font.Gotham,TextSize=11,TextStrokeTransparency=0.6},bg)
-    espObjs[c.Name]={bg=bg,nl=nl,hp=hp,dl=dl,hl=nil,model=c}
-end
-local function clearESP(n)
-    local e=espObjs[n]; if e then S(function() if e.bg then e.bg:Destroy() end end); S(function() if e.hl then e.hl:Destroy() end end); espObjs[n]=nil end
-end
+local ContentWrapper = Instance.new("Frame", MainFrame)
+ContentWrapper.Size = UDim2.new(1, 0, 1, 0)
+ContentWrapper.BackgroundTransparency = 1
+ContentWrapper.BorderSizePixel = 0
 
-----------------------------------------------------------------------
--- COMBAT ACTIONS
-----------------------------------------------------------------------
-local function faceTarget(tr)
-    local r=hrp(); if not (r and tr) then return end
-    r.CFrame=CFrame.new(r.Position, Vector3.new(tr.Position.X, r.Position.Y, tr.Position.Z))
-end
-local function approachTarget(tr)
-    if not state.glueTarget then return end
-    for _=1,400 do
-        if unloaded then break end
-        local r=hrp()
-        if not (r and tr and tr.Parent) then break end
-        if (tr.Position-r.Position).Magnitude <= state.comboRange then break end
-        task.wait(0.05)
+local Topbar = Instance.new("Frame", ContentWrapper)
+Topbar.Size = UDim2.new(1, 0, 0, 60)
+Topbar.BackgroundTransparency = 1
+
+local Title = Instance.new("TextLabel", Topbar)
+Title.Size = UDim2.new(0, 300, 1, 0)
+Title.Position = UDim2.new(0, 20, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "RYU HUB"
+Title.Font = Enum.Font.GothamBlack
+Title.TextSize = 22
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.TextColor3 = Theme.Text
+
+local SubTitle = Instance.new("TextLabel", Topbar)
+SubTitle.Size = UDim2.new(0, 300, 0, 15)
+SubTitle.Position = UDim2.new(0, 20, 0, 38)
+SubTitle.BackgroundTransparency = 1
+SubTitle.Text = "Jujutsu Shenanigans"
+SubTitle.TextColor3 = Theme.SubText
+SubTitle.Font = Enum.Font.Gotham
+SubTitle.TextSize = 11
+SubTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local CloseBtn = Instance.new("TextButton", Topbar)
+CloseBtn.Size = UDim2.new(0, 28, 0, 28)
+CloseBtn.Position = UDim2.new(1, -40, 0, 15)
+CloseBtn.BackgroundColor3 = Theme.SectionBG
+CloseBtn.Text = "X"
+CloseBtn.TextColor3 = Theme.Text
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 14
+Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
+Instance.new("UIStroke", CloseBtn).Color = Theme.Stroke
+
+CloseBtn.MouseButton1Click:Connect(function()
+    pcall(function() TweenService:Create(MainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}):Play() end)
+    task.delay(0.3, function() MainFrame.Visible = false end)
+end)
+
+-- Window Dragging
+local mDragging, mDragStart, mStartPos = false, nil, nil
+Topbar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
+        mDragging = true
+        mDragStart = input.Position
+        mStartPos = MainFrame.Position 
     end
-end
-local comboFocus = nil
-local engaged    = false
-local MOVE_KEYS  = {'W','A','S','D'}
-local function releaseMoveKeys() for _,k in ipairs(MOVE_KEYS) do setHold(k,false) end end
-local function moveTowardPos(goal)
-    local r=hrp(); if not (r and goal) then releaseMoveKeys(); return end
-    local to=goal-r.Position; to=Vector3.new(to.X,0,to.Z)
-    if to.Magnitude<0.5 then releaseMoveKeys(); return end
-    to=to.Unit
-    local cam=workspace.CurrentCamera
-    local fwd=cam.CFrame.LookVector; fwd=Vector3.new(fwd.X,0,fwd.Z); fwd=fwd.Magnitude>0.1 and fwd.Unit or Vector3.new(0,0,-1)
-    local rgt=cam.CFrame.RightVector; rgt=Vector3.new(rgt.X,0,rgt.Z); rgt=rgt.Magnitude>0.1 and rgt.Unit or Vector3.new(1,0,0)
-    local f=to:Dot(fwd); local s=to:Dot(rgt)
-    setHold('W', f>0.35); setHold('S', f<-0.35)
-    setHold('D', s>0.35); setHold('A', s<-0.35)
-end
-local lastDashT=0
-local function dashToward()
-    if tick()-lastDashT < (state.dashCd or 0.7) then return end
-    lastDashT=tick(); gameDash()
-end
-local function lungeAt(tr)
-    local r=hrp(); local h=hum(); if not (r and h and tr) then return end
-    local dir=tr.Position-r.Position; dir=Vector3.new(dir.X,0,dir.Z)
-    if dir.Magnitude<0.1 then return end
-    h:Move(dir.Unit, false); gameDash()
-end
-local PFS = game:GetService('PathfindingService')
-local pathWPs, pathIdx, jumpWP = nil, 1, false
-local function flatDist(a,b) return (Vector3.new(a.X,0,a.Z)-Vector3.new(b.X,0,b.Z)).Magnitude end
-local function pathGoal(targetPos)
-    local r=hrp(); if not (r and pathWPs) then return nil end
-    while pathIdx <= #pathWPs and flatDist(pathWPs[pathIdx].Position, r.Position) < 6 do pathIdx=pathIdx+1 end
-    if pathIdx > #pathWPs then return targetPos end
-    local wp = pathWPs[pathIdx]; jumpWP = (wp.Action == Enum.PathWaypointAction.Jump)
-    return wp.Position
-end
-local function trackTarget(tr) if tr then faceTarget(tr) end end
+end)
+Topbar.InputChanged:Connect(function(input)
+    if mDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - mDragStart
+        MainFrame.Position = UDim2.new(mStartPos.X.Scale, mStartPos.X.Offset + delta.X, mStartPos.Y.Scale, mStartPos.Y.Offset + delta.Y)
+    end
+end)
+Topbar.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
+        mDragging = false 
+    end
+end)
 
-local function sampleRange(moveName, th, dist, base)
-    if not (th and dist) then return end
-    local c = th.Parent; local before = th.Health; local hadStun = c and stateOn(c,'Stun')
-    task.spawn(function()
-        task.wait(0.4)
-        if not (th and th.Parent) then return end
-        local hit = th.Health < before-2 or (stateOn(th.Parent,'Stun') and not hadStun) or active(th.Parent:GetAttribute('Ragdoll'))
-        local cur = learnedRange[moveName]
-        if hit then learnedRange[moveName] = math.max(cur or 0, dist)
-        else local est = cur or base or dist; if dist <= est + 1 then learnedRange[moveName] = math.max(est*0.9, 6) end end
+local Line = Instance.new("Frame", ContentWrapper)
+Line.Size = UDim2.new(1, -40, 0, 1)
+Line.Position = UDim2.new(0, 20, 0, 65)
+Line.BackgroundColor3 = Theme.Stroke
+Line.BorderSizePixel = 0
+
+-- Sidebar Layout
+local Sidebar = Instance.new("ScrollingFrame", ContentWrapper)
+Sidebar.Size = UDim2.new(0, SidebarWidth, 1, -85)
+Sidebar.Position = UDim2.new(0, 10, 0, 75)
+Sidebar.BackgroundTransparency = 1
+Sidebar.ScrollBarThickness = 0
+
+local SideLayout = Instance.new("UIListLayout", Sidebar)
+SideLayout.Padding = UDim.new(0, 6)
+SideLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+SideLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local ContentContainer = Instance.new("Frame", ContentWrapper)
+ContentContainer.Size = UDim2.new(1, -(SidebarWidth + 25), 1, -85)
+ContentContainer.Position = UDim2.new(0, SidebarWidth + 15, 0, 75)
+ContentContainer.BackgroundTransparency = 1
+
+--// UI GENERATION FUNCTIONS
+local Tabs = {}
+local itemOrderCounter = 0
+
+local function UpdateSidebarCanvas()
+    local totalH = 10
+    for _, t in pairs(Tabs) do
+        totalH = totalH + 36 + 6
+        if t.IsOpen then totalH = totalH + t.SubLayout.AbsoluteContentSize.Y + 6 end
+    end
+    Sidebar.CanvasSize = UDim2.new(0, 0, 0, totalH)
+end
+
+local function CreateMainTab(name)
+    local tabObj = { Btn = nil, SubContainer = nil, SubLayout = nil, IsOpen = false, SubTabs = {} }
+    
+    local tabBtn = Instance.new("TextButton", Sidebar)
+    tabBtn.Size = UDim2.new(1, 0, 0, 36)
+    tabBtn.BackgroundColor3 = Theme.Sidebar
+    tabBtn.Text = "  " .. string.upper(name)
+    tabBtn.TextColor3 = Theme.SubText
+    tabBtn.Font = Enum.Font.GothamBlack
+    tabBtn.TextSize = 13
+    tabBtn.TextXAlignment = Enum.TextXAlignment.Left
+    Instance.new("UICorner", tabBtn).CornerRadius = UDim.new(0, 8)
+    tabObj.Btn = tabBtn
+
+    local subContainer = Instance.new("Frame", Sidebar)
+    subContainer.Size = UDim2.new(1, 0, 0, 0)
+    subContainer.BackgroundTransparency = 1
+    subContainer.ClipsDescendants = true
+    tabObj.SubContainer = subContainer
+
+    local subLayout = Instance.new("UIListLayout", subContainer)
+    subLayout.Padding = UDim.new(0, 2)
+    subLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+    subLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    tabObj.SubLayout = subLayout
+
+    tabBtn.MouseButton1Click:Connect(function()
+        tabObj.IsOpen = not tabObj.IsOpen
+        local targetSize = tabObj.IsOpen and UDim2.new(1, 0, 0, subLayout.AbsoluteContentSize.Y) or UDim2.new(1, 0, 0, 0)
+        pcall(function()
+            TweenService:Create(subContainer, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = targetSize}):Play()
+            tabBtn.TextColor3 = tabObj.IsOpen and Theme.Text or Theme.SubText
+            tabBtn.BackgroundColor3 = tabObj.IsOpen and Theme.SectionBG or Theme.Sidebar
+        end)
+        task.delay(0.26, UpdateSidebarCanvas)
+    end)
+
+    subLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        if tabObj.IsOpen then subContainer.Size = UDim2.new(1, 0, 0, subLayout.AbsoluteContentSize.Y) end
+    end)
+
+    table.insert(Tabs, tabObj)
+    return tabObj
+end
+
+local function CreateSubTab(tabObj, subName)
+    local subObj = { Btn = nil, Page = nil }
+    local subBtn = Instance.new("TextButton", tabObj.SubContainer)
+    subBtn.Size = UDim2.new(1, 0, 0, 28)
+    subBtn.BackgroundTransparency = 1
+    subBtn.Text = "     " .. subName
+    subBtn.TextColor3 = Theme.SubText
+    subBtn.Font = Enum.Font.GothamMedium
+    subBtn.TextSize = 12
+    subBtn.TextXAlignment = Enum.TextXAlignment.Left
+    subObj.Btn = subBtn
+
+    local page = Instance.new("ScrollingFrame", ContentContainer)
+    page.Size = UDim2.new(1, 0, 1, 0)
+    page.BackgroundTransparency = 1
+    page.ScrollBarThickness = 2
+    page.ScrollBarImageColor3 = Theme.Accent
+    page.Visible = false
+    subObj.Page = page
+
+    local pageLayout = Instance.new("UIListLayout", page)
+    pageLayout.Padding = UDim.new(0, 12)
+    pageLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    pageLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+        page.CanvasSize = UDim2.new(0, 0, 0, pageLayout.AbsoluteContentSize.Y + 20)
+    end)
+
+    subBtn.MouseButton1Click:Connect(function()
+        for _, t in pairs(Tabs) do
+            for _, st in pairs(t.SubTabs) do
+                st.Page.Visible = false
+                st.Btn.TextColor3 = Theme.SubText
+            end
+        end
+        page.Visible = true
+        subBtn.TextColor3 = Theme.Text
+    end)
+
+    table.insert(tabObj.SubTabs, subObj)
+    return page
+end
+
+local function CreateSection(page, titleText)
+    local section = Instance.new("Frame", page)
+    section.Size = UDim2.new(0.98, 0, 0, 50)
+    section.BackgroundColor3 = Theme.SectionBG
+    section.BackgroundTransparency = 0
+    Instance.new("UICorner", section).CornerRadius = UDim.new(0, 10)
+    Instance.new("UIStroke", section).Color = Theme.Stroke
+    
+    local secLayout = Instance.new("UIListLayout", section)
+    secLayout.Padding = UDim.new(0, 10)
+    secLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    secLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    
+    local secPadding = Instance.new("UIPadding", section)
+    secPadding.PaddingTop = UDim.new(0, 12)
+    secPadding.PaddingBottom = UDim.new(0, 12)
+    
+    local title = Instance.new("TextLabel", section)
+    title.LayoutOrder = -1
+    title.Size = UDim2.new(0.92, 0, 0, 24)
+    title.BackgroundTransparency = 1
+    title.Text = titleText
+    title.TextColor3 = Theme.Text
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 14
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    
+    secLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() 
+        section.Size = UDim2.new(1, 0, 0, secLayout.AbsoluteContentSize.Y + 24) 
+    end)
+    return section
+end
+
+local function CreateToggle(section, text, descText, defaultState, callback)
+    if type(descText) == "boolean" then callback = defaultState; defaultState = descText; descText = nil end
+    itemOrderCounter = itemOrderCounter + 1
+    
+    local frame = Instance.new("Frame", section)
+    frame.LayoutOrder = itemOrderCounter
+    frame.Size = UDim2.new(0.92, 0, 0, descText and 52 or 34)
+    frame.BackgroundTransparency = 1
+    
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(0.7, 0, 0, 34)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = defaultState and Theme.Text or Theme.SubText
+    label.Font = Enum.Font.GothamMedium
+    label.TextSize = 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    
+    if descText then
+        local descLabel = Instance.new("TextLabel", frame)
+        descLabel.Size = UDim2.new(0.7, 0, 0, 15)
+        descLabel.Position = UDim2.new(0, 0, 0, 30)
+        descLabel.BackgroundTransparency = 1
+        descLabel.Text = descText
+        descLabel.TextColor3 = Theme.SubText
+        descLabel.Font = Enum.Font.Gotham
+        descLabel.TextSize = 11
+        descLabel.TextXAlignment = Enum.TextXAlignment.Left
+    end
+    
+    local tBtn = Instance.new("TextButton", frame)
+    tBtn.Size = UDim2.new(0, 42, 0, 22)
+    tBtn.Position = UDim2.new(1, -42, 0, 6)
+    tBtn.BackgroundColor3 = defaultState and Theme.ToggleOn or Theme.ToggleOff
+    tBtn.Text = ""
+    Instance.new("UICorner", tBtn).CornerRadius = UDim.new(1, 0)
+    
+    local circle = Instance.new("Frame", tBtn)
+    circle.Size = UDim2.new(0, 16, 0, 16)
+    circle.Position = defaultState and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
+    circle.BackgroundColor3 = defaultState and Theme.Background or Color3.fromRGB(150, 150, 150)
+    Instance.new("UICorner", circle).CornerRadius = UDim.new(1, 0)
+    
+    local isOn = defaultState or false
+    tBtn.MouseButton1Click:Connect(function()
+        isOn = not isOn
+        pcall(function()
+            TweenService:Create(tBtn, TweenInfo.new(0.2), {BackgroundColor3 = isOn and Theme.ToggleOn or Theme.ToggleOff}):Play()
+            TweenService:Create(circle, TweenInfo.new(0.2), {Position = isOn and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8), BackgroundColor3 = isOn and Theme.Background or Color3.fromRGB(150, 150, 150)}):Play()
+            label.TextColor3 = isOn and Theme.Text or Theme.SubText
+        end)
+        if callback then pcall(function() callback(isOn) end) end
     end)
 end
 
-local M1_RANGE = 10
-local function nameHas(n, list) n=n:lower() for _,kw in ipairs(list) do if n:find(kw,1,true) then return true end end return false end
-local MELEE_KW  = {'kick','punch','fist','strike','rush','slam','blow','smash','grab','beat','claw','chop','flurry','barrage','stomp','knee','elbow','uppercut','dropkick','crush','bash','pummel','headbutt','combo'}
-local RANGED_KW = {'blue','red','purple','arrow','beam','bullet','orb','ball','shot','wave','blast','bolt','fire','flame','lightning','void','ray','spear','pillar','plasma','blood','slash','dismantle','throw','poison','scale','wing','energy','reversal','hollow','cleave'}
-local MOVE_DB = {
-  ['Lapse Blue']={r=35,e='pull'}, ['Reversal Red']={r=40,e='knockback'}, ['Rapid Punches']={r=7,e='stun'}, ['Twofold Kick']={r=7,e='launch'},
-  ['Lapse Blue MAX']={r=45,e='pull'}, ['Reversal Red MAX']={r=55,e='ragdoll'}, ['Hollow Purple']={r=60,e='knockback'}, ['Infinite Void']={r=80,e='stun'},
-  ['Cursed Strikes']={r=10,e='stun'}, ['Crushing Blow']={r=8,e='launch'}, ['Divergent Fist']={r=8,e='launch'}, ['Manji Kick']={r=14,e='counter'},
-  ['Dismantle']={r=30,e='knockback'}, ['Open']={r=50,e='knockback'}, ['Rush']={r=20,e='launch'}, ['Malevolent Shrine']={r=80,e='ragdoll'},
-  ['Reserve Balls']={r=65,e='ragdoll'}, ['Shutter Doors']={r=8,e='stun'}, ['Rough Energy']={r=8,e='launch'}, ['Fever Breaker']={r=40,e='launch'},
-  ['Lucky Volley']={r=8,e='stun'}, ['Lucky Rushdown']={r=70,e='knockback'}, ['Overwhelming Luck']={r=8,e='launch'}, ['Energy Surge']={r=8,e='launch'},
-  ['Rabbit Escape']={r=10,e='stun'}, ['Nue']={r=50,e='knockback'}, ['Toad']={r=75,e='pull'}, ['Divine Dog: Totality']={r=60,e='knockback'},
-  ['Max Elephant']={r=60,e='knockback'}, ['Great Serpent']={r=60,e='stun'}, ['Shadow Swarm']={r=10,e='launch'}, ['Mahoraga']={r=60,e='summon'},
-  ['Divine Pummel']={r=8,e='launch'}, ['Ground Pitch']={r=20,e='knockback'}, ['Earthquake']={r=12,e='knockback'}, ['Takedown']={r=70,e='launch'},
-  ['Adaptation']={r=10,e='counter'}, ['World Slash']={r=60,e='knockback'},
-  ['Stockpile']={r=8,e='launch'}, ['Soul Fire']={r=50,e='knockback'}, ['Focus Strike']={r=8,e='stun'}, ['Body Repel']={r=70,e='knockback'},
-  ['Idle Transfiguration']={r=40,e='stun'}, ['Body Disfigure']={r=8,e='launch'}, ['Spike Wrath']={r=25,e='stun'},
-  ['Embodiment of Self Perfection']={r=80,e='stun'}, ['Widespread Strikes']={r=15,e='stun'}, ['Face Blitz']={r=8,e='knockback'}, ['Head Splitter']={r=14,e='counter'},
-  ['Piercing Blood']={r=30,e='knockback'}, ['Flowing Red Scale']={r=8,e='launch'}, ['Supernova']={r=14,e='counter'}, ['Blood Edge']={r=8,e='knockback'},
-  ['Slicing Exorcism']={r=50,e='knockback'}, ['Wing King']={r=8,e='pull'}, ['Blood Rain']={r=35,e='knockback'}, ['Plasma Wave']={r=120,e='knockback'},
-  ['Boogie Woogie']={r=60,e='special'}, ['Swift Kick']={r=8,e='launch'}, ['Brute Force']={r=15,e='knockback'}, ['Pebble Throw']={r=45,e='knockback'},
-  ['Elbow Drop']={r=8,e='knockback'}, ["Idol's Debut"]={r=30,e='knockback'}, ['Climax Jumping']={r=40,e='knockback'}, ['Dreams']={r=8,e='stun'}, ['Brothers']={r=14,e='counter'},
-  ['No Escape']={r=50,e='knockback'}, ['Extended Swings']={r=8,e='knockback'}, ['Justice Served']={r=8,e='launch'}, ["Judgement's Reach"]={r=40,e='stun'},
-  ['Pressing Charges']={r=8,e='knockback'}, ['Execution']={r=12,e='stun'}, ['Final Judgement']={r=14,e='stun'}, ['Verdict']={r=8,e='stun'}, ['Triple Sentence']={r=50,e='knockback'},
-  ['Severing Path']={r=8,e='knockback'}, ['Resolute Slash']={r=35,e='knockback'}, ['Veilstep']={r=8,e='knockback'}, ['Revolve']={r=8,e='pull'}, ['Second Wind']={r=10,e='stun'}, ['Outburst']={r=12,e='knockback'},
-  ['Rika Downslam']={r=10,e='knockback'}, ['Rika Launch']={r=12,e='launch'}, ['Rika Throw']={r=15,e='knockback'}, ['Rika Haymaker']={r=12,e='knockback'},
-  ['Elbow Rush']={r=12,e='stun'}, ['True Love Beam']={r=80,e='knockback'}, ['Authentic Mutual Love']={r=80,e='knockback'}, ['Shrine']={r=80,e='knockback'},
-  ['Ultra Spin']={r=8,e='knockback'}, ['Boost On']={r=8,e='launch'}, ['Ultra Cannon']={r=50,e='knockback'}, ['Heat Emission']={r=8,e='knockback'},
-  ['Miracle Cannon']={r=50,e='knockback'}, ['Pigeon Viola']={r=250,e='knockback'}, ['Absolute Destruction']={r=15,e='knockback'}, ['Technique Charge']={r=50,e='knockback'},
-  ['Projection Sorcery']={r=50,e='special'}, ['Projection Breaker']={r=8,e='knockback'}, ['Bleedout']={r=8,e='stun'}, ['Decisive Strike']={r=12,e='stun'},
-  ['Cursory Impact']={r=8,e='knockback'}, ['Acceleration']={r=8,e='stun'}, ['Top Speed']={r=15,e='knockback'}, ['Flash Freezing']={r=15,e='stun'},
-  ['Tendril Grab']={r=25,e='stun'}, ['Time Cell Moon Palace']={r=80,e='stun'},
-  ['Cleaving Whirlwind']={r=8,e='knockback'}, ['Severance Kick']={r=8,e='stun'}, ['Blunt Cut']={r=8,e='knockback'}, ['Cross Cut']={r=8,e='knockback'},
-  ['Stabilize']={r=8,e='stun'}, ['Ratio Breaker']={r=8,e='stun'}, ['Sharpen']={r=10,e='stun'}, ['Erosion']={r=8,e='knockback'}, ['Interrogate']={r=8,e='stun'}, ['Collapse']={r=15,e='launch'},
-  ['Disaster Root']={r=60,e='pull'}, ['Flower Field']={r=25,e='stun'}, ['Root Swarm']={r=15,e='launch'}, ['Surging Thorns']={r=35,e='launch'},
-  ['Bud Shot']={r=70,e='ragdoll'}, ['Defense Response']={r=8,e='knockback'},
-  ['Granite Blast']={r=90,e='knockback'}, ['Unsatisfied']={r=8,e='knockback'}, ['Second Helping']={r=70,e='knockback'}, ['Appetizer']={r=50,e='ragdoll'},
-  ['Every Last Drop.']={r=100,e='knockback'}, ['"What are you after?"']={r=15,e='knockback'}, ['"I had no idea..."']={r=8,e='knockback'},
-  ['"This is what dessert is like!"']={r=15,e='knockback'}, ["\"You weren't invited.\""]={r=15,e='knockback'},
-  ['Crushing Jaws']={r=8,e='ragdoll'}, ['Clever']={r=10,e='stun'}, ['Wing Throw']={r=8,e='launch'}, ['Black Mucus']={r=60,e='ragdoll'},
-  ['Garuda Rebound']={r=50,e='summon'}, ['Rising Rage']={r=8,e='launch'}, ['Mass Breaker']={r=10,e='knockback'}, ['Garuda Stab']={r=12,e='knockback'},
-  ['Strong Dismantle']={r=35,e='knockback'}, ['Open FURNACE']={r=50,e='knockback'}, ['Cleave Rush']={r=20,e='knockback'}, ['Kamutoke']={r=40,e='stun'},
-  ['Despair']={r=8,e='launch'}, ['Shut Up!']={r=10,e='counter'}, ['Eye Catching']={r=14,e='counter'}, ['Sacrilege']={r=12,e='launch'},
-  ['Kamehameha']={r=80,e='knockback'}, ['Ki Spam']={r=50,e='ragdoll'}, ['Staff Extend']={r=40,e='knockback'}, ['Staff Uppercut']={r=8,e='launch'},
-  ['Ambush']={r=8,e='special'}, ['Backstab']={r=8,e='stun'}, ['Trip']={r=8,e='knockback'}, ['Cheap Shot']={r=40,e='knockback'},
-  ['Ankle Cutter']={r=8,e='ragdoll'}, ['High Time']={r=8,e='launch'}, ['Dirty Play']={r=40,e='knockback'},
-  ['Impetus Updraft']={r=8,e='launch'}, ['Circling']={r=12,e='knockback'}, ['Gliding Flight']={r=12,e='special'}, ['Bird Control']={r=80,e='knockback'},
-  ['Festering Strikes']={r=8,e='stun'}, ['Detach']={r=30,e='knockback'}, ['Chokehold']={r=8,e='knockback'}, ['Roach Swarm']={r=40,e='knockback'},
+local function CreateSlider(section, text, min, max, default, callback)
+    itemOrderCounter = itemOrderCounter + 1
+    local frame = Instance.new("Frame", section)
+    frame.LayoutOrder = itemOrderCounter
+    frame.Size = UDim2.new(0.92, 0, 0, 50)
+    frame.BackgroundTransparency = 1
+    
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(1, -40, 0, 18)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Theme.SubText
+    label.Font = Enum.Font.GothamMedium
+    label.TextSize = 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local valLabel = Instance.new("TextLabel", frame)
+    valLabel.Size = UDim2.new(0, 40, 0, 18)
+    valLabel.Position = UDim2.new(1, -40, 0, 0)
+    valLabel.BackgroundTransparency = 1
+    valLabel.Text = tostring(default)
+    valLabel.TextColor3 = Theme.Accent
+    valLabel.Font = Enum.Font.GothamBold
+    valLabel.TextSize = 13
+    valLabel.TextXAlignment = Enum.TextXAlignment.Right
+    
+    local sliderBg = Instance.new("Frame", frame)
+    sliderBg.Size = UDim2.new(1, 0, 0, 4)
+    sliderBg.Position = UDim2.new(0, 0, 0, 32)
+    sliderBg.BackgroundColor3 = Theme.ToggleOff
+    Instance.new("UICorner", sliderBg).CornerRadius = UDim.new(1, 0)
+    
+    local sliderFill = Instance.new("Frame", sliderBg)
+    local percentage = math.clamp((default - min) / (max - min), 0, 1)
+    sliderFill.Size = UDim2.new(percentage, 0, 1, 0)
+    sliderFill.BackgroundColor3 = Theme.Accent
+    Instance.new("UICorner", sliderFill).CornerRadius = UDim.new(1, 0)
+    
+    local knob = Instance.new("TextButton", sliderFill)
+    knob.Size = UDim2.new(0, 14, 0, 14)
+    knob.Position = UDim2.new(1, -7, 0.5, -7)
+    knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    knob.Text = ""
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+    
+    local dragging = false
+    knob.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = true end end)
+    UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local relative = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
+            local value = math.floor(min + (max - min) * relative)
+            
+            if max <= 2 then
+                local rawValue = min + (max - min) * relative
+                value = math.floor(rawValue * 100) / 100
+            end
+            
+            valLabel.Text = tostring(value)
+            sliderFill.Size = UDim2.new(relative, 0, 1, 0)
+            if callback then pcall(function() callback(value) end) end
+        end
+    end)
+end
+
+local function CreateButton(section, text, color, callback)
+    if type(color) == "function" then callback = color; color = Theme.SectionBG end
+    itemOrderCounter = itemOrderCounter + 1
+    
+    local btn = Instance.new("TextButton", section)
+    btn.LayoutOrder = itemOrderCounter
+    btn.Size = UDim2.new(0.92, 0, 0, 34)
+    btn.BackgroundColor3 = color
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 12
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    Instance.new("UIStroke", btn).Color = Theme.Stroke
+    AddClickPop(btn)
+    
+    btn.MouseButton1Click:Connect(function() pcall(callback) end)
+    return btn
+end
+
+local function CreateDropdown(section, headerText, itemsList, targetConfigKey, callback)
+    itemOrderCounter = itemOrderCounter + 1
+    local frame = Instance.new("Frame", section)
+    frame.LayoutOrder = itemOrderCounter
+    frame.Size = UDim2.new(0.92, 0, 0, 160)
+    frame.BackgroundTransparency = 1
+    
+    local header = Instance.new("TextLabel", frame)
+    header.Size = UDim2.new(1, 0, 0, 20)
+    header.BackgroundTransparency = 1
+    header.Text = headerText .. ": None"
+    header.TextColor3 = Theme.SubText
+    header.Font = Enum.Font.GothamMedium
+    header.TextSize = 12
+    header.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local scroll = Instance.new("ScrollingFrame", frame)
+    scroll.Size = UDim2.new(1, 0, 0, 130)
+    scroll.Position = UDim2.new(0, 0, 0, 25)
+    scroll.BackgroundColor3 = Theme.Background
+    scroll.ScrollBarThickness = 4
+    Instance.new("UICorner", scroll).CornerRadius = UDim.new(0, 6)
+    
+    local listLayout = Instance.new("UIListLayout", scroll)
+    listLayout.Padding = UDim.new(0, 4)
+    listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    
+    local function populate(list)
+        for _, child in pairs(scroll:GetChildren()) do if child:IsA("TextButton") then child:Destroy() end end
+        for _, itemName in ipairs(list) do
+            local btn = Instance.new("TextButton", scroll)
+            btn.Size = UDim2.new(0.94, 0, 0, 26)
+            btn.BackgroundColor3 = Theme.SectionBG
+            btn.Text = "  " .. tostring(itemName)
+            btn.TextColor3 = Theme.Text
+            btn.Font = Enum.Font.GothamBold
+            btn.TextSize = 12
+            btn.TextXAlignment = Enum.TextXAlignment.Left
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+            
+            btn.MouseButton1Click:Connect(function() 
+                header.Text = headerText .. ": " .. tostring(itemName)
+                if callback then callback(itemName) end
+            end)
+        end
+        task.defer(function() scroll.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10) end)
+    end
+    
+    populate(itemsList)
+    return { Refresh = populate }
+end
+
+local function CreateKeybind(section, text, defaultKey, callback)
+    itemOrderCounter = itemOrderCounter + 1
+    local frame = Instance.new("Frame", section)
+    frame.LayoutOrder = itemOrderCounter
+    frame.Size = UDim2.new(0.92, 0, 0, 34)
+    frame.BackgroundTransparency = 1
+    
+    local label = Instance.new("TextLabel", frame)
+    label.Size = UDim2.new(0.7, 0, 0, 34)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.TextColor3 = Theme.Text
+    label.Font = Enum.Font.GothamMedium
+    label.TextSize = 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local btn = Instance.new("TextButton", frame)
+    btn.Size = UDim2.new(0, 80, 0, 22)
+    btn.Position = UDim2.new(1, -80, 0, 6)
+    btn.BackgroundColor3 = Theme.ToggleOff
+    btn.Text = defaultKey.Name
+    btn.TextColor3 = Theme.Text
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 12
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 4)
+    
+    local waiting = false
+    btn.MouseButton1Click:Connect(function() waiting = true; btn.Text = "..." end)
+    UserInputService.InputBegan:Connect(function(input)
+        if waiting and input.UserInputType == Enum.UserInputType.Keyboard then
+            waiting = false
+            btn.Text = input.KeyCode.Name
+            if callback then pcall(function() callback(input.KeyCode) end) end
+        end
+    end)
+end
+
+
+--// ==========================================
+--// CONFIG & GLOBAL VARIABLES
+--// ==========================================
+local RyuConfig = {
+    -- Auto BF & Chain
+    BlackFlashEnabled = false,
+    AutoBFYuji = false,
+    AutoBFMahito = false,
+    AutoTodoSlap = false,
+    AutoRatio = false,
+    
+    DashDistance = 15,
+    FireDelay = 0.25,
+    DashDuration = 0.35,
+    LockTime = 0.1,
+    DashCameraLock = true,
+    DashEasingStyle = "Cubic",
+    DashEasingDirection = "Out",
+    
+    -- Side Dash Assist
+    DashAssistEnabled = false,
+    DashAssistCameraLock = false,
+    DashAssistOnlyIfFacing = false,
+    DashAssistKeybind = Enum.KeyCode.J,
+    DashAssistDetectionRange = 60,
+    DashAssistBehindDistance = 5,
+    DashAssistFlightDuration = 0.42,
+    DashAssistCurveStrength = 10,
+    DashAssistArchHeight = 3,
+    DashAssistLockDuration = 0.35,
+    
+    -- Target Lock
+    LockEnabled = false,
+    LockMethod = "Camera",
+    LockTargetMode = "Closest",
+    LockTargetPart = "HumanoidRootPart",
+    LockMaxDistance = 500,
+    LockPrediction = 0,
+    LockSmoothness = 0,
+    LockSideOffset = 1.75,
+    LockWallCheck = false,
+    
+    -- Auto Block & Protections
+    AutoBlock = false,
+    BlockRange = 15,
+    BlockDuration = 500,
+    InvisibleBlock = false,
+    NoStun = false,
+    
+    -- Abilities
+    InfSideDash = false,
 }
-local function baseRange(m)
-    local n=m.name or ''
-    if nameHas(n, MELEE_KW) then return 7 end
-    if (m.tip or ''):find('TARGET') or nameHas(n, RANGED_KW) then return 38 end
-    return 14
-end
-local function moveRange(m)
-    local d=MOVE_DB[m.name]; if d then return d.r end
-    local b=baseRange(m); return math.clamp(learnedRange[m.name] or b, 6, b*1.7)
-end
-local function moveEffect(m) local d=MOVE_DB[m.name]; return d and d.e or nil end
-local function comboReach()
-    local mr=M1_RANGE
-    for _,m in ipairs(liveMoveset()) do mr=math.max(mr, moveRange(m)) end
-    return mr
-end
 
-local function fireSkillHinted(m, tr, th)
-    trackTarget(tr)
-    local tip = m.tip or ''; local key = m.key
-    local before = m.inst and (tonumber(m.inst:GetAttribute('LastUse')) or 0) or 0
-    if tip:find('TARGET') then comboLockUntil=tick()+1.0 end
-    if tip:find('HOLD') then
-        fireAction('Skill '..key); task.wait(0.9); releaseAction('Skill '..key)
-    else
-        fireAction('Skill '..key)
-        if m.inst then
-            local t0=tick()
-            repeat task.wait(0.03) until (tonumber(m.inst:GetAttribute('LastUse')) or 0)~=before or tick()-t0>0.35
-            if (tonumber(m.inst:GetAttribute('LastUse')) or 0)==before then
-                fireAction('Skill '..key)
-                local t1=tick(); repeat task.wait(0.03) until (tonumber(m.inst:GetAttribute('LastUse')) or 0)~=before or tick()-t1>0.25
-            end
-        end
-        if tip:find('TWICE') or tip:find('AGAIN') or tip:find('SPECIAL') then
-            task.wait(state.bfDelay or 0.22); trackTarget(tr); fireAction('Skill '..key)
+local Logic = {
+    LastFiredTick = 0,
+    TIME_WINDOW = 2,
+    TargetAnimations = {
+        ["100962226150441"] = true,
+        ["95852624447551"] = true,
+        ["74145636023952"] = true,
+        ["123171106092050"] = true
+    },
+    LockState = {
+        Enabled = false,
+        LastTargetSearch = 0,
+        CurrentLockTarget = nil,
+        CameraLocked = false,
+        WasLockedBody = false,
+        LockBodyGyro = nil,
+        ZoomDistance = 10,
+    },
+    Pathfinding = {
+        Active = false,
+        Speed = 350,
+        CurrentTween = nil,
+    },
+    TargetRemote = nil,
+}
+
+local DashAnimLeft = Instance.new("Animation")
+DashAnimLeft.AnimationId = "rbxassetid://75203303352791"
+local DashAnimRight = Instance.new("Animation")
+DashAnimRight.AnimationId = "rbxassetid://117223862448096"
+
+local KnownMovementAnims = {
+    ["120133391090244"] = true, ["138196552148011"] = true, 
+    ["96489184596023"] = true, ["117941450906936"] = true, ["77705898607209"] = true, 
+    ["140491244934559"] = true, ["134343219970072"] = true, ["126572575938378"] = true, 
+    ["93938476274140"] = true, ["137199497329581"] = true, ["77992084875736"] = true, 
+    ["135750035707554"] = true, ["85570635517461"] = true, ["85012092465916"] = true, 
+    ["72509133503569"] = true, ["119619096808750"] = true, ["98616794135588"] = true, 
+    ["97238189166310"] = true, ["125812953913280"] = true, ["77801551230831"] = true, 
+    ["114113678077830"] = true, 
+}
+
+local StraightAnimations = {
+    ["123171106092050"] = true,
+}
+
+local isMobilePlayer = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
+
+-- Fetch Remote for Hooking
+task.spawn(function()
+    Logic.TargetRemote = ReplicatedStorage:WaitForChild("Knit")
+        :WaitForChild("Knit")
+        :WaitForChild("Services")
+        :WaitForChild("DivergentFistService")
+        :WaitForChild("RE")
+        :WaitForChild("Activated")
+end)
+
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+    local method = getnamecallmethod()
+    if not checkcaller() and method == "FireServer" and self == Logic.TargetRemote and RyuConfig.BlackFlashEnabled then
+        Logic.LastFiredTick = tick()
+    end
+    return oldNamecall(self, ...)
+end)
+
+local function autoFireDivergentFist()
+    local character = LocalPlayer.Character
+    if character and character:FindFirstChild("Moveset") then
+        local move1 = character.Moveset:FindFirstChild("Divergent Fist")
+        local move2 = character.Moveset:FindFirstChild("Focus Strike")
+        if move1 and Logic.TargetRemote then
+            Logic.TargetRemote:FireServer(move1, nil)
+        elseif move2 then
+            pcall(function()
+                ReplicatedStorage.Knit.Knit.Services.FocusStrikeService.RE.Activated:FireServer(move2, nil)
+            end)
         end
     end
-    local r=hrp(); sampleRange(m.name, th, (tr and r) and (tr.Position-r.Position).Magnitude or nil, baseRange(m))
-    task.wait(state.comboSpeed)
 end
 
-local function doToken(tok, tr, th)
-    trackTarget(tr)
-    if tok=='M1' then fireAction('Melee'); return 0.24
-    elseif tok=='Q' then fireAction('Dash'); return 0.16
-    elseif tok=='R' then fireAction('Special'); return state.comboSpeed
-    elseif tok=='SP' then local h=hum(); if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end; return 0.14
-    elseif tok:match('^%d$') then
-        local r=hrp(); local d=(tr and r) and (tr.Position-r.Position).Magnitude or nil
-        fireAction('Skill '..tok); sampleRange('Skill '..tok, th, d, 18)
-        return state.comboSpeed
-    end
-    return 0.1
+-- Helpers
+local function getHRP(character)
+    return character and (character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso"))
 end
 
-local comboLock=false; local lastSpecial=0; local m1DownUntil=0
-local function runCombo(target)
-    if comboLock then return end; comboLock=true
-    task.spawn(function()
-      local ok,err = pcall(function()
-        local tr=target and S(function() return target:FindFirstChild('HumanoidRootPart') end)
-        local th=target and S(function() return target:FindFirstChildOfClass('Humanoid') end)
-        if tr then approachTarget(tr); faceTarget(tr) end
-        local preset=COMBO_PRESETS[state.comboPreset]; local route=COMBO_ROUTES[myName()]
-        if preset=='ROUTE' and route then
-            for _,tok in ipairs(route) do
-                if unloaded then break end
-                task.wait(doToken(tok, tr, th))
-                if stateOn(char(),'Stun') or active(attr(char(),'Dead')) then break end
-            end
-        else
-            local reverse = (preset=='4-3-2-1')
-            local function inRangeOf(rng) local rr=hrp(); return rr and tr and tr.Parent and (tr.Position-rr.Position).Magnitude <= rng end
-            local function maxRange() local mr=M1_RANGE for _,mv in ipairs(liveMoveset()) do mr=math.max(mr, moveRange(mv)) end return mr end
-            local function tgtInRange()
-                if unloaded or not tr or not tr.Parent or not validEnemy(target) then return false end
-                return inRangeOf(maxRange()+4)
-            end
-            while tgtInRange() and not stateOn(char(),'Stun') and not active(attr(char(),'Dead')) do
-                while blocking and not unloaded do holdM1(false); task.wait(0.05) end
-                if unloaded then break end
-                if state.autoBlock and genuineThreat(target) then break end
-                trackTarget(tr)
-                if state.autoBlackFlash and inRangeOf(M1_RANGE+2) then
-                    holdM1(false)
-                    for _=1,4 do
-                        if unloaded or blocking or stateOn(char(),'Stun') or not inRangeOf(M1_RANGE+2) or not validEnemy(target) then break end
-                        trackTarget(tr); clickM1(); task.wait(state.bfDelay or 0.37)
-                    end
-                elseif tick() >= m1DownUntil and inRangeOf(M1_RANGE+2)
-                       and not active(attr(target,'Ragdoll')) and not stateOn(target,'Stun') then
-                    holdM1(true)
-                    local ms0=tick()
-                    repeat task.wait(0.04) until unloaded or blocking or stateOn(char(),'Stun')
-                        or (char():GetAttribute('CurrentM1') or 0) >= 4
-                        or active(attr(target,'Ragdoll')) or stateOn(target,'Stun')
-                        or not inRangeOf(M1_RANGE+4) or tick()-ms0>1.5
-                    holdM1(false)
-                    if (char():GetAttribute('CurrentM1') or 0) >= 4 or active(attr(target,'Ragdoll')) then m1DownUntil=tick()+1.9 end
-                else holdM1(false) end
-                local moves=liveMoveset(); local order={}; for i=1,#moves do order[i]=i end
-                table.sort(order, function(a,b)
-                    local ra,rb = moveRange(moves[a]), moveRange(moves[b])
-                    if math.abs(ra-rb) > 2 then return ra < rb end
-                    if reverse then return a>b end; return a<b
-                end)
-                for _,idx in ipairs(order) do
-                    if not (tr and tr.Parent) or not validEnemy(target) or stateOn(char(),'Stun') then break end
-                    local m = moves[idx]; local rng = moveRange(m)
-                    local ok2 = m and m.ready and inRangeOf(rng)
-                    if ok2 and moveEffect(m)=='pull' and inRangeOf(rng*0.45) then ok2=false end
-                    if ok2 then holdM1(false); fireSkillHinted(m, tr, th); trackTarget(tr) end
+local function getClosestTarget(maxDist)
+    local char = LocalPlayer.Character
+    local root = getHRP(char)
+    if not root then return nil end
+
+    local closest = nil
+    local minDistance = math.huge
+
+    local charactersFolder = workspace:FindFirstChild("Characters")
+    local targetsToSearch = charactersFolder and charactersFolder:GetChildren() or workspace:GetChildren()
+
+    for _, model in ipairs(targetsToSearch) do
+        if model ~= char and model:IsA("Model") then
+            local enemyRoot = getHRP(model)
+            local enemyHum = model:FindFirstChild("Humanoid")
+
+            if enemyRoot and enemyHum and enemyHum.Health > 0 then
+                local dist = (enemyRoot.Position - root.Position).Magnitude
+                if dist < minDistance and dist <= maxDist then
+                    minDistance = dist
+                    closest = model
                 end
-                if (active(attr(target,'Ragdoll')) or stateOn(target,'Stun')) and not stateOn(char(),'Stun') then
-                    local w0=tick()
-                    while tick()-w0 < 1.6 and validEnemy(target) and not stateOn(char(),'Stun') and not blocking and not unloaded do
-                        if not active(attr(target,'Ragdoll')) then
-                            local r=hrp(); local d = (r and tr and tr.Parent) and (tr.Position-r.Position).Magnitude or 999
-                            if d > M1_RANGE and d <= 28 then lungeAt(tr) end
-                            if d <= 28 then faceTarget(tr); m1DownUntil=tick(); holdM1(inRangeOf(M1_RANGE+3)) end
-                            break
-                        end
-                        local didFire=false
-                        for _,m in ipairs(liveMoveset()) do
-                            if m.ready and inRangeOf(moveRange(m)) and moveEffect(m)~='pull' then
-                                holdM1(false); fireSkillHinted(m, tr, th); didFire=true; break
+            end
+        end
+    end
+    return closest
+end
+
+-- Math Helper for Bezier Curve
+local function getBezierPoint(t, p0, p1, p2)
+    return (1 - t)^2 * p0 + 2 * (1 - t) * t * p1 + t^2 * p2
+end
+
+
+--// ==========================================
+--// INVISIBLE BLOCK HELPERS
+--// ==========================================
+local InvBlockCache = {}
+
+local function LoadInvAnim(data, h)
+    local anim = Instance.new("Animation")
+    anim.AnimationId = data.AnimationId
+    local t = h:LoadAnimation(anim)
+    repeat RunService.Heartbeat:Wait() until t.Length > 0
+    return t
+end
+
+local function PlayInvAnim(player, data)
+    local c = player.Character
+    if not c then return end
+    local h = c:FindFirstChildOfClass("Humanoid")
+    if not h then return end
+
+    if not InvBlockCache[data.AnimationId] then
+        InvBlockCache[data.AnimationId] = LoadInvAnim(data, h)
+    end
+    local t = InvBlockCache[data.AnimationId]
+    if not t then return end
+
+    t:Play()
+    RunService.Heartbeat:Wait()
+    t.TimePosition = data.StartTime or 0
+    t:AdjustSpeed(data.Speed or 1)
+end
+
+
+--// ==========================================
+--// BLACK FLASH CHAIN (PERFORMDASHLOGIC)
+--// ==========================================
+local function performDashLogic(target)
+    local MAX_DASH_DISTANCE = RyuConfig.DashDistance
+    local FIRE_DELAY = RyuConfig.FireDelay
+    local DASH_DURATION = RyuConfig.DashDuration
+    local POST_DASH_LOCK_TIME = RyuConfig.LockTime
+
+    local easingStyleEnum = Enum.EasingStyle[RyuConfig.DashEasingStyle] or Enum.EasingStyle.Cubic
+    local easingDirectionEnum = Enum.EasingDirection[RyuConfig.DashEasingDirection] or Enum.EasingDirection.Out
+
+    local char = LocalPlayer.Character
+    local root = getHRP(char)
+    local humanoid = char and char:FindFirstChild("Humanoid")
+    local enemyRoot = getHRP(target)
+
+    if not root or not enemyRoot then
+        task.delay(FIRE_DELAY, autoFireDivergentFist)
+        return
+    end
+
+    local initialEnemyCFrame = enemyRoot.CFrame
+    local initialEnemyPos = initialEnemyCFrame.Position
+    local startPos = root.Position
+
+    local objectSpacePos = initialEnemyCFrame:PointToObjectSpace(startPos)
+    local isBehind = objectSpacePos.Z > 0
+    local distanceToEnemy = (startPos - initialEnemyPos).Magnitude
+
+    local isDash = true
+    local dashType = "Arch"
+    local endPos = startPos
+    local controlPos = startPos
+
+    if isBehind and distanceToEnemy <= 10 then
+        isDash = false
+    elseif isBehind and distanceToEnemy > 10 then
+        dashType = "Straight"
+        endPos = (initialEnemyCFrame * CFrame.new(0, 0, 5)).Position
+    else
+        dashType = "Arch"
+        endPos = (initialEnemyCFrame * CFrame.new(0, 0, 4)).Position
+
+        local distance = (endPos - startPos).Magnitude
+        local archWidth = math.clamp(distance / 1.5, 5, 25)
+
+        local direction = endPos - startPos
+        local perp = Vector3.new(-direction.Z, 0, direction.X)
+        if perp.Magnitude > 0.001 then
+            perp = perp.Unit
+        else
+            perp = Vector3.new(1, 0, 0)
+        end
+
+        local midPos = (startPos + endPos) / 2
+        local cp1 = midPos + (perp * archWidth)
+        local cp2 = midPos - (perp * archWidth)
+
+        local enemyRightVector = initialEnemyCFrame.RightVector
+        local playerIsOnRightSide = (startPos - initialEnemyPos):Dot(enemyRightVector) > 0
+        local cp1IsOnRightSide = (cp1 - initialEnemyPos):Dot(enemyRightVector) > 0
+
+        controlPos = (playerIsOnRightSide == cp1IsOnRightSide) and cp1 or cp2
+    end
+
+    if humanoid then humanoid.AutoRotate = false end
+
+    local startTime = tick()
+    local hasFired = false
+    local dashConn
+
+    local function finalizeMovement(finalCFrame)
+        if dashConn then dashConn:Disconnect() end
+        if humanoid then humanoid.AutoRotate = true end
+        if finalCFrame and root and root.Parent then root.CFrame = finalCFrame end
+
+        if not hasFired then
+            hasFired = true
+            autoFireDivergentFist()
+        end
+    end
+
+    dashConn = RunService.Heartbeat:Connect(function()
+        if not root or not root.Parent then return finalizeMovement(nil) end
+
+        local elapsed = tick() - startTime
+
+        if elapsed >= FIRE_DELAY and not hasFired then
+            hasFired = true
+            autoFireDivergentFist()
+        end
+
+        local currentPos = startPos
+        if isDash then
+            local alpha = math.clamp(elapsed / DASH_DURATION, 0, 1)
+            local easedAlpha = TweenService:GetValue(alpha, easingStyleEnum, easingDirectionEnum)
+
+            if dashType == "Straight" then
+                currentPos = startPos:Lerp(endPos, easedAlpha)
+            elseif dashType == "Arch" then
+                currentPos = (1 - easedAlpha)^2 * startPos + 2 * (1 - easedAlpha) * easedAlpha * controlPos + easedAlpha^2 * endPos
+            end
+        end
+
+        root.CFrame = CFrame.lookAt(currentPos, initialEnemyPos)
+
+        if RyuConfig.DashCameraLock then
+            local cam = workspace.CurrentCamera
+            if cam then
+                cam.CFrame = CFrame.lookAt(cam.CFrame.Position, initialEnemyPos)
+            end
+        end
+
+        local totalWaitTime = isDash and (DASH_DURATION + POST_DASH_LOCK_TIME) or (FIRE_DELAY + POST_DASH_LOCK_TIME)
+
+        if elapsed >= totalWaitTime then
+            finalizeMovement(CFrame.lookAt(currentPos, initialEnemyPos))
+        end
+    end)
+end
+
+--// ==========================================
+--// SIDE DASH ASSIST (EXECUTE DASH ARC)
+--// ==========================================
+local isDashingArc = false
+
+local function executeDashArc(direction)
+    if isDashingArc then return end 
+    isDashingArc = true
+
+    local character = LocalPlayer.Character
+    if not character then isDashingArc = false return end
+    local root = getHRP(character)
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not root or not humanoid then isDashingArc = false return end
+
+    local targetChar = getClosestTarget(RyuConfig.DashAssistDetectionRange)
+    local target = targetChar and getHRP(targetChar)
+
+    if not target then isDashingArc = false return end
+
+    if RyuConfig.DashAssistOnlyIfFacing then
+        local toPlayer = (root.Position - target.Position).Unit
+        local dot = target.CFrame.LookVector:Dot(toPlayer)
+        if dot < -0.1 then isDashingArc = false return end
+    end
+
+    root.Anchored = true
+    humanoid.AutoRotate = false
+    root.AssemblyLinearVelocity = Vector3.zero
+    for _, mover in pairs(root:GetChildren()) do
+        if mover:IsA("BodyVelocity") or mover:IsA("LinearVelocity") or mover:IsA("AlignPosition") or mover:IsA("VectorForce") or mover:IsA("BodyPosition") then
+            mover:Destroy()
+        end
+    end
+
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    local dashTrack = nil
+    if animator then
+        for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+            if track.Animation and (track.Animation.AnimationId:match("117223862448096") or track.Animation.AnimationId:match("75203303352791")) then
+                track:Stop(0)
+            end
+        end
+        local animToUse = (direction == "Left") and DashAnimLeft or DashAnimRight
+        dashTrack = animator:LoadAnimation(animToUse)
+        dashTrack.Priority = Enum.AnimationPriority.Action4
+        dashTrack:Play(0.05, 1, 1 / RyuConfig.DashAssistFlightDuration)
+    end
+
+    local p0 = root.Position
+    local sideMult = (direction == "Left") and -1 or 1
+
+    local progress = Instance.new("NumberValue")
+    progress.Value = 0
+    local dashName = "RazorbillFakeDash_" .. tostring(tick())
+
+    local tween = TweenService:Create(
+        progress,
+        TweenInfo.new(RyuConfig.DashAssistFlightDuration, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut),
+        { Value = 1 }
+    )
+
+    local Camera = workspace.CurrentCamera
+    local prevCamType = Camera.CameraType
+
+    RunService:BindToRenderStep(dashName, 20000, function()
+        if not target or not target.Parent or not root then
+            RunService:UnbindFromRenderStep(dashName)
+            if root then root.Anchored = false end
+            if humanoid then humanoid.AutoRotate = true end
+            if dashTrack then dashTrack:Stop() end
+            if RyuConfig.DashAssistCameraLock then Camera.CameraType = prevCamType end
+            isDashingArc = false
+            return
+        end
+
+        root.Anchored = true
+        humanoid.AutoRotate = false
+        root.AssemblyLinearVelocity = Vector3.zero
+
+        local val = progress.Value
+
+        local tPos = target.Position
+        local tLook = target.CFrame.LookVector
+        local flatLook = Vector3.new(tLook.X, 0, tLook.Z)
+        if flatLook.Magnitude > 0.001 then flatLook = flatLook.Unit else flatLook = Vector3.new(0, 0, -1) end
+
+        local tRight = target.CFrame.RightVector
+        local flatRight = Vector3.new(tRight.X, 0, tRight.Z)
+        if flatRight.Magnitude > 0.001 then flatRight = flatRight.Unit else flatRight = Vector3.new(1, 0, 0) end
+
+        local p2 = tPos + (flatLook * -RyuConfig.DashAssistBehindDistance)
+        local midPoint = (p0 + p2) / 2
+        local p1 = midPoint + (flatRight * (RyuConfig.DashAssistCurveStrength * sideMult)) + Vector3.new(0, RyuConfig.DashAssistArchHeight, 0)
+
+        local currentPos = getBezierPoint(val, p0, p1, p2)
+
+        local lookPos = Vector3.new(tPos.X, currentPos.Y, tPos.Z)
+        if (lookPos - currentPos).Magnitude > 0.1 then
+            root.CFrame = CFrame.lookAt(currentPos, lookPos)
+        else
+            root.CFrame = CFrame.new(currentPos)
+        end
+
+        if RyuConfig.DashAssistCameraLock then
+            Camera.CameraType = Enum.CameraType.Scriptable
+            local dirToEnemy = (tPos - root.Position).Unit
+            local targetCamCF = CFrame.lookAt(root.Position - (dirToEnemy * 11) + Vector3.new(0, 4.5, 0), tPos)
+            Camera.CFrame = Camera.CFrame:Lerp(targetCamCF, 0.35)
+        end
+    end)
+
+    tween:Play()
+
+    tween.Completed:Connect(function()
+        RunService:UnbindFromRenderStep(dashName)
+        progress:Destroy()
+        if dashTrack then dashTrack:Stop(0.1) end
+
+        if RyuConfig.DashAssistCameraLock then
+            Camera.CameraType = prevCamType
+        end
+
+        local lockStart = tick()
+        local lockName = "RazorbillDashLock_" .. tostring(lockStart)
+        RunService:BindToRenderStep(lockName, 20000, function()
+            if tick() - lockStart > RyuConfig.DashAssistLockDuration or not target or not target.Parent or not root then
+                RunService:UnbindFromRenderStep(lockName)
+                if root then
+                    root.Anchored = false
+                    root.AssemblyLinearVelocity = Vector3.zero
+                end
+                if humanoid then humanoid.AutoRotate = true end
+                isDashingArc = false 
+                return
+            end
+            root.Anchored = true
+            if humanoid then humanoid.AutoRotate = false end
+            root.AssemblyLinearVelocity = Vector3.zero
+
+            local lockedPos = root.Position
+            local facePos = Vector3.new(target.Position.X, lockedPos.Y, target.Position.Z)
+            if (facePos - lockedPos).Magnitude > 0.1 then
+                root.CFrame = CFrame.lookAt(lockedPos, facePos)
+            end
+        end)
+    end)
+end
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if not RyuConfig.DashAssistEnabled then return end
+
+    local assignedKey = RyuConfig.DashAssistKeybind
+    local targetKeyCode
+
+    if typeof(assignedKey) == "EnumItem" then
+        targetKeyCode = assignedKey
+    elseif typeof(assignedKey) == "string" then
+        local ok, kc = pcall(function() return Enum.KeyCode[assignedKey] end)
+        if ok then targetKeyCode = kc else return end
+    else
+        return
+    end
+
+    if input.KeyCode == targetKeyCode then
+        local direction = "Right"
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum and hum.MoveDirection.Magnitude > 0 then
+            local camRight = workspace.CurrentCamera.CFrame.RightVector * Vector3.new(1, 0, 1)
+            if camRight.Magnitude > 0 then
+                camRight = camRight.Unit
+                if hum.MoveDirection:Dot(camRight) < -0.2 then direction = "Left" end
+            end
+        end
+        task.spawn(function() executeDashArc(direction) end)
+    end
+end)
+
+--// ==========================================
+--// ANIMATION HOOK (AUTO BF, CHAIN, TODO, INVISIBLE BLOCK)
+--// ==========================================
+local function onAnimationPlayed(animTrack)
+    local animId = animTrack.Animation and animTrack.Animation.AnimationId or ""
+
+    -- Side Dash Assist Check
+    if RyuConfig.DashAssistEnabled and not isDashingArc then
+        if animId:match("75203303352791") then
+            task.spawn(function() executeDashArc("Left") end)
+        elseif animId:match("117223862448096") then
+            task.spawn(function() executeDashArc("Right") end)
+        end
+    end
+
+    -- Invisible Block
+    if RyuConfig.InvisibleBlock and animId == "rbxassetid://101865783312435" then
+        animTrack:Stop()
+        PlayInvAnim(LocalPlayer, {AnimationId = "rbxassetid://0", StartTime = 0, EndTime = 0.1, Speed = 0})
+    end
+
+    -- Auto Todo Perfect Slap
+    if RyuConfig.AutoTodoSlap and (animId == "rbxassetid://131358603583212" or animId == "rbxassetid://91074768993486" or animId == "rbxassetid://116040503139675") then
+        task.spawn(function()
+            repeat task.wait() until animTrack.TimePosition >= 0.55 or not animTrack.IsPlaying
+            if not animTrack.IsPlaying then return end
+            pcall(function() ReplicatedStorage.Knit.Knit.Services.TodoService.RE.Activated:FireServer(false) end)
+        end)
+    end
+
+    -- Auto BF & Chain
+    if RyuConfig.BlackFlashEnabled then
+        local idMatch = string.match(animId, "%d+")
+        if idMatch and Logic.TargetAnimations[idMatch] then
+            if (tick() - Logic.LastFiredTick) <= Logic.TIME_WINDOW then
+                Logic.LastFiredTick = 0
+
+                local closestTarget = getClosestTarget(RyuConfig.DashDistance)
+                if closestTarget then
+                    performDashLogic(closestTarget)
+                else
+                    task.delay(RyuConfig.FireDelay, autoFireDivergentFist)
+                end
+            end
+        end
+    elseif RyuConfig.AutoBFYuji or RyuConfig.AutoBFMahito then
+        local idMatch = string.match(animId, "%d+")
+        if idMatch and Logic.TargetAnimations[idMatch] then
+            task.delay(0.19, triggerBlackFlash)
+        end
+    end
+end
+
+local function setupCharacter(character)
+    InvBlockCache = {}
+    local humanoid = character:WaitForChild("Humanoid", 10)
+    if humanoid then
+        local animator = humanoid:WaitForChild("Animator", 10)
+        if animator then
+            animator.AnimationPlayed:Connect(onAnimationPlayed)
+        end
+    end
+end
+
+if LocalPlayer.Character then task.spawn(setupCharacter, LocalPlayer.Character) end
+LocalPlayer.CharacterAdded:Connect(setupCharacter)
+
+--// ==========================================
+--// TARGET LOCK LOGIC
+--// ==========================================
+RunService:BindToRenderStep("RazorbillTargetLockExtracted", Enum.RenderPriority.Camera.Value + 5, function(dt)
+    local char = LocalPlayer.Character
+    local hum  = char and char:FindFirstChildOfClass("Humanoid")
+    local root = getHRP(char)
+    local isAlive = (hum and hum.Health > 0 and root)
+
+    if not RyuConfig.LockEnabled or not isAlive then
+        if Logic.LockState.CameraLocked then
+            camera.CameraType = Enum.CameraType.Custom
+            if hum then camera.CameraSubject = hum end
+            Logic.LockState.CameraLocked = false
+        end
+        if Logic.LockState.WasLockedBody then
+            if hum then hum.AutoRotate = true end
+            if Logic.LockState.LockBodyGyro then Logic.LockState.LockBodyGyro:Destroy(); Logic.LockState.LockBodyGyro = nil end
+            Logic.LockState.WasLockedBody = false
+        end
+        Logic.LockState.CurrentLockTarget = nil
+        return
+    end
+
+    if Logic.LockState.CurrentLockTarget then
+        local eHum = Logic.LockState.CurrentLockTarget:FindFirstChildOfClass("Humanoid")
+        local targetAlive = Logic.LockState.CurrentLockTarget.Parent and eHum and eHum.Health > 0
+        if not targetAlive then
+            Logic.LockState.CurrentLockTarget = nil
+        else
+            local tRoot = getHRP(Logic.LockState.CurrentLockTarget)
+            if tRoot and (root.Position - tRoot.Position).Magnitude > RyuConfig.LockMaxDistance then
+                Logic.LockState.CurrentLockTarget = nil
+            end
+        end
+    end
+
+    if Logic.LockState.CurrentLockTarget == nil then
+        if tick() - Logic.LockState.LastTargetSearch >= 0.5 then
+            Logic.LockState.LastTargetSearch = tick()
+            local best, shortest = nil, math.huge
+            local charsFolder = workspace:FindFirstChild("Characters")
+            local entities = charsFolder and charsFolder:GetChildren() or {}
+            if #entities == 0 then
+                for _, p in ipairs(Players:GetPlayers()) do
+                    if p.Character then table.insert(entities, p.Character) end
+                end
+            end
+
+            for _, tChar in ipairs(entities) do
+                if tChar:IsA("Model") and tChar ~= char then
+                    local tHum = tChar:FindFirstChildOfClass("Humanoid")
+                    local tRoot = getHRP(tChar)
+
+                    if tHum and tHum.Health > 0 and tRoot then
+                        local worldDist = (root.Position - tRoot.Position).Magnitude
+                        if worldDist <= RyuConfig.LockMaxDistance then
+                            if RyuConfig.LockWallCheck then
+                                local rayParams = RaycastParams.new()
+                                rayParams.FilterDescendantsInstances = {char, tChar}
+                                rayParams.FilterType = Enum.RaycastFilterType.Exclude
+                                local ray = workspace:Raycast(root.Position, (tRoot.Position - root.Position).Unit * worldDist, rayParams)
+                                if ray then continue end
+                            end
+
+                            if RyuConfig.LockTargetMode == "Closest" then
+                                if worldDist < shortest then shortest = worldDist; best = tChar end
+                            else
+                                local pos, onScreen = camera:WorldToViewportPoint(tRoot.Position)
+                                if onScreen then
+                                    local d = (Vector2.new(Mouse.X, Mouse.Y) - Vector2.new(pos.X, pos.Y)).Magnitude
+                                    if d < shortest then shortest = d; best = tChar end
+                                end
                             end
                         end
-                        if not didFire then task.wait(0.05) end
                     end
                 end
-                if state.useSpecial and tick()-lastSpecial > state.specialCd and inRangeOf(30)
-                   and not stateOn(char(),'Stun') and validEnemy(target) then
-                    lastSpecial=tick(); holdM1(false); fireAction('Special'); trackTarget(tr); task.wait(0.25)
-                end
-                task.wait(0.04)
             end
-            holdM1(false)
+            Logic.LockState.CurrentLockTarget = best
         end
-      end)
-      if not ok then _G.__JJS_COMBOERR__ = tostring(err) end
-      holdM1(false); task.wait(0.2); comboLock=false
-    end)
-end
+    end
+    
+    if not Logic.LockState.CurrentLockTarget then return end
+    local targetPart = Logic.LockState.CurrentLockTarget:FindFirstChild(RyuConfig.LockTargetPart) or getHRP(Logic.LockState.CurrentLockTarget)
+    if not targetPart then return end
 
-task.spawn(function()
-    while not unloaded do
-        local ok=false
-        if state.autoCombo and state.glueTarget and comboFocus and comboFocus.Parent then
-            local r=hrp(); local tr=r and S(function() return comboFocus:FindFirstChild('HumanoidRootPart') end)
-            if r and tr then
-                local dist=(tr.Position-r.Position).Magnitude
-                if dist>state.comboRange and dist<=state.engageRange then
-                    local path=PFS:CreatePath({AgentRadius=2.5, AgentHeight=5, AgentCanJump=true, WaypointSpacing=6})
-                    local cok=pcall(function() path:ComputeAsync(r.Position, tr.Position) end)
-                    if cok and path.Status==Enum.PathStatus.Success then pathWPs=path:GetWaypoints(); pathIdx=2; ok=true end
-                end
-            end
+    local targetPos = targetPart.Position
+    if RyuConfig.LockPrediction > 0 then
+        local tRoot = getHRP(Logic.LockState.CurrentLockTarget)
+        if tRoot and tRoot:IsA("BasePart") then
+            targetPos = targetPos + (tRoot.AssemblyLinearVelocity * RyuConfig.LockPrediction)
         end
-        if not ok then pathWPs=nil end
-        task.wait(0.5)
+    end
+
+    if RyuConfig.LockMethod == "Camera" then
+        if Logic.LockState.WasLockedBody then
+            hum.AutoRotate = true
+            if Logic.LockState.LockBodyGyro then Logic.LockState.LockBodyGyro:Destroy(); Logic.LockState.LockBodyGyro = nil end
+            Logic.LockState.WasLockedBody = false
+        end
+
+        if not Logic.LockState.CameraLocked then
+            local dist = (camera.CFrame.Position - root.Position).Magnitude
+            Logic.LockState.ZoomDistance = dist <= 50 and math.clamp(dist, 4, 50) or 10
+            Logic.LockState.CameraLocked = true
+        end
+
+        camera.CameraType = Enum.CameraType.Scriptable
+        local offsetDir = root.Position - targetPos
+        local flatDir = Vector3.new(offsetDir.X, 0, offsetDir.Z)
+        if flatDir.Magnitude < 0.001 then flatDir = -root.CFrame.LookVector; flatDir = Vector3.new(flatDir.X, 0, flatDir.Z) end
+        flatDir = flatDir.Unit
+
+        local camPos = root.Position + (flatDir * Logic.LockState.ZoomDistance) + Vector3.new(0, 2.5, 0)
+        local lookCF = CFrame.lookAt(camPos, targetPos)
+        camPos = camPos + (lookCF.RightVector * RyuConfig.LockSideOffset)
+
+        local desiredCF = CFrame.lookAt(camPos, targetPos)
+        if RyuConfig.LockSmoothness <= 0 then
+            camera.CFrame = desiredCF
+        else
+            local rate  = 30 / RyuConfig.LockSmoothness
+            local alpha = math.clamp(1 - math.exp(-rate * dt), 0, 1)
+            camera.CFrame = camera.CFrame:Lerp(desiredCF, alpha)
+        end
+    else
+        if Logic.LockState.CameraLocked then
+            camera.CameraType = Enum.CameraType.Custom
+            camera.CameraSubject = hum
+            Logic.LockState.CameraLocked = false
+        end
+        hum.AutoRotate = false
+        Logic.LockState.WasLockedBody = true
+
+        if not Logic.LockState.LockBodyGyro or Logic.LockState.LockBodyGyro.Parent ~= root then
+            if Logic.LockState.LockBodyGyro then Logic.LockState.LockBodyGyro:Destroy() end
+            Logic.LockState.LockBodyGyro = Instance.new("BodyGyro")
+            Logic.LockState.LockBodyGyro.MaxTorque = Vector3.new(0, 400000, 0)
+            Logic.LockState.LockBodyGyro.P = 50000
+            Logic.LockState.LockBodyGyro.D = 500
+            Logic.LockState.LockBodyGyro.Parent = root
+        end
+        Logic.LockState.LockBodyGyro.CFrame = CFrame.lookAt(root.Position, Vector3.new(targetPos.X, root.Position.Y, targetPos.Z))
     end
 end)
 
-track(RunService.Heartbeat:Connect(function()
-    if not (state.autoCombo and state.glueTarget) or not comboFocus then releaseMoveKeys(); engaged=false; return end
-    local t=comboFocus; if not t.Parent then releaseMoveKeys(); engaged=false; return end
-    local r=hrp(); local tr=r and S(function() return t:FindFirstChild('HumanoidRootPart') end)
-    if not tr then releaseMoveKeys(); return end
-    local dist=(tr.Position-r.Position).Magnitude
-    if dist > state.engageRange*1.5 then releaseMoveKeys(); return end
-    if stateOn(char(),'Stun') or stateOn(char(),'Ragdoll') then releaseMoveKeys(); return end
-    if dist > state.engageDist+1 then
-        local goal = (dist > state.comboRange and pathGoal(tr.Position)) or tr.Position
-        moveTowardPos(goal)
-        if jumpWP then local h=hum(); if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end end
-        if dist > 14 and not jumpWP then dashToward() end
-    else releaseMoveKeys() end
-end))
+--// ==========================================
+--// NEW ABILITIES: NO STUN, AUTO RATIO
+--// ==========================================
+pcall(function()
+    local bl = {
+        ["Block"] = true, ["Stun"] = true, ["Knockback"] = true,
+        ["Hold"] = false, ["Wakeup"] = false, ["Counter"] = false,
+        ["InSkill"] = false, ["NoJump"] = false, ["NoSprint"] = false,
+        ["NoNue"] = false, ["WorldSlash"] = false, ["Drill"] = false,
+        ["DisWeapon"] = false, ["DisableChase"] = false
+    }
 
-local awakenLock=false
-local function tryAwaken()
-    if awakenLock then return end; awakenLock=true; fireAction('Awaken')
-    task.spawn(function() task.wait(5); awakenLock=false end)
-end
-
-local BLOCK_KEY       = Enum.KeyCode.F
-local BlockSvc        = S(function() return RS.Knit.Knit.Services.BlockService end)
-local BlockActivated  = BlockSvc and S(function() return BlockSvc:FindFirstChild('Activated',   true) end)
-local BlockDeactivated= BlockSvc and S(function() return BlockSvc:FindFirstChild('Deactivated', true) end)
-local lastBlockOn=0; local lastBlockFire=0
-local function myBlockOn()
-    local c=char(); if not c then return false end
-    return stateOn(c,'Block') or active(c:GetAttribute('BlockTry'))
-end
-local function fireBlock(on)
-    if BlockActivated and BlockDeactivated then S(function() (on and BlockActivated or BlockDeactivated):FireServer() end)
-    else S(function() VIM:SendKeyEvent(on, BLOCK_KEY, false, game) end) end
-end
-local function setBlock(on)
-    if on then
-        if not blocking then blocking=true; lastBlockOn=tick() end
-        if not myBlockOn() and tick()-lastBlockFire > 0.08 then lastBlockFire=tick(); fireBlock(true) end
-    else if blocking then blocking=false; fireBlock(false) end end
-end
-
-local lastParry=0
-S(function()
-    local Knit=require(RS.Knit.Knit); local bs=Knit.GetService('BlockService')
-    if bs and bs.Effects then
-        track(bs.Effects:Connect(function(who, perfect)
-            if perfect and who==char() then lastParry=tick(); _G.__JJS_PARRIES__=(_G.__JJS_PARRIES__ or 0)+1 end
-        end))
-    end
+    Workspace:WaitForChild("Characters").DescendantAdded:Connect(function(obj)
+        if RyuConfig.NoStun then
+            pcall(function()
+                if bl[obj.Name] then
+                    local parent = obj.Parent
+                    local char = parent and parent.Parent
+                    if char and char.Name == LocalPlayer.Character.Name then
+                        task.wait()
+                        obj:Destroy()
+                    end
+                end
+            end)
+        end
+    end)
 end)
 
-local function burstEscapeAvail()
-    local c=char(); if not c then return false end
-    local info=c:FindFirstChild('Info')
-    return active(c:GetAttribute('Burst')) and not (info and info:GetAttribute('Burst'))
-end
-local function kbCancelAvail()
-    local c=char(); if not c then return false end
-    local info=c:FindFirstChild('Info'); if not info then return false end
-    if not (info:FindFirstChild('Knockback') or info:FindFirstChild('ForceEsc')) then return false end
-    if (tonumber(c:GetAttribute('Evade')) or 0) < 50 then return false end
-    for _,x in ipairs(info:GetChildren()) do if x:GetAttribute('Disable') then return false end end
-    return true
-end
-local function canEscape() return burstEscapeAvail() or kbCancelAvail() end
-local lastEscape=0
-local function escapeStep()
-    if tick()-lastEscape < 0.3 then return end; lastEscape=tick(); gameDash()
-end
-
-local DASH_CD=2.0; local lastDashFire=0
-local function dashReady()
-    if tick()-lastDashFire < DASH_CD then return false end
-    local c=char(); if not c then return false end
-    if stateOn(c,'NoDash') or stateOn(c,'Stun') or active(c:GetAttribute('Ragdoll')) then return false end
-    return true
-end
-
-local lastComboEscape=0
-local function doComboEscape(attacker)
-    if tick()-lastComboEscape < 1.6 then return end
-    local atkR = attacker and S(function() return attacker:FindFirstChild('HumanoidRootPart') end)
-    if not atkR then return end
-    if not (dashReady() or canEscape()) then return end
-    lastComboEscape=tick()
-    task.spawn(function()
-        if canEscape() then escapeStep(); task.wait(0.06) end
-        local r=hrp(); local h=hum()
-        if r and h and atkR.Parent then
-            local away=r.Position-atkR.Position; away=Vector3.new(away.X,0,away.Z)
-            away = away.Magnitude>0.1 and away.Unit or Vector3.new(0,0,1)
-            h:Move(away, false); lastDashFire=tick(); gameDash()
+pcall(function()
+    ReplicatedStorage.Knit.Knit.Services.NanamiService.RE.Effects.OnClientEvent:Connect(function(...)
+        if not RyuConfig.AutoRatio then return end
+        local args = {...}
+        if args[1] == "SpawnRatio" and args[2] == LocalPlayer then
+            task.wait(args[6] * 0.56767676767676769420)
+            pcall(function() ReplicatedStorage.Knit.Knit.Services.NanamiService.RE.RightActivated:FireServer() end)
         end
-        task.wait(state.escapeReturn or 0.45)
-        if unloaded or not validEnemy(attacker) or not atkR.Parent then return end
-        if stateOn(char(),'Stun') or active(attr(char(),'Ragdoll')) then return end
-        lungeAt(atkR); task.wait(0.12); faceTarget(atkR)
-        clickM1(); task.wait(0.18); clickM1()
     end)
-end
+end)
 
-local function realDodge(threat)
-    if not dashReady() then return false end
-    local r=hrp(); local h=hum(); local er=threat and S(function() return threat:FindFirstChild('HumanoidRootPart') end)
-    if not (r and h and er) then return false end
-    local away=r.Position-er.Position; away=Vector3.new(away.X,0,away.Z)
-    away = away.Magnitude>0.1 and away.Unit or Vector3.new(0,0,1)
-    local perp=Vector3.new(-away.Z,0,away.X); if math.random()<0.5 then perp=-perp end
-    local dir=(perp*0.85 + away*0.35); dir = dir.Magnitude>0.1 and dir.Unit or away
-    h:Move(dir, false); lastDashFire=tick(); gameDash()
-    return true
-end
+local function UnlockEmotes()
+    pcall(function()
+        local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+        local emote = playerGui:WaitForChild("Emotes"):WaitForChild("Emote")
+        local page1 = emote:WaitForChild("Page1")
+        local page2 = emote:WaitForChild("Page2")
+        local switch = emote:WaitForChild("Switch")
+        local equipped = playerGui:WaitForChild("Menus"):WaitForChild("Group"):WaitForChild("Inventory"):WaitForChild("Items"):WaitForChild("Emotes"):WaitForChild("Equipped")
 
-local lastFlank=0
-local function flat(v) return Vector3.new(v.X,0,v.Z) end
-local function flankDash(target)
-    if tick()-lastFlank < (state.flankCd or 1.0) then return false end
-    if not dashReady() then return false end
-    local r=hrp(); local h=hum(); local tr=target and S(function() return target:FindFirstChild('HumanoidRootPart') end)
-    if not (r and h and tr) then return false end
-    local committed = stateOn(target,'Stun') or active(attr(target,'Ragdoll')) or stateOn(target,'InSkill')
-                      or (serverNow()-(tonumber(attr(target,'LastM1')) or 0) < 0.8)
-    if not committed then return false end
-    local gap=(flat(tr.Position)-flat(r.Position)).Magnitude
-    if gap>(state.flankRange or 30) or gap<3 then return false end
-    local look=flat(tr.CFrame.LookVector); look=look.Magnitude>0.1 and look.Unit or Vector3.new(0,0,1)
-    local toMe=flat(r.Position-tr.Position); if toMe.Magnitude<0.1 then return false end
-    if look:Dot(toMe.Unit) <= 0.2 then return false end
-    local goal=tr.Position - look*4; local dir=flat(goal-r.Position); if dir.Magnitude<0.1 then return false end
-    h:Move(dir.Unit, false); lastFlank=tick(); lastDashFire=tick(); gameDash()
-    task.delay(0.12, function() if not unloaded then faceTarget(tr) end end)
-    return true
-end
-
-local function nearestEnemy(maxDist)
-    local origin=hrp(); if not origin then return end
-    local best,bestD=nil,maxDist or math.huge
-    local chars=workspace:FindFirstChild('Characters'); if not chars then return end
-    for _,c in ipairs(chars:GetChildren()) do
-        if c:IsA('Model') and c~=char() and c.Name~='Dummy' then
-            local h=S(function() return c:FindFirstChildOfClass('Humanoid') end)
-            local r=S(function() return c:FindFirstChild('HumanoidRootPart') end)
-            if h and r and h.Health>0 and not active(c:GetAttribute('Dead')) then
-                local d=(r.Position-origin.Position).Magnitude
-                if d<bestD then best,bestD=c,d end
-            end
-        end
-    end
-    return best,bestD
-end
-
-function validEnemy(c)
-    if not (c and c.Parent) or c==char() or c.Name=='Dummy' then return false end
-    local h=S(function() return c:FindFirstChildOfClass('Humanoid') end)
-    local r=S(function() return c:FindFirstChild('HumanoidRootPart') end)
-    if not (h and r and h.Health>0) then return false end
-    if active(c:GetAttribute('Dead')) or stateOn(c,'IFrame') then return false end
-    return true,h,r
-end
-local function isAttacker(c, origin)
-    local er=S(function() return c:FindFirstChild('HumanoidRootPart') end); if not er then return false end
-    local toMe=origin.Position-er.Position; toMe=Vector3.new(toMe.X,0,toMe.Z)
-    local facing = toMe.Magnitude<3 or (toMe.Magnitude>0 and er.CFrame.LookVector:Dot(toMe.Unit)>0.3)
-    return facing and (stateOn(c,'InSkill') or (serverNow()-(tonumber(c:GetAttribute('LastM1')) or 0))<1.5)
-end
-local function pickTarget(range)
-    local origin=hrp(); if not origin then return end
-    local mode=TARGET_MODES[state.targetMode]
-    local chars=workspace:FindFirstChild('Characters'); if not chars then return end
-    local bestAtk,bestAtkD,best,bestScore
-    for _,c in ipairs(chars:GetChildren()) do
-        local ok,h,r=validEnemy(c)
-        if ok then
-            local d=(r.Position-origin.Position).Magnitude
-            if d<=range then
-                if isAttacker(c,origin) and (not bestAtkD or d<bestAtkD) then bestAtk,bestAtkD=c,d end
-                local score=(mode=='Lowest HP') and h.Health or d
-                if not bestScore or score<bestScore then best,bestScore=c,score end
-            end
-        end
-    end
-    return bestAtk or best
-end
-
-function genuineThreat(ignore)
-    local r=hrp(); if not r then return nil end
-    local chars=workspace:FindFirstChild('Characters'); if not chars then return nil end
-    for _,c in ipairs(chars:GetChildren()) do
-        if c:IsA('Model') and c~=char() and c~=ignore and c.Name~='Dummy' then
-            local er=S(function() return c:FindFirstChild('HumanoidRootPart') end)
-            local eh=S(function() return c:FindFirstChildOfClass('Humanoid') end)
-            if er and eh and eh.Health>0 and not active(c:GetAttribute('Dead'))
-               and not stateOn(c,'Stun') and not active(c:GetAttribute('Ragdoll')) then
-                local d=(er.Position-r.Position).Magnitude
-                if d<=state.blockRange then
-                    local toUs=Vector3.new(r.Position.X-er.Position.X,0,r.Position.Z-er.Position.Z)
-                    local facing = toUs.Magnitude<2 or er.CFrame.LookVector:Dot(toUs.Unit)>0.5
-                    local m1age = serverNow()-(tonumber(c:GetAttribute('LastM1')) or 0)
-                    local meleeImminent = facing and m1age<1.0 and d<=9
-                    local skillImminent = facing and stateOn(c,'InSkill')
-                    if meleeImminent or skillImminent then return c,d end
-                end
-            end
-        end
-    end
-    return nil
-end
-
-local function enemyCastMove(c)
-    local ms=c:FindFirstChild('Moveset'); if not ms then return nil end
-    local now=serverNow(); local bestName,bestAge=nil,1.5
-    for _,m in ipairs(ms:GetChildren()) do
-        local lu=tonumber(m:GetAttribute('LastUse')) or 0
-        if lu>0 then local age=now-lu; if age>=0 and age<bestAge then bestName,bestAge=m.Name,age end end
-    end
-    return bestName,bestAge
-end
-
-local DODGE_EFFECTS = { pull=true, ragdoll=true, special=true, grab=true }
-local DODGE_KW = {'grab','throw','slam','pull','drag','chain','snare','root','trap','bind','tendril','jaw','mucus','sorcery','rebound','takedown','downslam','vacuum','suck','hook','net'}
-local function isUnblockable(name, eff)
-    if eff and DODGE_EFFECTS[eff] then return true end
-    if name and nameHas(name, DODGE_KW) then return true end
-    return false
-end
-local function rangeOfName(name)
-    local d=MOVE_DB[name]; if d then return d.r end
-    if not name then return state.parryUnknown or 45 end
-    if nameHas(name, MELEE_KW) then return 7 end
-    if nameHas(name, RANGED_KW) then return 38 end
-    return 14
-end
-local function effectOfName(name) local d=MOVE_DB[name]; return d and d.e or nil end
-
-local function flagThreat(dist, threat)
-    local from = tick() + (state.parryLead or 0)
-    local hold = (state.parryHold or 0.30) + math.clamp((dist or 0)*(state.rangeLead or 0.006), 0, 0.6)
-    if blockUntil <= tick() then blockFrom = from else blockFrom = math.min(blockFrom, from) end
-    blockUntil = math.max(blockUntil, from + hold)
-    if threat then blockThreat = threat end
-end
-local function scheduleDodge(threat, dist)
-    if not state.autoDodge then return end
-    local lead = math.clamp((state.dodgeLead or 0) + (dist or 0)*(state.rangeLead or 0.006), 0, 0.6)
-    task.delay(lead, function()
-        if unloaded or not validEnemy(threat) then return end
-        realDodge(threat)
-    end)
-end
-
-local function handleMove(enemyChar, mvname)
-    if unloaded then return end
-    local h=hrp(); local eh=enemyChar and enemyChar:FindFirstChild('HumanoidRootPart')
-    if not (h and eh and enemyChar.Parent) then return end
-    local d=(eh.Position-h.Position).Magnitude
-    local rng = rangeOfName(mvname); local eff = effectOfName(mvname)
-    if d > rng + (state.parryMargin or 10) then return end
-    if state.autoDodge and isUnblockable(mvname, eff) then scheduleDodge(enemyChar, d)
-    elseif state.autoBlock then flagThreat(d, enemyChar) end
-end
-
-local watchedChars = setmetatable({}, {__mode='k'})
-local function watchEnemyChar(plr, c)
-    if not c or plr==lp or watchedChars[c] then return end
-    watchedChars[c]=true
-    task.delay(0.3, function()
-        if not c.Parent then return end
-        local function hookMove(mv)
-            if not mv:IsA('ValueBase') then return end
-            track(mv:GetAttributeChangedSignal('LastUse'):Connect(function() handleMove(c, mv.Name) end))
-        end
-        local function hookMoveset(ms)
-            for _,mv in ipairs(ms:GetChildren()) do hookMove(mv) end
-            track(ms.ChildAdded:Connect(hookMove))
-        end
-        local ms=c:FindFirstChild('Moveset')
-        if ms then hookMoveset(ms)
-        else track(c.ChildAdded:Connect(function(ch) if ch.Name=='Moveset' then hookMoveset(ch) end end)) end
-        track(c.AttributeChanged:Connect(function(a)
-            if unloaded or (a~='LastM1' and a~='CurrentM1') then return end
-            local h=hrp(); local eh=c:FindFirstChild('HumanoidRootPart')
-            if not (h and eh) then return end
-            local d=(eh.Position-h.Position).Magnitude
-            if state.autoBlock and state.parryM1 and d <= M1_RANGE + (state.parryMargin or 10) then flagThreat(d, c) end
-        end))
-    end)
-end
-local function watchEnemyPlayer(plr)
-    if plr==lp then return end
-    watchEnemyChar(plr, plr.Character)
-    track(plr.CharacterAdded:Connect(function(c) watchEnemyChar(plr, c) end))
-end
-for _,p in ipairs(Players:GetPlayers()) do watchEnemyPlayer(p) end
-track(Players.PlayerAdded:Connect(watchEnemyPlayer))
-
-local function activeAttacker()
-    local r=hrp(); if not r then return nil end
-    local chars=workspace:FindFirstChild('Characters'); if not chars then return nil end
-    local now=serverNow(); local best,bestD
-    for _,c in ipairs(chars:GetChildren()) do
-        if c:IsA('Model') and c~=char() and c.Name~='Dummy' then
-            local er=S(function() return c:FindFirstChild('HumanoidRootPart') end)
-            local eh=S(function() return c:FindFirstChildOfClass('Humanoid') end)
-            if er and eh and eh.Health>0 and not active(c:GetAttribute('Dead'))
-               and not stateOn(c,'Stun') and not active(c:GetAttribute('Ragdoll')) then
-                local d=(er.Position-r.Position).Magnitude
-                local toUs=Vector3.new(r.Position.X-er.Position.X,0,r.Position.Z-er.Position.Z)
-                local facing = d<6 or (toUs.Magnitude>0 and er.CFrame.LookVector:Dot(toUs.Unit)>0.15)
-                if facing then
-                    local m1age = now-(tonumber(c:GetAttribute('LastM1')) or 0)
-                    local threat = (m1age < 0.7 and d <= M1_RANGE + (state.parryMargin or 10))
-                    if not threat and stateOn(c,'InSkill') then
-                        local mv = enemyCastMove(c)
-                        local rng = (mv and rangeOfName(mv)) or (state.parryUnknown or 45)
-                        threat = d <= rng + (state.parryMargin or 10)
+        local function show(gui)
+            if gui:IsA("GuiObject") then
+                gui.Visible = true
+                for _, child in ipairs(gui:GetChildren()) do
+                    if child:IsA("GuiObject") then
+                        child.Visible = true
                     end
-                    if threat and (not bestD or d<bestD) then best,bestD=c,d end
                 end
             end
         end
-    end
-    return best,bestD
-end
 
-----------------------------------------------------------------------
--- MOVEMENT
-----------------------------------------------------------------------
-local flyBV,flyBG
-local function startFly()
-    local r,h=hrp(),hum(); if not (r and h) then return end; h.PlatformStand=true
-    flyBV=new('BodyVelocity',{MaxForce=Vector3.new(1,1,1)*9e9,Velocity=Vector3.zero,P=1250},r)
-    flyBG=new('BodyGyro',{MaxForce=Vector3.new(1,1,1)*9e9,P=9e4,D=500},r)
-end
-local function stopFly()
-    if flyBV then flyBV:Destroy(); flyBV=nil end
-    if flyBG then flyBG:Destroy(); flyBG=nil end
-    local h=hum(); if h then h.PlatformStand=false end
-end
-track(RunService.RenderStepped:Connect(function()
-    if state.fly then
-        if not flyBV then startFly() end
-        if flyBV and flyBG then
-            local cam=workspace.CurrentCamera; local dir=Vector3.zero
-            if UIS:IsKeyDown(Enum.KeyCode.W)           then dir+=cam.CFrame.LookVector end
-            if UIS:IsKeyDown(Enum.KeyCode.S)           then dir-=cam.CFrame.LookVector end
-            if UIS:IsKeyDown(Enum.KeyCode.A)           then dir-=cam.CFrame.RightVector end
-            if UIS:IsKeyDown(Enum.KeyCode.D)           then dir+=cam.CFrame.RightVector end
-            if UIS:IsKeyDown(Enum.KeyCode.Space)       then dir+=Vector3.new(0,1,0) end
-            if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then dir-=Vector3.new(0,1,0) end
-            flyBV.Velocity=(dir.Magnitude>0 and dir.Unit or Vector3.zero)*state.flySpeed
-            flyBG.CFrame=cam.CFrame
-        end
-    elseif flyBV then stopFly() end
-end))
-track(RunService.Stepped:Connect(function()
-    if state.noclip then local c=char(); if c then for _,p in ipairs(c:GetDescendants()) do if p:IsA('BasePart') and p.CanCollide then p.CanCollide=false end end end end
-end))
-track(UIS.JumpRequest:Connect(function() if state.infJump then local h=hum(); if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end end end))
+        local active = false
+        page2.Visible = false
+        switch.Visible = true
+        show(page1)
+        show(equipped)
 
-----------------------------------------------------------------------
--- ANTI STUN / ANTI RAGDOLL
-----------------------------------------------------------------------
-local STUN_INFO  = {'Stun','NoM1','NoSprint','NoJump','NoDash','DirectionLock','Injury'}
-local RAG_INFO   = {'Knockback','ForceEsc'}
-local RAG_STATES = {[Enum.HumanoidStateType.Physics]=true,[Enum.HumanoidStateType.FallingDown]=true,[Enum.HumanoidStateType.Ragdoll]=true}
-local ragRecover = 0
-track(RunService.Heartbeat:Connect(function()
-    if unloaded or not (state.antiStun or state.antiRagdoll) then return end
-    local c=char(); if not c then return end
-    local h=c:FindFirstChildOfClass('Humanoid'); local info=c:FindFirstChild('Info')
-    if state.antiStun then
-        if active(c:GetAttribute('Stun')) then pcall(function() c:SetAttribute('Stun', false) end) end
-        if info then for _,nm in ipairs(STUN_INFO) do local v=info:FindFirstChild(nm)
-            if v and v:IsA('ValueBase') and v.Value and v.Value~=false then pcall(function() v.Value=(nm=='Injury') and 0 or false end) end
-        end end
-    end
-    if state.antiRagdoll then
-        if active(c:GetAttribute('Ragdoll')) then pcall(function() c:SetAttribute('Ragdoll', 0) end); ragRecover=tick() end
-        if h and ragRecover>0 and tick()-ragRecover < 1.2 then
-            if RAG_STATES[h:GetState()] then pcall(function() h:ChangeState(Enum.HumanoidStateType.GettingUp) end) end
-            if h.PlatformStand then pcall(function() h.PlatformStand=false end) end
-        end
-        if info then for _,nm in ipairs(RAG_INFO) do local v=info:FindFirstChild(nm)
-            if v and v:IsA('ValueBase') and v.Value and v.Value~=false then pcall(function() v.Value=false end) end
-        end end
-    end
-end))
-
-----------------------------------------------------------------------
--- MAIN LOOP
-----------------------------------------------------------------------
-local nextRefresh,lastChar=0,nil
-track(RunService.Heartbeat:Connect(function()
-    local r=hrp(); if not r then return end
-    local now=tick()
-
-    if now>nextRefresh then
-        nextRefresh=now+0.35
-        local n=myName(); local data=CHAR_DATA[n]
-        -- update character subtitle in Skills HUD section
-        if subLabel and subLabel.SetText then
-            subLabel:SetText(n..(data and ('  |  '..data.ult) or '')..'  v'..VERSION)
-        end
-        refreshPresetLabel()
-        -- auto theme: update ACCENT variable (visual only; OvertimeUI does not expose live accent changes)
-        if state.autoTheme and not state.rainbow and data and n~=lastChar then
-            ACCENT=data.col; lastChar=n
-        end
-        -- live skills HUD labels
-        local mv=liveMoveset()
-        for i=1,4 do
-            local lh=skillLabels[i]; local m=mv[i]
-            if lh and lh.SetText then
-                if m then
-                    local tipTxt = (m.tip~='' and m.tip~='NIL') and ('  ['..m.tip..']') or ''
-                    local cdTxt  = m.left>0.1 and string.format(' %.1fs',m.left) or ' READY'
-                    lh:SetText(string.format('%d  %s%s  R%d%s', i, m.name, tipTxt, math.floor(moveRange(m)), cdTxt))
-                else lh:SetText(tostring(i)..'  --') end
-            end
-        end
-    end
-
-    local h=hum()
-    if h then
-        if state.walkSpeedOn then h.WalkSpeed=state.walkSpeed end
-        if state.jumpOn then h.UseJumpPower=true; h.JumpPower=state.jumpPower end
-    end
-    if state.fullbright then Lighting.Brightness=2; Lighting.ClockTime=14; Lighting.FogEnd=1e9; Lighting.GlobalShadows=false end
-    workspace.CurrentCamera.FieldOfView=state.fov
-
-    local seen={}
-    local chars=workspace:FindFirstChild('Characters')
-    if chars then
-        for _,c in ipairs(chars:GetChildren()) do
-            if c:IsA('Model') and c~=char() and c.Name~='Dummy' then
-                local eh=S(function() return c:FindFirstChildOfClass('Humanoid') end)
-                local er=S(function() return c:FindFirstChild('HumanoidRootPart') end)
-                if eh and er then
-                    seen[c.Name]=true
-                    local dist=(er.Position-r.Position).Magnitude
-                    local stun  =stateOn(c,'Stun'); local ragd=active(c:GetAttribute('Ragdoll'))
-                    local iframe=stateOn(c,'IFrame'); local block=stateOn(c,'Block') or active(c:GetAttribute('BlockTry'))
-                    local dead  =active(c:GetAttribute('Dead')) or eh.Health<=0
-                    local cdata =CHAR_DATA[tostring(c:GetAttribute('Moveset'))]
-                    if state.esp and not dead then
-                        if not espObjs[c.Name] then makeESP(c) end
-                        local e=espObjs[c.Name]
-                        if e and e.bg then
-                            local pct=math.clamp(eh.Health/math.max(eh.MaxHealth,1),0,1)
-                            e.hp.Size=UDim2.new(pct,0,1,0)
-                            e.hp.BackgroundColor3 = pct>0.6 and Color3.fromRGB(60,220,80) or pct>0.3 and Color3.fromRGB(235,215,60) or Color3.fromRGB(235,70,70)
-                            e.dl.Text=string.format('%s  |  %dm',cdata and cdata.ult or tostring(c:GetAttribute('Moveset') or '?'),math.floor(dist))
-                            e.nl.TextColor3 = stun and Color3.fromRGB(255,170,40) or ragd and Color3.fromRGB(255,70,70) or iframe and Color3.fromRGB(180,120,255) or block and Color3.fromRGB(90,160,255) or Color3.fromRGB(255,255,255)
-                            e.bg.Enabled = dist<state.espRange
-                        end
-                    elseif espObjs[c.Name] then clearESP(c.Name) end
-                    if state.chams and not dead then
-                        local e=espObjs[c.Name]
-                        if e and not e.hl then e.hl=new('Highlight',{Name='__JJSHL__',Adornee=c,FillColor=cdata and cdata.col or ACCENT,FillTransparency=0.55,OutlineColor=Color3.new(1,1,1),OutlineTransparency=0,DepthMode=Enum.HighlightDepthMode.AlwaysOnTop},c) end
-                    else local e=espObjs[c.Name]; if e and e.hl then e.hl:Destroy(); e.hl=nil end end
-                end
-            end
-        end
-    end
-    for n,_ in pairs(espObjs) do if not seen[n] then clearESP(n) end end
-
-    local meStun = stateOn(char(),'Stun'); local meRagd = active(attr(char(),'Ragdoll'))
-    local busy   = meStun or meRagd
-
-    if state.autoEscape and canEscape() then escapeStep() end
-    if state.comboEscape then
-        local atk = (busy and (nearestEnemy(28)) or nil) or genuineThreat(nil)
-        if atk then doComboEscape(atk) end
-    end
-
-    if not busy then
-        local sel
-        if state.autoCombo then
-            if state.glueTarget then
-                if comboFocus and validEnemy(comboFocus) then sel=comboFocus else sel=pickTarget(state.engageRange) end
-            else sel=pickTarget(comboReach()) end
-        end
-        comboFocus = sel
-        if state.autoBlock then
-            local atk,ad = activeAttacker()
-            if atk then flagThreat(ad, atk) end
-        end
-        local punishing = tick()-lastParry < 0.45
-        local wantBlock = state.autoBlock and not punishing and tick()>=blockFrom and tick()<blockUntil
-        if wantBlock then
-            holdM1(false)
-            if blockThreat and blockThreat.Parent then
-                local tr=S(function() return blockThreat:FindFirstChild('HumanoidRootPart') end)
-                if tr then faceTarget(tr) end
-            end
-        end
-        setBlock(wantBlock)
-        if wantBlock and blockThreat then lastBlockedEnemy=blockThreat; lastBlockedAt=tick() end
-        if state.autoPunish and prevBlocking and not blocking and tick()-lastPunish > 0.7 then
-            local atk = lastBlockedEnemy
-            if atk and validEnemy(atk) and tick()-lastBlockedAt < 1.2 then
-                local rr=hrp(); local ar=rr and S(function() return atk:FindFirstChild('HumanoidRootPart') end)
-                if rr and ar and (ar.Position-rr.Position).Magnitude <= comboReach()+4 then
-                    lastPunish=tick(); runCombo(atk)
-                end
-            end
-        end
-        if state.autoCombo and sel and not wantBlock then runCombo(sel) end
-        if state.autoAwaken and not active(attr(char(),'InUlt')) then tryAwaken() end
-    else setBlock(false) end
-    prevBlocking = blocking
-end))
-
-----------------------------------------------------------------------
--- TARGET LOCK / ANTI-AFK / RAINBOW / AIM
-----------------------------------------------------------------------
-track(RunService.RenderStepped:Connect(function()
-    if not state.targetLock then return end
-    local cam=workspace.CurrentCamera; local tgt=nearestEnemy(150)
-    local tr=tgt and S(function() return tgt:FindFirstChild('HumanoidRootPart') end)
-    if tr then cam.CFrame=cam.CFrame:Lerp(CFrame.new(cam.CFrame.Position,tr.Position),0.25) end
-end))
-track(lp.Idled:Connect(function()
-    if state.antiAFK then S(function() VIM:SendKeyEvent(true,Enum.KeyCode.Space,false,game); task.wait(0.05); VIM:SendKeyEvent(false,Enum.KeyCode.Space,false,game) end) end
-end))
-track(RunService.Heartbeat:Connect(function()
-    if state.rainbow then
-        ACCENT=Color3.fromHSV((tick()*0.15)%1,0.65,1)
-        -- rainbow mode: visual only in-game (OvertimeUI does not expose live accent changes)
-    end
-end))
-local function aimHeld()
-    local k=state.aimKey; if not k then return false end
-    if k.EnumType==Enum.KeyCode then return UIS:IsKeyDown(k) end
-    if k.EnumType==Enum.UserInputType then return UIS:IsMouseButtonPressed(k) end
-    return false
-end
-track(RunService.Heartbeat:Connect(function()
-    if unloaded then return end
-    local want = (state.aimTarget and aimHeld() and nearestEnemy(state.engageRange)~=nil)
-              or (tick()<comboLockUntil and comboFocus~=nil and comboFocus.Parent~=nil)
-    ensureLock(want and true or false)
-end))
-track(RunService.Heartbeat:Connect(function()
-    if unloaded or not state.dashAssist or blocking then return end
-    local ft = (comboFocus and validEnemy(comboFocus)) and comboFocus or nil
-    if not ft and state.aimTarget and aimHeld() then ft = nearestEnemy(state.flankRange) end
-    if ft and validEnemy(ft) and not genuineThreat(ft) then flankDash(ft) end
-end))
-
-track(lp.CharacterAdded:Connect(function() task.wait(0.6); flyBV,flyBG=nil,nil; state.fly=false; lastChar=nil; blocking=false end))
-
-----------------------------------------------------------------------
--- UNLOAD
-----------------------------------------------------------------------
-_G.__JJS_UNLOAD__=function()
-    unloaded=true
-    for k,v in pairs(state) do if type(v)=='boolean' then state[k]=false end end
-    for _,c in ipairs(conns) do S(function() c:Disconnect() end) end
-    for k,_ in pairs(heldKeys) do setHold(k,false) end
-    setBlock(false); holdM1(false); ensureLock(false)
-    stopFly()
-    local h=hum()
-    if h then h.PlatformStand=false; S(function() h.WalkSpeed=ORIG.walkSpeed end); S(function() h.JumpPower=ORIG.jumpPower end) end
-    local c=char()
-    if c then for _,p in ipairs(c:GetDescendants()) do
-        if p:IsA('BasePart') and p.Name~='HumanoidRootPart' and not p:FindFirstAncestorWhichIsA('Accessory') then
-            S(function() p.CanCollide=true end)
-        end
-    end end
-    for n,_ in pairs(espObjs) do clearESP(n) end; espObjs={}
-    local chs=workspace:FindFirstChild('Characters')
-    if chs then for _,d in ipairs(chs:GetDescendants()) do
-        if d.Name=='__JJSESP__' or d.Name=='__JJSHL__' then S(function() d:Destroy() end) end
-    end end
-    S(function()
-        Lighting.Brightness=ORIG.brightness; Lighting.ClockTime=ORIG.clockTime
-        Lighting.FogEnd=ORIG.fogEnd; Lighting.GlobalShadows=ORIG.globalShadows
+        switch.MouseButton1Click:Connect(function()
+            active = not active
+            page1.Visible = not active
+            page2.Visible = active
+            if active then show(page2) else show(page1) end
+        end)
     end)
-    S(function() workspace.CurrentCamera.FieldOfView=ORIG.fov end)
-    if _G.__JJS_WATCH__ and _G.__JJS_WATCH__.conns then
-        for _,wc in ipairs(_G.__JJS_WATCH__.conns) do S(function() wc:Disconnect() end) end
-    end
-    _G.__JJS_WATCH__=nil
-    S(function() Window:Destroy() end)
-    _G.__JJS_UNLOAD__=nil
 end
 
-_G.__JJS__ = {
-    state = state,
-    diag = function()
-        local r = hrp(); local focus = comboFocus
-        local fdist = (focus and r and focus:FindFirstChild('HumanoidRootPart'))
-            and math.floor((focus.HumanoidRootPart.Position - r.Position).Magnitude) or nil
-        local fhp = (focus and focus:FindFirstChildOfClass('Humanoid')) and math.floor(focus.Humanoid.Health) or nil
-        return {
-            autoCombo=state.autoCombo, autoBlock=state.autoBlock, skillCalls=_G.__JJS_SKC__ or 0,
-            comboLock=comboLock, meStun=stateOn(char(),'Stun'), meRagd=active(attr(char(),'Ragdoll')),
-            comboFocus=focus and focus.Name or nil, focusDist=fdist, focusHP=fhp, engageRange=state.engageRange,
-            focusBlock=focus and (stateOn(focus,'Block') or active(attr(focus,'BlockTry'))) or nil,
-            focusIFrame=focus and stateOn(focus,'IFrame') or nil, focusStun=focus and stateOn(focus,'Stun') or nil,
-            myName=myName(), preset=COMBO_PRESETS[state.comboPreset], approach=APPROACH_MODES[state.approachMode],
-            currentM1=char() and char():GetAttribute('CurrentM1') or nil,
-            parries=_G.__JJS_PARRIES__ or 0, perfectBlock=state.perfectBlock, autoPunish=state.autoPunish,
-            blocking=blocking, blockLatched=myBlockOn(),
-            blockMethod=(BlockActivated and 'BlockService.Activated:FireServer' or 'VIM hold-F (fallback)'),
-            lastBlocked=lastBlockedEnemy and lastBlockedEnemy.Name or nil,
-            dashReady=dashReady(), evade=char() and char():GetAttribute('Evade') or nil, dashAssist=state.dashAssist,
-            canEscape=canEscape(), blockUntil=math.max(0, blockUntil-tick()),
-            blockWindowIn=(blockFrom==math.huge) and nil or math.max(0, blockFrom-tick()),
-            blockThreat=blockThreat and blockThreat.Name or nil, parryM1=state.parryM1,
-            parryHold=state.parryHold, rangeLead=state.rangeLead, parryMargin=state.parryMargin,
-            readyKeys=(function() local t={} for _,m in ipairs(liveMoveset()) do if m.ready then t[#t+1]=m.key end end return table.concat(t,',') end)(),
-        }
-    end,
-    forceCombo  = function() local sel=pickTarget(comboReach()); if sel then runCombo(sel) end return sel and sel.Name end,
-    ranges      = function() local t={m1=M1_RANGE} for _,m in ipairs(liveMoveset()) do t[m.name]={key=m.key,tip=m.tip,range=moveRange(m),effect=moveEffect(m),inDB=(MOVE_DB[m.name]~=nil)} end t.reach=comboReach() return t end,
-    dbCoverage  = function()
-        local LD=S(function() return require(RS.Modules.ListData) end); if not LD then return 'no ListData' end
-        local missing={}; local total,have=0,0
-        for _,ch in ipairs(LD.MoveList) do
-            if type(ch)=='table' then
-                local cn=(type(ch[1])=='table' and ch[1][1]) or '?'
-                for i=2,9 do local mv=ch[i]; if type(mv)=='string' then total=total+1
-                    if MOVE_DB[mv] then have=have+1 else missing[#missing+1]=cn..': '..mv end end end
-            end
-        end
-        return {total=total, have=have, missing=missing}
-    end,
-    testFire    = function(name) return fireAction(name) end,
-    combatReady = (COMBAT~=nil), gcOK=hasGC,
-    comboErr    = function() return _G.__JJS_COMBOERR__ end,
+--// ==========================================
+--// TWEEN & PATHFINDING TELEPORTS
+--// ==========================================
+local TeleportLocations = {
+    ["Under the Map"]      = Vector3.new(-20.23, -61.53, -146.34),
+    ["Unlicensed Studios"] = Vector3.new(196.86, 23.58, -37.27),
+    ["Towers"]             = Vector3.new(25.35, 183.08, 110.77),
+    ["Train Button"]       = Vector3.new(182.21, -9.33, 562.54),
+    ["Bowling"]            = Vector3.new(267.60, -59.89, -255.06),
+    ["Restaurant"]         = Vector3.new(-43.24, 23.63, -83.07),
+    ["Storage House"]      = Vector3.new(195.69, 23.58, 151.44),
+    ["Sewers 1"]           = Vector3.new(-148.14, -31.48, -127.22),
+    ["Train Station"]      = Vector3.new(185.27, -9.69, -97.17),
+    ["Sewers 2"]           = Vector3.new(60.84, -10.58, 167.47),
+    ["Shenanigans Mall"]   = Vector3.new(155.66, -26.38, -254.85),
+    ["Rhythm Game"]        = Vector3.new(12.23, -30.21, -315.03),
+    ["Piano"]              = Vector3.new(-86.38, 26.65, -252.48),
+    ["Convenience Store"]  = Vector3.new(-247.51, 26.96, -116.64),
+    ["Court"]              = Vector3.new(124.48, 23.78, -247.06),
+    ["Graveyard"]          = Vector3.new(228.55, 23.68, -130.48),
+    ["Train Station Exit"] = Vector3.new(1.52, 24.72, 396.06),
+    ["Tze's"]              = Vector3.new(-55.30, 23.62, 245.42),
+    ["Jail"]               = Vector3.new(-243.84, 23.58, 126.97),
 }
 
-return {script='JujutsuShenanigans', status='deployed', version=VERSION,
-    characters=23,
-    activation='getconnections(InputAction.Pressed) -- verified to drive skills (VIM does not)',
-    comboRoutes={'Gojo','Itadori','Hakari'},
-    comboHints='reads each move in-game Tip (USE TWICE/HOLD/USE AGAIN/SPECIAL) live - works for all 23 chars',
-    features={'RealActivation','RealCooldowns','HintAwareCombo','ComboRoutes','OvertimeUI','LiveSkillsHUD',
-              'DataDrivenCombo','ComboPresets','AutoApproach','FaceTarget','RangeLearning','AutoTheme',
-              'ESP','Chams','AutoCombo(reactive+wakeup-extend)','AutoBlock(remote)','AutoCounter(parry)',
-              'AutoPunish','ParryDetect','SmartDodge(real-dash)','DashAssist(flank-behind)',
-              'EvadeGatedEscape','ComboEscape(dash-out+punish)','AntiStun','AntiRagdoll',
-              'AutoBlackFlash(Itadori)','EventDrivenDefense','DistanceScaledParry','AutoAwaken',
-              'KillAura','Fly','Noclip','InfJump','WalkSpeed','JumpPower','TargetLock','Fullbright',
-              'AntiAFK','Rainbow','Rejoin','Unload'}}
+local LocationNames = {}
+for k, _ in pairs(TeleportLocations) do table.insert(LocationNames, k) end
+table.sort(LocationNames)
+
+local function getWaypointSpacing(speed)
+    if speed <= 30 then return 4
+    elseif speed <= 100 then return 6
+    elseif speed <= 300 then return 10
+    elseif speed <= 600 then return 16
+    else return 24 end
+end
+
+local function tweenToPosition(hrp, targetPos, speed)
+    local distance = (hrp.Position - targetPos).Magnitude
+    if distance < 0.5 then return true end
+    local duration = math.max(distance / speed, 0.001)
+
+    local direction = (targetPos - hrp.Position)
+    local flatDir = Vector3.new(direction.X, 0, direction.Z)
+    local targetCF = flatDir.Magnitude > 0.1 and CFrame.new(targetPos, targetPos + flatDir.Unit) or CFrame.new(targetPos) * hrp.CFrame.Rotation
+
+    local tween = TweenService:Create(hrp, TweenInfo.new(duration, Enum.EasingStyle.Linear), { CFrame = targetCF })
+    Logic.Pathfinding.CurrentTween = tween
+    tween:Play()
+
+    local done = false
+    local conn
+    conn = tween.Completed:Connect(function()
+        done = true
+        if conn then conn:Disconnect() end
+    end)
+
+    while not done and Logic.Pathfinding.Active do RunService.Heartbeat:Wait() end
+    if not done and Logic.Pathfinding.CurrentTween == tween then tween:Cancel() end
+    return done and Logic.Pathfinding.Active
+end
+
+local function stepToPosition(hrp, targetPos, speed)
+    local startPos = hrp.Position
+    local direction = (targetPos - startPos)
+    local distance = direction.Magnitude
+    if distance < 0.5 then return true end
+
+    local dirUnit = direction.Unit
+    local flatDir = Vector3.new(dirUnit.X, 0, dirUnit.Z)
+    local lookCF = flatDir.Magnitude > 0.01 and CFrame.lookAt(Vector3.zero, flatDir) or CFrame.new()
+
+    local traveled = 0
+    while traveled < distance and Logic.Pathfinding.Active do
+        local dt = RunService.Heartbeat:Wait()
+        local step = speed * dt
+        traveled = math.min(traveled + step, distance)
+        hrp.CFrame = CFrame.new(startPos + dirUnit * traveled) * lookCF.Rotation
+    end
+    return traveled >= distance and Logic.Pathfinding.Active
+end
+
+local function batchWaypoints(waypoints, minSegmentLength)
+    local batched = {}
+    local lastAdded = waypoints[1]
+    table.insert(batched, waypoints[1])
+    for i = 2, #waypoints do
+        local wp = waypoints[i]
+        local isJump = (wp.Action == Enum.PathWaypointAction.Jump)
+        local isLast = (i == #waypoints)
+        local distFromLast = (wp.Position - lastAdded.Position).Magnitude
+        if isJump or isLast or distFromLast >= minSegmentLength then
+            table.insert(batched, wp)
+            lastAdded = wp
+        end
+    end
+    return batched
+end
+
+local function stopPathfinding()
+    Logic.Pathfinding.Active = false
+    if Logic.Pathfinding.CurrentTween then pcall(function() Logic.Pathfinding.CurrentTween:Cancel() end) end
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if hrp then hrp.Anchored = false end
+    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if hum then hum.PlatformStand = false end
+end
+
+local function startPathfinding(targetPos)
+    if Logic.Pathfinding.Active then stopPathfinding(); task.wait(0.15) end
+    Logic.Pathfinding.Active = true
+
+    task.spawn(function()
+        while Logic.Pathfinding.Active do
+            local speed = Logic.Pathfinding.Speed
+            local path = PathfindingService:CreatePath({ AgentRadius = 3, AgentHeight = 6, AgentCanJump = true, AgentCanClimb = true, WaypointSpacing = getWaypointSpacing(speed) })
+            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if not hrp or not humanoid then task.wait(1) continue end
+
+            if (hrp.Position - targetPos).Magnitude < 6 then
+                stopPathfinding()
+                break
+            end
+
+            local ok = pcall(function() path:ComputeAsync(hrp.Position, targetPos) end)
+            if not ok or path.Status == Enum.PathStatus.NoPath then
+                task.wait(1.5)
+                continue
+            end
+
+            local batchedWP = batchWaypoints(path:GetWaypoints(), math.max(speed * 0.05, 2))
+            local pathBlocked = false
+            local blockedConn = path.Blocked:Connect(function() pathBlocked = true end)
+
+            hrp.Anchored = true
+            humanoid.PlatformStand = true
+
+            local completed = true
+            for i = 2, #batchedWP do
+                if not Logic.Pathfinding.Active or pathBlocked then completed = false break end
+                local success
+                if speed > 500 then
+                    success = stepToPosition(hrp, batchedWP[i].Position, speed)
+                else
+                    success = tweenToPosition(hrp, batchedWP[i].Position, speed)
+                end
+                if not success then completed = false break end
+            end
+
+            if blockedConn then blockedConn:Disconnect() end
+
+            if completed and Logic.Pathfinding.Active then
+                stopPathfinding()
+                break
+            end
+            task.wait(0.3)
+        end
+    end)
+end
+
+
+--// ==========================================
+--// AUTO BLOCK LOGIC
+--// ==========================================
+RunService.Heartbeat:Connect(function()
+    if RyuConfig.AutoBlock then
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        
+        local incomingAttack = false
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                local eRoot = p.Character.HumanoidRootPart
+                local dist = (eRoot.Position - root.Position).Magnitude
+                if dist <= RyuConfig.BlockRange then
+                    local eHum = p.Character:FindFirstChildOfClass("Humanoid")
+                    if eHum then
+                        local animator = eHum:FindFirstChildOfClass("Animator")
+                        if animator then
+                            pcall(function()
+                                for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+                                    local isAttack = false
+                                    if track.Animation and track.Animation.AnimationId then
+                                        local animId = track.Animation.AnimationId:match("%d+")
+                                        if not (animId and KnownMovementAnims[animId]) then
+                                            local name = string.lower(track.Name)
+                                            if string.find(name, "punch") or string.find(name, "attack") or string.find(name, "strike") or string.find(name, "m1") then
+                                                isAttack = true
+                                            elseif track.Priority == Enum.AnimationPriority.Action or track.Priority == Enum.AnimationPriority.Action2 or track.Priority == Enum.AnimationPriority.Action3 or track.Priority == Enum.AnimationPriority.Action4 then
+                                                isAttack = true
+                                            end
+                                        end
+                                    end
+                                    if isAttack then incomingAttack = true break end
+                                end
+                            end)
+                        end
+                    end
+                end
+            end
+            if incomingAttack then break end
+        end
+        
+        if incomingAttack then
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
+            task.wait(RyuConfig.BlockDuration / 1000)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
+        end
+    end
+end)
+
+
+--// ==========================================
+--// MOVEMENT LOGIC (NO MOMENTUM, INSTANT)
+--// ==========================================
+local MovementState = {
+    Speed = false, SpeedValue = 50,
+    Fly = false, FlySpeed = 50, FlyKey = Enum.KeyCode.X,
+    HighJump = false, JumpPower = 150,
+    InfJump = false, Noclip = false, Invis = false
+}
+
+local flyBodyVelocity
+local flyBodyGyro
+
+-- Infinite Side Dash Exploit Hook
+if hookfunction and tick then
+    local oldTick = tick
+    local fakeTime = oldTick()
+    hookfunction(tick, function(...)
+        if RyuConfig.InfSideDash then
+            fakeTime = fakeTime + 100
+            return fakeTime
+        end
+        return oldTick(...)
+    end)
+end
+
+local function StartFly()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+    
+    if flyBodyVelocity then flyBodyVelocity:Destroy() end
+    if flyBodyGyro then flyBodyGyro:Destroy() end
+    
+    flyBodyVelocity = Instance.new("BodyVelocity")
+    flyBodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+    flyBodyVelocity.Parent = root
+    
+    flyBodyGyro = Instance.new("BodyGyro")
+    flyBodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+    flyBodyGyro.D = 100
+    flyBodyGyro.P = 10000
+    flyBodyGyro.CFrame = root.CFrame
+    flyBodyGyro.Parent = root
+end
+
+local function StopFly()
+    if flyBodyVelocity then flyBodyVelocity:Destroy(); flyBodyVelocity = nil end
+    if flyBodyGyro then flyBodyGyro:Destroy(); flyBodyGyro = nil end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then hum.PlatformStand = false end
+end
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == MovementState.FlyKey then
+        MovementState.Fly = not MovementState.Fly
+        if MovementState.Fly then StartFly() else StopFly() end
+    end
+end)
+
+UserInputService.JumpRequest:Connect(function()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    
+    if hum and root then
+        if MovementState.InfJump or MovementState.HighJump then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+        end
+        if MovementState.HighJump then
+            root.Velocity = Vector3.new(root.Velocity.X, MovementState.JumpPower, root.Velocity.Z)
+        end
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not char or not hum or not root then return end
+
+    if MovementState.Speed and not MovementState.Fly then
+        if hum.MoveDirection.Magnitude > 0 then
+            local flatDir = hum.MoveDirection
+            root.Velocity = Vector3.new(flatDir.X * MovementState.SpeedValue, root.Velocity.Y, flatDir.Z * MovementState.SpeedValue)
+        else
+            root.Velocity = Vector3.new(0, root.Velocity.Y, 0)
+        end
+    end
+end)
+
+
+--// ==========================================
+--// STRUCTURE SETUP
+--// ==========================================
+
+-- TAB 1: COMBAT
+local TabCombat = CreateMainTab("Combat")
+
+local SubPlayer = CreateSubTab(TabCombat, "Player")
+local SecPlayer = CreateSection(SubPlayer, "Movement")
+CreateToggle(SecPlayer, "Speed Hack", false, function(state) MovementState.Speed = state end)
+CreateSlider(SecPlayer, "Speed Value", 16, 150, 50, function(val) MovementState.SpeedValue = val end)
+
+CreateToggle(SecPlayer, "Fly", false, function(state) 
+    MovementState.Fly = state 
+    if state then StartFly() else StopFly() end
+end)
+CreateSlider(SecPlayer, "Fly Speed", 10, 200, 50, function(val) MovementState.FlySpeed = val end)
+CreateKeybind(SecPlayer, "Fly Keybind", Enum.KeyCode.X, function(key) MovementState.FlyKey = key end)
+
+CreateToggle(SecPlayer, "High Jump", false, function(state) MovementState.HighJump = state end)
+CreateSlider(SecPlayer, "Jump Power", 50, 300, 150, function(val) MovementState.JumpPower = val end)
+
+CreateToggle(SecPlayer, "Infinite Jump Spam", false, function(state) MovementState.InfJump = state end)
+CreateToggle(SecPlayer, "Noclip", false, function(state) MovementState.Noclip = state end)
+CreateToggle(SecPlayer, "No Stun / Anti-Knockback", false, function(state) RyuConfig.NoStun = state end)
+
+local SubAuto = CreateSubTab(TabCombat, "Auto")
+local SecAutoDef = CreateSection(SubAuto, "Defensive")
+CreateToggle(SecAutoDef, "Auto Block", false, function(state) RyuConfig.AutoBlock = state end)
+CreateSlider(SecAutoDef, "Block React Range", 5, 50, 15, function(val) RyuConfig.BlockRange = val end)
+CreateSlider(SecAutoDef, "Block Hold Duration (ms)", 100, 1500, 500, function(val) RyuConfig.BlockDuration = val end)
+CreateToggle(SecAutoDef, "Invisible Block", false, function(state) RyuConfig.InvisibleBlock = state end)
+
+local SecAutoOff = CreateSection(SubAuto, "Offensive")
+CreateToggle(SecAutoOff, "Auto Black Flash (Yuji)", false, function(state) RyuConfig.AutoBFYuji = state end)
+CreateToggle(SecAutoOff, "Auto Black Flash (Mahito)", false, function(state) RyuConfig.AutoBFMahito = state end)
+CreateToggle(SecAutoOff, "Auto Todo Slap", false, function(state) RyuConfig.AutoTodoSlap = state end)
+CreateToggle(SecAutoOff, "Auto Ratio (Nanami)", false, function(state) RyuConfig.AutoRatio = state end)
+
+local SecBFChain = CreateSection(SubAuto, "Blackflash Chain")
+CreateToggle(SecBFChain, "Enable Black Flash Chain", false, function(state) 
+    RyuConfig.BlackFlashEnabled = state 
+    if state then
+        if isMobilePlayer then
+            dashBtn.Visible = true
+        end
+    else
+        dashBtn.Visible = false
+    end
+end)
+CreateToggle(SecBFChain, "Lock Mobile Dash Button", false, function(state) 
+    mobileBtnLocked = state 
+    if state then
+        lockDot.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
+        dashStroke.Color = Color3.fromRGB(255, 200, 50)
+    else
+        lockDot.BackgroundColor3 = Color3.fromRGB(65, 65, 65)
+        dashStroke.Color = Color3.fromRGB(90, 90, 90)
+    end
+end)
+CreateKeybind(SecBFChain, "Action Keybind (Dash+BF)", Enum.KeyCode.R, function(key) RyuConfig.BFActionKey = key end)
+CreateSlider(SecBFChain, "Max Dash Distance", 5, 50, 15, function(val) RyuConfig.DashDistance = val end)
+CreateSlider(SecBFChain, "Dash Duration (s)", 10, 100, 35, function(val) RyuConfig.DashDuration = val/100 end)
+CreateSlider(SecBFChain, "Combo Fire Delay (s)", 10, 100, 25, function(val) RyuConfig.FireDelay = val/100 end)
+CreateToggle(SecBFChain, "Camera Lock During Dash", true, function(state) RyuConfig.DashCameraLock = state end)
+CreateDropdown(SecBFChain, "Dash Easing Style", {"Linear", "Sine", "Quad", "Cubic", "Quart", "Quint", "Expo", "Circ", "Elastic", "Back", "Bounce"}, "Cubic", function(val) RyuConfig.DashEasingStyle = val end)
+CreateDropdown(SecBFChain, "Dash Easing Direction", {"In", "Out", "InOut"}, "Out", function(val) RyuConfig.DashEasingDirection = val end)
+
+local SubDash = CreateSubTab(TabCombat, "Side Dash Assist")
+local SecDash = CreateSection(SubDash, "Side Dash Settings")
+CreateToggle(SecDash, "Enable Side Dash Assist", false, function(s) RyuConfig.DashAssistEnabled = s end)
+CreateToggle(SecDash, "Lock Camera On Enemy", false, function(s) RyuConfig.DashAssistCameraLock = s end)
+CreateToggle(SecDash, "Dash Only If Facing Front", false, function(s) RyuConfig.DashAssistOnlyIfFacing = s end)
+CreateKeybind(SecDash, "Dash Keybind", Enum.KeyCode.J, function(k) RyuConfig.DashAssistKeybind = k end)
+CreateSlider(SecDash, "Detection Range", 1, 50, 15, function(v) RyuConfig.DashAssistDetectionRange = v end)
+CreateSlider(SecDash, "Behind Distance", 1, 15, 5, function(v) RyuConfig.DashAssistBehindDistance = v end)
+CreateSlider(SecDash, "Flight Duration (s)", 10, 100, 42, function(v) RyuConfig.DashAssistFlightDuration = v/100 end)
+local SecDashArc = CreateSection(SubDash, "Arc Modifiers")
+CreateSlider(SecDashArc, "Curve Strength", 0, 25, 10, function(v) RyuConfig.DashAssistCurveStrength = v end)
+CreateSlider(SecDashArc, "Arch Height", 0, 10, 3, function(v) RyuConfig.DashAssistArchHeight = v end)
+CreateSlider(SecDashArc, "Lock Duration (s)", 10, 150, 35, function(v) RyuConfig.DashAssistLockDuration = v/100 end)
+
+local SubLock = CreateSubTab(TabCombat, "Target Lock")
+local SecLock = CreateSection(SubLock, "Lock Settings")
+CreateToggle(SecLock, "Enable Target Lock", false, function(state) RyuConfig.LockEnabled = state end)
+CreateDropdown(SecLock, "Lock Method", {"Camera", "Body"}, "Camera", function(val) RyuConfig.LockMethod = val end)
+CreateDropdown(SecLock, "Target Mode", {"Closest", "Closest to Mouse"}, "Closest", function(val) RyuConfig.LockTargetMode = val end)
+CreateDropdown(SecLock, "Target Part", {"HumanoidRootPart", "Head", "UpperTorso", "LowerTorso"}, "HumanoidRootPart", function(val) RyuConfig.LockTargetPart = val end)
+CreateSlider(SecLock, "Lock Smoothness", 0, 20, 0, function(val) RyuConfig.LockSmoothness = val end)
+CreateSlider(SecLock, "Lock Side Offset", -8, 8, 1, function(val) RyuConfig.LockSideOffset = val end)
+CreateSlider(SecLock, "Max Lock Distance", 10, 2000, 500, function(val) RyuConfig.LockMaxDistance = val end)
+CreateSlider(SecLock, "Prediction", 0, 100, 0, function(val) RyuConfig.LockPrediction = val/100 end)
+CreateToggle(SecLock, "Wall Check", false, function(state) RyuConfig.LockWallCheck = state end)
+
+local SubAbil = CreateSubTab(TabCombat, "Combat Enhancements")
+local SecAbil = CreateSection(SubAbil, "Enhancements")
+CreateToggle(SecAbil, "Infinite Side Dash", false, function(state) RyuConfig.InfSideDash = state end)
+
+
+-- TAB 2: TELEPORTS
+local TabTeleports = CreateMainTab("Teleports")
+local SubTeleport = CreateSubTab(TabTeleports, "Travel")
+local SecTeleport = CreateSection(SubTeleport, "Destination Travel")
+
+local selectedDest = LocationNames[1]
+CreateDropdown(SecTeleport, "Destination", LocationNames, "Dest", function(val) selectedDest = val end)
+CreateSlider(SecTeleport, "Speed (Studs/s)", 50, 1000, 350, function(val) Logic.Pathfinding.Speed = val end)
+CreateButton(SecTeleport, "Start Teleport", Theme.SectionBG, function()
+    local pos = TeleportLocations[selectedDest]
+    if pos then startPathfinding(pos) end
+end)
+CreateButton(SecTeleport, "Stop Teleport", Theme.SectionBG, function()
+    stopPathfinding()
+end)
+
+
+-- TAB 3: SETTINGS
+local TabSettings = CreateMainTab("Settings")
+local SubSettings = CreateSubTab(TabSettings, "Settings")
+local SecCosmetics = CreateSection(SubSettings, "Cosmetics")
+CreateButton(SecCosmetics, "Unlock Free Emotes", Theme.SectionBG, function() UnlockEmotes() end)
+
+local SecCfg = CreateSection(SubSettings, "System & Protection")
+CreateToggle(SecCfg, "Anti-AFK Protection", false, function() end)
+CreateButton(SecCfg, "Save Settings", Theme.SectionBG, function() end)
+CreateButton(SecCfg, "Reset Settings", Theme.SectionBG, function() end)
+
+-- Open first tab on load
+pcall(function()
+    if Tabs[1] and Tabs[1].Btn then
+        Tabs[1].IsOpen = true
+        Tabs[1].SubContainer.Size = UDim2.new(1, 0, 0, Tabs[1].SubLayout.AbsoluteContentSize.Y)
+        Tabs[1].Btn.TextColor3 = Theme.Text
+        Tabs[1].Btn.BackgroundColor3 = Theme.SectionBG
+    end
+    if Tabs[1] and Tabs[1].SubTabs[1] and Tabs[1].SubTabs[1].Page then
+        Tabs[1].SubTabs[1].Page.Visible = true
+        Tabs[1].SubTabs[1].Btn.TextColor3 = Theme.Text
+    end
+    UpdateSidebarCanvas()
+end)
