@@ -12,6 +12,7 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local PathfindingService = game:GetService("PathfindingService")
+local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
@@ -369,6 +370,31 @@ local function CreateSection(page, titleText)
     return section
 end
 
+local function CreateLabel(section, text)
+    itemOrderCounter = itemOrderCounter + 1
+    local frame = Instance.new("Frame", section)
+    frame.LayoutOrder = itemOrderCounter
+    frame.Size = UDim2.new(0.92, 0, 0, 30)
+    frame.BackgroundTransparency = 1
+    
+    local lbl = Instance.new("TextLabel", frame)
+    lbl.Size = UDim2.new(1, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = text
+    lbl.TextColor3 = Theme.SubText
+    lbl.Font = Enum.Font.GothamMedium
+    lbl.TextSize = 11
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.TextWrapped = true
+    
+    lbl:GetPropertyChangedSignal("TextBounds"):Connect(function()
+        if lbl.TextBounds.Y > 30 then
+            frame.Size = UDim2.new(0.92, 0, 0, lbl.TextBounds.Y + 10)
+        end
+    end)
+    return lbl
+end
+
 local function CreateToggle(section, text, descText, defaultState, callback)
     if type(descText) == "boolean" then callback = defaultState; defaultState = descText; descText = nil end
     itemOrderCounter = itemOrderCounter + 1
@@ -598,8 +624,28 @@ local function CreateKeybind(section, text, defaultKey, callback)
     end)
 end
 
+local function CreateInput(section, placeholder, callback)
+    itemOrderCounter = itemOrderCounter + 1
+    local box = Instance.new("TextBox", section)
+    box.LayoutOrder = itemOrderCounter
+    box.Size = UDim2.new(0.92, 0, 0, 34)
+    box.BackgroundColor3 = Theme.Background
+    box.Text = ""
+    box.PlaceholderText = placeholder
+    box.TextColor3 = Theme.Text
+    box.Font = Enum.Font.GothamMedium
+    box.TextSize = 12
+    Instance.new("UICorner", box).CornerRadius = UDim.new(0, 6)
+    Instance.new("UIStroke", box).Color = Theme.Stroke
+    
+    if callback then 
+        box.FocusLost:Connect(function() pcall(function() callback(box.Text) end) end) 
+    end
+    return box
+end
+
 --// ==========================================
---// RAZORBILL LOGIC INTEGRATION
+--// RAZORBILL LOGIC INTEGRATION + NEW RYU LOGIC
 --// ==========================================
 local RyuConfig = {
     -- Auto BF & Chain
@@ -643,7 +689,7 @@ local RyuConfig = {
     BlockRange = 15,
     BlockDuration = 500,
     
-    -- AI Auto Farm
+    -- AI Auto Farm (PERFECTED)
     AutoFarm = false,
     FarmMode = "Combo",
     FarmRange = 500,
@@ -651,6 +697,14 @@ local RyuConfig = {
     FarmSkill2 = true,
     FarmSkill3 = true,
     FarmSkill4 = true,
+    FarmTween = false,
+    
+    -- Alt Farm (OP METHOD)
+    AltFarmEnabled = false,
+    AltRole = "None",
+    AltMainName = "",
+    GroupRejoin = false,
+    GroupRejoinCount = 5,
 }
 
 local Logic = {
@@ -1413,18 +1467,27 @@ local function startPathfinding(targetPos)
 end
 
 --// ==========================================
---// AI AUTO FARM LOGIC
+--// AI AUTO FARM (PERFECTED LOGIC)
 --// ==========================================
 local m1Count = 0
 local lastPos = Vector3.zero
 local timeStuck = 0
 local lastTick = tick()
+local wHeld = false
 
 RunService.Heartbeat:Connect(function()
-    if not RyuConfig.AutoFarm then return end
     local char = LocalPlayer.Character
     local root = getHRP(char)
     local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+    if not RyuConfig.AutoFarm then
+        if wHeld then
+            if not isMobilePlayer then VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.W, false, game) end
+            wHeld = false
+        end
+        return 
+    end
+    
     if not root or not hum or hum.Health <= 0 then return end
     
     local target = getClosestTarget(RyuConfig.FarmRange)
@@ -1434,13 +1497,27 @@ RunService.Heartbeat:Connect(function()
         
         local dist = (root.Position - tRoot.Position).Magnitude
         
-        -- Lock on (permanent)
+        -- Lock On permanent
         root.CFrame = CFrame.lookAt(root.Position, Vector3.new(tRoot.Position.X, root.Position.Y, tRoot.Position.Z))
         
-        -- Movement (Sprint to target)
-        hum:MoveTo(tRoot.Position)
+        -- Movement (Tween or W+Walk)
+        if RyuConfig.FarmTween then
+            if wHeld then
+                if not isMobilePlayer then VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.W, false, game) end
+                wHeld = false
+            end
+            if dist > 5 then
+                root.CFrame = root.CFrame:Lerp(CFrame.lookAt(root.Position + (tRoot.Position - root.Position).Unit * (50 * RunService.Heartbeat:Wait()), tRoot.Position), 1)
+            end
+        else
+            if not wHeld and not isMobilePlayer then
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.W, false, game)
+                wHeld = true
+            end
+            hum:MoveTo(tRoot.Position)
+        end
         
-        -- Dash (Q) if slightly away to close gap
+        -- Q Dash Gap Closer
         if dist > 15 and dist < 40 and math.random() > 0.95 then
             if not isMobilePlayer then
                 VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Q, false, game)
@@ -1449,7 +1526,7 @@ RunService.Heartbeat:Connect(function()
             end
         end
         
-        -- Failsafes
+        -- Failsafe
         if tick() - lastTick >= 1 then
             lastTick = tick()
             if (root.Position - lastPos).Magnitude < 1.5 then
@@ -1463,7 +1540,7 @@ RunService.Heartbeat:Connect(function()
                     end
                 end
                 if timeStuck >= 120 then
-                    hum.Health = 0 -- Respawn
+                    hum.Health = 0
                     timeStuck = 0
                 end
             else
@@ -1471,13 +1548,17 @@ RunService.Heartbeat:Connect(function()
             end
             lastPos = root.Position
         end
+    else
+        if wHeld then
+            if not isMobilePlayer then VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.W, false, game) end
+            wHeld = false
+        end
     end
 end)
 
--- Auto Farm Combat loop
+-- Combat Loop
 task.spawn(function()
-    while true do
-        task.wait(0.2)
+    while task.wait(0.2) do
         if RyuConfig.AutoFarm then
             local char = LocalPlayer.Character
             local root = getHRP(char)
@@ -1505,14 +1586,12 @@ task.spawn(function()
                                 VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
                             end
                         else
-                            -- Combo mode
                             if not isMobilePlayer then
                                 VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
                                 task.wait(0.05)
                                 VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
                             end
                             m1Count = m1Count + 1
-                            
                             if m1Count >= 4 then
                                 if #skills > 0 and not isMobilePlayer then
                                     local k = skills[math.random(1, #skills)]
@@ -1531,9 +1610,110 @@ task.spawn(function()
     end
 end)
 
+--// ==========================================
+--// ALT FARM (OP CASHER METHOD)
+--// ==========================================
+local AltPlatformPos = Vector3.new(9999, 800, 9999)
+
+local function GetAltPlatform()
+    local plat = workspace:FindFirstChild("RyuAltPlatform")
+    if not plat then
+        plat = Instance.new("Part")
+        plat.Name = "RyuAltPlatform"
+        plat.Size = Vector3.new(150, 5, 150)
+        plat.Position = AltPlatformPos
+        plat.Anchored = true
+        plat.Parent = workspace
+        
+        local sg = Instance.new("SurfaceGui", plat)
+        sg.Face = Enum.NormalId.Top
+        local tl = Instance.new("TextLabel", sg)
+        tl.Size = UDim2.new(1, 0, 1, 0)
+        tl.BackgroundTransparency = 1
+        tl.Text = "discord.gg/ryuhub"
+        tl.TextScaled = true
+        tl.TextColor3 = Color3.new(1,1,1)
+        tl.Font = Enum.Font.GothamBlack
+    end
+    return plat
+end
+
+RunService.Heartbeat:Connect(function()
+    if RyuConfig.AltFarmEnabled then
+        local char = LocalPlayer.Character
+        local root = getHRP(char)
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not root or not hum then return end
+        
+        local plat = GetAltPlatform()
+        
+        if RyuConfig.AltRole == "Casher" then
+            local mainPlr = Players:FindFirstChild(RyuConfig.AltMainName)
+            local hpPercent = hum.Health / hum.MaxHealth
+            
+            if hpPercent <= 0.35 then
+                plat.CanCollide = false
+            else
+                plat.CanCollide = true
+                if mainPlr and mainPlr.Character and mainPlr.Character:FindFirstChild("HumanoidRootPart") then
+                    root.CFrame = mainPlr.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -3)
+                else
+                    root.CFrame = CFrame.new(AltPlatformPos + Vector3.new(0, 5, 0))
+                end
+            end
+        elseif RyuConfig.AltRole == "Main" then
+            plat.CanCollide = true
+            if (root.Position - AltPlatformPos).Magnitude > 100 then
+                root.CFrame = CFrame.new(AltPlatformPos + Vector3.new(0, 5, 0))
+            end
+        end
+    end
+end)
+
+-- Alt Main Combat
+task.spawn(function()
+    while task.wait(0.2) do
+        if RyuConfig.AltFarmEnabled and RyuConfig.AltRole == "Main" then
+            if not isMobilePlayer then
+                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+                task.wait(0.05)
+                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+                
+                local keys = {Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four}
+                local k = keys[math.random(1, 4)]
+                VirtualInputManager:SendKeyEvent(true, k, false, game)
+                task.wait(0.05)
+                VirtualInputManager:SendKeyEvent(false, k, false, game)
+            end
+        end
+    end
+end)
+
+-- Auto Rejoin (Low Pop)
+task.spawn(function()
+    while task.wait(5) do
+        if RyuConfig.GroupRejoin then
+            if #Players:GetPlayers() <= RyuConfig.GroupRejoinCount then
+                pcall(function()
+                    local url = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/0?sortOrder=2&excludeFullGames=true&limit=10"
+                    local req = game:HttpGet(url)
+                    local data = HttpService:JSONDecode(req)
+                    if data and data.data then
+                        for _, srv in pairs(data.data) do
+                            if srv.playing > 0 and srv.id ~= game.JobId then
+                                game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, srv.id, LocalPlayer)
+                                break
+                            end
+                        end
+                    end
+                end)
+            end
+        end
+    end
+end)
 
 --// ==========================================
---// AUTO BLOCK LOGIC (SMART FACING)
+--// AUTO BLOCK LOGIC (STRICT FACING)
 --// ==========================================
 RunService.Heartbeat:Connect(function()
     if RyuConfig.AutoBlock then
@@ -1551,7 +1731,7 @@ RunService.Heartbeat:Connect(function()
                     local toPlayer = (root.Position - eRoot.Position).Unit
                     local lookDir = eRoot.CFrame.LookVector
                     
-                    if lookDir:Dot(toPlayer) > 0.2 then
+                    if lookDir:Dot(toPlayer) > 0.65 then
                         local eHum = p.Character:FindFirstChildOfClass("Humanoid")
                         if eHum then
                             local animator = eHum:FindFirstChildOfClass("Animator")
@@ -1715,9 +1895,7 @@ local SecBFChain = CreateSection(SubAuto, "Blackflash Chain")
 CreateToggle(SecBFChain, "Enable Black Flash Chain", false, function(state) 
     RyuConfig.BlackFlashEnabled = state 
     if state then
-        if isMobilePlayer then
-            dashBtn.Visible = true
-        end
+        if isMobilePlayer then dashBtn.Visible = true end
     else
         dashBtn.Visible = false
     end
@@ -1772,6 +1950,7 @@ local SubAIFarm = CreateSubTab(TabFarm, "AI Auto Farm")
 local SecAIFarm = CreateSection(SubAIFarm, "Auto Combat")
 
 CreateToggle(SecAIFarm, "Enable AI Farm", false, function(state) RyuConfig.AutoFarm = state end)
+CreateToggle(SecAIFarm, "Use Tween Pathfinder", false, function(state) RyuConfig.FarmTween = state end)
 CreateDropdown(SecAIFarm, "Combat Mode", {"Combo", "Spam"}, "Combo", function(state) RyuConfig.FarmMode = state end)
 CreateSlider(SecAIFarm, "Chase Range", 10, 2000, 500, function(val) RyuConfig.FarmRange = val end)
 
@@ -1780,6 +1959,16 @@ CreateToggle(SecAISkills, "Use Skill 1", true, function(state) RyuConfig.FarmSki
 CreateToggle(SecAISkills, "Use Skill 2", true, function(state) RyuConfig.FarmSkill2 = state end)
 CreateToggle(SecAISkills, "Use Skill 3", true, function(state) RyuConfig.FarmSkill3 = state end)
 CreateToggle(SecAISkills, "Use Skill 4", true, function(state) RyuConfig.FarmSkill4 = state end)
+
+local SubMFarm = CreateSubTab(TabFarm, "Money Farm")
+local SecMFarm = CreateSection(SubMFarm, "Alt Money Farm")
+CreateToggle(SecMFarm, "Enable Alt Farm", false, function(state) RyuConfig.AltFarmEnabled = state end)
+CreateDropdown(SecMFarm, "Role", {"None", "Main", "Casher"}, "None", function(state) RyuConfig.AltRole = state end)
+CreateInput(SecMFarm, "Main Username", function(text) RyuConfig.AltMainName = text end)
+
+local SecGroupRejoin = CreateSection(SubMFarm, "Group Rejoin")
+CreateToggle(SecGroupRejoin, "Auto Rejoin Low Pop", false, function(state) RyuConfig.GroupRejoin = state end)
+CreateSlider(SecGroupRejoin, "Rejoin if players < X", 3, 12, 5, function(val) RyuConfig.GroupRejoinCount = val end)
 
 local SubTeleport = CreateSubTab(TabFarm, "Travel")
 local SecTeleport = CreateSection(SubTeleport, "Destination Travel")
