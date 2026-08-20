@@ -1,5 +1,5 @@
 --// ============================================================================
---// IMPEL DOWN 1000% ORIGINAL TEST (GPO)
+--// IMPEL DOWN 1000% ORIGINAL TEST (GPO) - GEFIXT
 --// ============================================================================
 
 local Players = game:GetService("Players")
@@ -143,7 +143,6 @@ tweenTeleportPro = function(target)
         end
     end
     if not targetPosition then
-        warn("horotppro: no target defined")
         return
     end
     local resolveTargetPosition = function()
@@ -990,7 +989,7 @@ end
 
 
 --// ============================================================================
---// IMPEL DOWN 1000% ORIGINAL LOGIC
+--// IMPEL DOWN 1000% ORIGINAL LOGIC (MIT FIX)
 --// ============================================================================
 
 local function ImpelDownFarm(enabled)
@@ -1030,31 +1029,16 @@ local function ImpelDownFarm(enabled)
                     snapToPosition(impelEntrance)
                 end
             elseif not player.PlayerGui:FindFirstChild("diffChooser") then
+                
                 if getCurrentFloor() == 1 then
-                    warn("floor 1")
-                    if isWithinDistance2(Vector3.new(5906, 9, -10197), 300, true) then
-                        local vera = workspaceService.NPCs:FindFirstChild("Vera")
-                        if vera and not isWithinDistance2(vera:GetPivot().Position, 10, true) then
-                            tweenTeleportPro({
-                                Position = vera:GetPivot().Position,
-                                Speed = 50,
-                                Stop = function()
-                                    return getgenv().auto_impel
-                                end
-                            })
-                        elseif vera and isWithinDistance2(vera:GetPivot().Position, 10, true) then
-                            snapToPosition(vera:GetPivot().Position)
-                            task.spawn(function()
-                                getgenv().global_hit(vera)
-                            end)
-                        end
-                    elseif player.Character:FindFirstChild("LeftCuff") then
+                    -- 1. PRIORITÄT: Handschellen loswerden
+                    if player.Character:FindFirstChild("LeftCuff") then
                         local keyModel = workspaceService.Effects:FindFirstChild("Key")
                         if keyModel then
                             if not isWithinDistance2(keyModel:GetPivot().Position, 10, true) then
                                 tweenTeleportPro({
                                     Position = keyModel:GetPivot().Position,
-                                    y = keyModel:GetPivot().Position.Y,
+                                    Y = keyModel:GetPivot().Position.Y, -- GEFIXT: Großes Y
                                     Speed = 50,
                                     Stop = function()
                                         return getgenv().auto_impel
@@ -1070,8 +1054,9 @@ local function ImpelDownFarm(enabled)
                                 task.wait()
                             end
                         end
+                        
+                    -- 2. PRIORITÄT: Bombe holen / essen
                     elseif not player.Backpack:FindFirstChild("Bomb-Bomb") then
-                        warn("we dont have bomb")
                         if not player.Character:FindFirstChild("Bomb") then
                             if player.Backpack:FindFirstChild("Bomb") then
                                 player.Backpack:FindFirstChild("Bomb").Parent = player.Character
@@ -1081,7 +1066,6 @@ local function ImpelDownFarm(enabled)
                                     tweenToPos2(workspaceService.Effects:FindFirstChild("Bomb"):GetPivot().Position, 50, 30, 2090)
                                 else
                                     local bombPrompt = workspaceService.Effects:FindFirstChild("Bomb"):FindFirstChild("ProximityPrompt", true)
-                                    warn(bombPrompt:GetFullName())
                                     bombPrompt:InputHoldBegin()
                                     task.wait(bombPrompt.HoldDuration + 0.1)
                                     bombPrompt:InputHoldEnd()
@@ -1094,16 +1078,33 @@ local function ImpelDownFarm(enabled)
                         else
                             firesignal(game:GetService("Players").LocalPlayer.PlayerGui.ConfirmationPrompt.Main.OptionsFrame.Accept.MouseButton1Click)
                         end
-                    elseif player.Backpack:FindFirstChild("Bomb-Bomb") then
-                        warn("we do have bomb")
+                        
+                    -- 3. PRIORITÄT: Vera farmen (Boss)
+                    elseif isWithinDistance2(Vector3.new(5906, 9, -10197), 300, true) then
+                        local vera = workspaceService.NPCs:FindFirstChild("Vera")
+                        if vera and not isWithinDistance2(vera:GetPivot().Position, 10, true) then
+                            tweenTeleportPro({
+                                Position = vera:GetPivot().Position,
+                                Speed = 50,
+                                Stop = function()
+                                    return getgenv().auto_impel
+                                end
+                            })
+                        elseif vera and isWithinDistance2(vera:GetPivot().Position, 10, true) then
+                            snapToPosition(vera:GetPivot().Position)
+                            task.spawn(function()
+                                getgenv().global_hit(vera)
+                            end)
+                        end
+                        
+                    -- 4. PRIORITÄT: Weiterlaufen und Zonen einnehmen
+                    else
                         local startBarrier = workspaceService.Islands["Impel Base - Floor 1"].Barriers:FindFirstChild("StartBarrier")
                         if startBarrier and startBarrier.CanCollide then
-                            warn("twuning")
                             tweenToPos2(startBarrier.Position, 50, 30, 2090, false)
                         end
                         if hasZone() then
                             if not isWithinDistance2(hasZone(), 10, true) then
-                                warn("twuning")
                                 tweenToPos2(hasZone(), 50, 30, 2090, false)
                             else
                                 snapToPosition(hasZone() + Vector3.new(0, 4, 0))
@@ -1114,13 +1115,13 @@ local function ImpelDownFarm(enabled)
                             if workspaceService.Effects.Zones:FindFirstChild("End") then
                                 local endPosition = workspaceService.Effects.Zones:FindFirstChild("End").Position + zoneOffset
                                 if not isWithinDistance2(endPosition, 10, true) then
-                                    tweenToPos(endPosition, 50, 3000)
+                                    tweenToPos2(endPosition, 50, 3000)
                                 else
                                     snapToPosition(endPosition + Vector3.new(0, 4, 0))
                                     putMines()
                                 end
                             else
-                                tweenToPos(Vector3.new(2880, 2783, -14473) + zoneOffset, 50, 3000)
+                                tweenToPos2(Vector3.new(2880, 2783, -14473) + zoneOffset, 50, 3000)
                             end
                         end
                     end
