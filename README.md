@@ -29,7 +29,7 @@ end)
 if not guiParent then guiParent = LocalPlayer:WaitForChild("PlayerGui") end
 
 for _, v in pairs(guiParent:GetChildren()) do 
-    if v.Name == "RyuHubUI" or v.Name == "RyuBFMobileGui" then v:Destroy() end 
+    if v.Name == "RyuHubUI" or v.Name == "RyuBFMobileGui" or v.Name == "RyuChainMobileGui" then v:Destroy() end 
 end
 
 --// THEME
@@ -369,31 +369,6 @@ local function CreateSection(page, titleText)
     return section
 end
 
-local function CreateLabel(section, text)
-    itemOrderCounter = itemOrderCounter + 1
-    local frame = Instance.new("Frame", section)
-    frame.LayoutOrder = itemOrderCounter
-    frame.Size = UDim2.new(0.92, 0, 0, 30)
-    frame.BackgroundTransparency = 1
-    
-    local lbl = Instance.new("TextLabel", frame)
-    lbl.Size = UDim2.new(1, 0, 1, 0)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = text
-    lbl.TextColor3 = Theme.SubText
-    lbl.Font = Enum.Font.GothamMedium
-    lbl.TextSize = 11
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.TextWrapped = true
-    
-    lbl:GetPropertyChangedSignal("TextBounds"):Connect(function()
-        if lbl.TextBounds.Y > 30 then
-            frame.Size = UDim2.new(0.92, 0, 0, lbl.TextBounds.Y + 10)
-        end
-    end)
-    return lbl
-end
-
 local function CreateToggle(section, text, descText, defaultState, callback)
     if type(descText) == "boolean" then callback = defaultState; defaultState = descText; descText = nil end
     itemOrderCounter = itemOrderCounter + 1
@@ -663,10 +638,19 @@ local RyuConfig = {
     LockSideOffset = 1.75,
     LockWallCheck = false,
     
-    -- Auto Block
+    -- Auto Block (SMART FACING)
     AutoBlock = false,
     BlockRange = 15,
     BlockDuration = 500,
+    
+    -- AI Auto Farm
+    AutoFarm = false,
+    FarmMode = "Combo",
+    FarmRange = 500,
+    FarmSkill1 = true,
+    FarmSkill2 = true,
+    FarmSkill3 = true,
+    FarmSkill4 = true,
 }
 
 local Logic = {
@@ -784,7 +768,6 @@ local function getClosestTarget(maxDist)
     return closest
 end
 
--- Math Helper for Bezier Curve
 local function getBezierPoint(t, p0, p1, p2)
     return (1 - t)^2 * p0 + 2 * (1 - t) * t * p1 + t^2 * p2
 end
@@ -838,11 +821,7 @@ local function performDashLogic(target)
 
         local direction = endPos - startPos
         local perp = Vector3.new(-direction.Z, 0, direction.X)
-        if perp.Magnitude > 0.001 then
-            perp = perp.Unit
-        else
-            perp = Vector3.new(1, 0, 0)
-        end
+        if perp.Magnitude > 0.001 then perp = perp.Unit else perp = Vector3.new(1, 0, 0) end
 
         local midPos = (startPos + endPos) / 2
         local cp1 = midPos + (perp * archWidth)
@@ -1433,9 +1412,128 @@ local function startPathfinding(targetPos)
     end)
 end
 
+--// ==========================================
+--// AI AUTO FARM LOGIC
+--// ==========================================
+local m1Count = 0
+local lastPos = Vector3.zero
+local timeStuck = 0
+local lastTick = tick()
+
+RunService.Heartbeat:Connect(function()
+    if not RyuConfig.AutoFarm then return end
+    local char = LocalPlayer.Character
+    local root = getHRP(char)
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not root or not hum or hum.Health <= 0 then return end
+    
+    local target = getClosestTarget(RyuConfig.FarmRange)
+    if target then
+        local tRoot = getHRP(target)
+        if not tRoot then return end
+        
+        local dist = (root.Position - tRoot.Position).Magnitude
+        
+        -- Lock on (permanent)
+        root.CFrame = CFrame.lookAt(root.Position, Vector3.new(tRoot.Position.X, root.Position.Y, tRoot.Position.Z))
+        
+        -- Movement (Sprint to target)
+        hum:MoveTo(tRoot.Position)
+        
+        -- Dash (Q) if slightly away to close gap
+        if dist > 15 and dist < 40 and math.random() > 0.95 then
+            if not isMobilePlayer then
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Q, false, game)
+                task.wait(0.1)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Q, false, game)
+            end
+        end
+        
+        -- Failsafes
+        if tick() - lastTick >= 1 then
+            lastTick = tick()
+            if (root.Position - lastPos).Magnitude < 1.5 then
+                timeStuck = timeStuck + 1
+                if timeStuck > 2 then
+                    hum.Jump = true
+                    if not isMobilePlayer then
+                        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+                        task.wait(0.1)
+                        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+                    end
+                end
+                if timeStuck >= 120 then
+                    hum.Health = 0 -- Respawn
+                    timeStuck = 0
+                end
+            else
+                timeStuck = 0
+            end
+            lastPos = root.Position
+        end
+    end
+end)
+
+-- Auto Farm Combat loop
+task.spawn(function()
+    while true do
+        task.wait(0.2)
+        if RyuConfig.AutoFarm then
+            local char = LocalPlayer.Character
+            local root = getHRP(char)
+            if root then
+                local target = getClosestTarget(RyuConfig.FarmRange)
+                if target then
+                    local tRoot = getHRP(target)
+                    if tRoot and (root.Position - tRoot.Position).Magnitude < 8 then
+                        local skills = {}
+                        if RyuConfig.FarmSkill1 then table.insert(skills, Enum.KeyCode.One) end
+                        if RyuConfig.FarmSkill2 then table.insert(skills, Enum.KeyCode.Two) end
+                        if RyuConfig.FarmSkill3 then table.insert(skills, Enum.KeyCode.Three) end
+                        if RyuConfig.FarmSkill4 then table.insert(skills, Enum.KeyCode.Four) end
+                        
+                        if RyuConfig.FarmMode == "Spam" then
+                            if #skills > 0 and not isMobilePlayer then
+                                local k = skills[math.random(1, #skills)]
+                                VirtualInputManager:SendKeyEvent(true, k, false, game)
+                                task.wait(0.05)
+                                VirtualInputManager:SendKeyEvent(false, k, false, game)
+                            end
+                            if not isMobilePlayer then
+                                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+                                task.wait(0.05)
+                                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+                            end
+                        else
+                            -- Combo mode
+                            if not isMobilePlayer then
+                                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+                                task.wait(0.05)
+                                VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+                            end
+                            m1Count = m1Count + 1
+                            
+                            if m1Count >= 4 then
+                                if #skills > 0 and not isMobilePlayer then
+                                    local k = skills[math.random(1, #skills)]
+                                    VirtualInputManager:SendKeyEvent(true, k, false, game)
+                                    task.wait(0.1)
+                                    VirtualInputManager:SendKeyEvent(false, k, false, game)
+                                end
+                                m1Count = 0
+                                task.wait(0.4)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
 
 --// ==========================================
---// AUTO BLOCK LOGIC
+--// AUTO BLOCK LOGIC (SMART FACING)
 --// ==========================================
 RunService.Heartbeat:Connect(function()
     if RyuConfig.AutoBlock then
@@ -1449,27 +1547,33 @@ RunService.Heartbeat:Connect(function()
                 local eRoot = p.Character.HumanoidRootPart
                 local dist = (eRoot.Position - root.Position).Magnitude
                 if dist <= RyuConfig.BlockRange then
-                    local eHum = p.Character:FindFirstChildOfClass("Humanoid")
-                    if eHum then
-                        local animator = eHum:FindFirstChildOfClass("Animator")
-                        if animator then
-                            pcall(function()
-                                for _, track in pairs(animator:GetPlayingAnimationTracks()) do
-                                    local isAttack = false
-                                    if track.Animation and track.Animation.AnimationId then
-                                        local animId = track.Animation.AnimationId:match("%d+")
-                                        if not (animId and KnownMovementAnims[animId]) then
-                                            local name = string.lower(track.Name)
-                                            if string.find(name, "punch") or string.find(name, "attack") or string.find(name, "strike") or string.find(name, "m1") then
-                                                isAttack = true
-                                            elseif track.Priority == Enum.AnimationPriority.Action or track.Priority == Enum.AnimationPriority.Action2 or track.Priority == Enum.AnimationPriority.Action3 or track.Priority == Enum.AnimationPriority.Action4 then
-                                                isAttack = true
+                    
+                    local toPlayer = (root.Position - eRoot.Position).Unit
+                    local lookDir = eRoot.CFrame.LookVector
+                    
+                    if lookDir:Dot(toPlayer) > 0.2 then
+                        local eHum = p.Character:FindFirstChildOfClass("Humanoid")
+                        if eHum then
+                            local animator = eHum:FindFirstChildOfClass("Animator")
+                            if animator then
+                                pcall(function()
+                                    for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+                                        local isAttack = false
+                                        if track.Animation and track.Animation.AnimationId then
+                                            local animId = track.Animation.AnimationId:match("%d+")
+                                            if not (animId and KnownMovementAnims[animId]) then
+                                                local name = string.lower(track.Name)
+                                                if string.find(name, "punch") or string.find(name, "attack") or string.find(name, "strike") or string.find(name, "m1") then
+                                                    isAttack = true
+                                                elseif track.Priority == Enum.AnimationPriority.Action or track.Priority == Enum.AnimationPriority.Action2 or track.Priority == Enum.AnimationPriority.Action3 or track.Priority == Enum.AnimationPriority.Action4 then
+                                                    isAttack = true
+                                                end
                                             end
                                         end
+                                        if isAttack then incomingAttack = true break end
                                     end
-                                    if isAttack then incomingAttack = true break end
-                                end
-                            end)
+                                end)
+                            end
                         end
                     end
                 end
@@ -1633,6 +1737,8 @@ CreateSlider(SecBFChain, "Max Dash Distance", 5, 50, 15, function(val) RyuConfig
 CreateSlider(SecBFChain, "Dash Duration (s)", 10, 100, 35, function(val) RyuConfig.DashDuration = val/100 end)
 CreateSlider(SecBFChain, "Combo Fire Delay (s)", 10, 100, 25, function(val) RyuConfig.FireDelay = val/100 end)
 CreateToggle(SecBFChain, "Camera Lock During Dash", true, function(state) RyuConfig.DashCameraLock = state end)
+CreateDropdown(SecBFChain, "Dash Easing Style", {"Linear", "Sine", "Quad", "Cubic", "Quart", "Quint", "Expo", "Circ", "Elastic", "Back", "Bounce"}, "Cubic", function(val) RyuConfig.DashEasingStyle = val end)
+CreateDropdown(SecBFChain, "Dash Easing Direction", {"In", "Out", "InOut"}, "Out", function(val) RyuConfig.DashEasingDirection = val end)
 
 local SubDash = CreateSubTab(TabCombat, "Side Dash Assist")
 local SecDash = CreateSection(SubDash, "Side Dash Settings")
@@ -1660,9 +1766,22 @@ CreateSlider(SecLock, "Max Lock Distance", 10, 2000, 500, function(val) RyuConfi
 CreateSlider(SecLock, "Prediction", 0, 100, 0, function(val) RyuConfig.LockPrediction = val/100 end)
 CreateToggle(SecLock, "Wall Check", false, function(state) RyuConfig.LockWallCheck = state end)
 
--- TAB 2: TELEPORTS (RAZORBILL PATHFINDING)
-local TabTeleports = CreateMainTab("Teleports")
-local SubTeleport = CreateSubTab(TabTeleports, "Travel")
+-- TAB 2: FARM
+local TabFarm = CreateMainTab("Farm")
+local SubAIFarm = CreateSubTab(TabFarm, "AI Auto Farm")
+local SecAIFarm = CreateSection(SubAIFarm, "Auto Combat")
+
+CreateToggle(SecAIFarm, "Enable AI Farm", false, function(state) RyuConfig.AutoFarm = state end)
+CreateDropdown(SecAIFarm, "Combat Mode", {"Combo", "Spam"}, "Combo", function(state) RyuConfig.FarmMode = state end)
+CreateSlider(SecAIFarm, "Chase Range", 10, 2000, 500, function(val) RyuConfig.FarmRange = val end)
+
+local SecAISkills = CreateSection(SubAIFarm, "Choose Skills")
+CreateToggle(SecAISkills, "Use Skill 1", true, function(state) RyuConfig.FarmSkill1 = state end)
+CreateToggle(SecAISkills, "Use Skill 2", true, function(state) RyuConfig.FarmSkill2 = state end)
+CreateToggle(SecAISkills, "Use Skill 3", true, function(state) RyuConfig.FarmSkill3 = state end)
+CreateToggle(SecAISkills, "Use Skill 4", true, function(state) RyuConfig.FarmSkill4 = state end)
+
+local SubTeleport = CreateSubTab(TabFarm, "Travel")
 local SecTeleport = CreateSection(SubTeleport, "Destination Travel")
 
 local selectedDest = LocationNames[1]
