@@ -717,6 +717,8 @@ local RyuConfig = {
     
     -- Alt Farm (OP METHOD)
     AltFarmEnabled = false,
+    AltMethod = "Teleport",
+    AltTweenSpeed = 100,
     AltRole = "None",
     AltMainName = "",
     GroupRejoin = false,
@@ -754,40 +756,22 @@ DashAnimLeft.AnimationId = "rbxassetid://75203303352791"
 local DashAnimRight = Instance.new("Animation")
 DashAnimRight.AnimationId = "rbxassetid://117223862448096"
 
-local isMobilePlayer = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
-
---// ==========================================
---// VFX SCANNER FOR HYBRID AUTO BLOCK
---// ==========================================
-local VFXNames = {
-    "CombatTrail","LapseBlue","HandTrail","Shock","BallFire","Reserve","Doors",
-    "TwoFold","Rabbit","Spawn","DivineAttack","Throw","FocusStrike",
-    "DrillImpact","Barrage","Mucus","MucusFire","DismantleFly","HitGlow"
+local KnownMovementAnims = {
+    ["120133391090244"] = true, ["138196552148011"] = true, 
+    ["96489184596023"] = true, ["117941450906936"] = true, ["77705898607209"] = true, 
+    ["140491244934559"] = true, ["134343219970072"] = true, ["126572575938378"] = true, 
+    ["93938476274140"] = true, ["137199497329581"] = true, ["77992084875736"] = true, 
+    ["135750035707554"] = true, ["85570635517461"] = true, ["85012092465916"] = true, 
+    ["72509133503569"] = true, ["119619096808750"] = true, ["98616794135588"] = true, 
+    ["97238189166310"] = true, ["125812953913280"] = true, ["77801551230831"] = true, 
+    ["114113678077830"] = true, 
 }
-local VFXMap = {}
-for _,n in ipairs(VFXNames) do VFXMap[n] = true end
-local ActiveVFXParts = {}
 
-Workspace.DescendantAdded:Connect(function(obj)
-    if obj:IsA("BasePart") and VFXMap[obj.Name] then
-        table.insert(ActiveVFXParts, obj)
-    end
-end)
-Workspace.DescendantRemoving:Connect(function(obj)
-    if obj:IsA("BasePart") and VFXMap[obj.Name] then
-        for i = #ActiveVFXParts, 1, -1 do
-            if ActiveVFXParts[i] == obj then
-                table.remove(ActiveVFXParts, i)
-                return
-            end
-        end
-    end
-end)
-for _,o in ipairs(Workspace:GetDescendants()) do
-    if o:IsA("BasePart") and VFXMap[o.Name] then
-        table.insert(ActiveVFXParts, o)
-    end
-end
+local StraightAnimations = {
+    ["123171106092050"] = true,
+}
+
+local isMobilePlayer = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
 
 -- Fetch Remote for Hooking
 task.spawn(function()
@@ -1509,7 +1493,7 @@ local timeStuck = 0
 local lastTick = tick()
 local wHeld = false
 
-RunService.Heartbeat:Connect(function()
+RunService.Heartbeat:Connect(function(dt)
     local char = LocalPlayer.Character
     local root = getHRP(char)
     local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -1541,7 +1525,8 @@ RunService.Heartbeat:Connect(function()
                 wHeld = false
             end
             if dist > 5 then
-                root.CFrame = root.CFrame:Lerp(CFrame.lookAt(root.Position + (tRoot.Position - root.Position).Unit * (50 * RunService.Heartbeat:Wait()), tRoot.Position), 1)
+                local step = math.min(dist, 50 * dt)
+                root.CFrame = root.CFrame + (tRoot.Position - root.Position).Unit * step
             end
         else
             if not wHeld and not isMobilePlayer then
@@ -1674,7 +1659,7 @@ local function GetAltPlatform()
     return plat
 end
 
-RunService.Heartbeat:Connect(function()
+RunService.Heartbeat:Connect(function(dt)
     if RyuConfig.AltFarmEnabled then
         local char = LocalPlayer.Character
         local root = getHRP(char)
@@ -1682,6 +1667,8 @@ RunService.Heartbeat:Connect(function()
         if not root or not hum then return end
         
         local plat = GetAltPlatform()
+        local shouldMove = false
+        local targetCFrame = nil
         
         if RyuConfig.AltRole == "Casher" then
             local mainPlr = Players:FindFirstChild(RyuConfig.AltMainName)
@@ -1691,17 +1678,39 @@ RunService.Heartbeat:Connect(function()
                 plat.CanCollide = false
             else
                 plat.CanCollide = true
+                shouldMove = true
                 if mainPlr and mainPlr.Character and mainPlr.Character:FindFirstChild("HumanoidRootPart") then
-                    root.CFrame = mainPlr.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -3)
+                    targetCFrame = mainPlr.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, -3)
                 else
-                    root.CFrame = CFrame.new(AltPlatformPos + Vector3.new(0, 5, 0))
+                    targetCFrame = CFrame.new(AltPlatformPos + Vector3.new(0, 5, 0))
                 end
             end
         elseif RyuConfig.AltRole == "Main" then
             plat.CanCollide = true
-            if (root.Position - AltPlatformPos).Magnitude > 100 then
-                root.CFrame = CFrame.new(AltPlatformPos + Vector3.new(0, 5, 0))
+            shouldMove = true
+            targetCFrame = CFrame.new(AltPlatformPos + Vector3.new(0, 5, 0))
+        end
+
+        if shouldMove and targetCFrame then
+            if RyuConfig.AltMethod == "Tween" then
+                local dist = (root.Position - targetCFrame.Position).Magnitude
+                if dist > 2 then
+                    hum.PlatformStand = true
+                    root.Velocity = Vector3.zero
+                    local step = math.min(dist, RyuConfig.AltTweenSpeed * dt)
+                    root.CFrame = root.CFrame + (targetCFrame.Position - root.Position).Unit * step
+                else
+                    hum.PlatformStand = false
+                    root.CFrame = targetCFrame
+                end
+            else
+                hum.PlatformStand = false
+                if (root.Position - targetCFrame.Position).Magnitude > 100 then
+                    root.CFrame = targetCFrame
+                end
             end
+        else
+            if hum.PlatformStand then hum.PlatformStand = false end
         end
     end
 end)
@@ -1787,25 +1796,29 @@ RunService.Heartbeat:Connect(function()
         local root = char and char:FindFirstChild("HumanoidRootPart")
         if not root then return end
         
-        -- DON'T BLOCK IF WE ARE ALREADY BLOCKING
+        -- DON'T BLOCK IF WE ARE ALREADY BLOCKING OR ATTACKING
         local infoFolder = char:FindFirstChild("Info")
         local isAlreadyBlocking = infoFolder and infoFolder:FindFirstChild("Block")
         if isAlreadyBlocking then return end
         
         local incomingAttack = false
         
-        -- 1. VFX Scanner
+        -- 1. VFX Scanner (Ignores self attacks & hitboxes < 3.5 studs away)
         for _, prt in ipairs(ActiveVFXParts) do
             if prt.Parent then
                 local d = (root.Position - prt.Position).Magnitude
-                if d > 2.5 and d <= RyuConfig.BlockRange then
+                if prt.Name == "CombatTrail" and d <= 3.5 then
+                    continue
+                end
+                
+                if d >= 3.5 and d <= RyuConfig.BlockRange then
                     incomingAttack = true
                     break
                 end
             end
         end
         
-        -- 2. Animation Scanner (Only M1/Punch/Strike/Attack/Combat/Melee)
+        -- 2. Animation Scanner (Only M1/Punch/Strike/Attack/Combat/Melee/Dash)
         if not incomingAttack then
             for _, p in pairs(Players:GetPlayers()) do
                 if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
@@ -1825,9 +1838,16 @@ RunService.Heartbeat:Connect(function()
                                         for _, track in pairs(animator:GetPlayingAnimationTracks()) do
                                             local isAttack = false
                                             if track.Animation and track.Animation.AnimationId then
-                                                local name = string.lower(track.Name)
-                                                if string.find(name, "punch") or string.find(name, "attack") or string.find(name, "strike") or string.find(name, "m1") or string.find(name, "combat") or string.find(name, "melee") then
+                                                local animId = track.Animation.AnimationId:match("%d+")
+                                                if animId == "75203303352791" or animId == "117223862448096" then
                                                     isAttack = true
+                                                elseif animId and KnownMovementAnims[animId] then
+                                                    -- Is a safe movement, ignore
+                                                else
+                                                    local name = string.lower(track.Name)
+                                                    if string.find(name, "punch") or string.find(name, "attack") or string.find(name, "strike") or string.find(name, "m1") or string.find(name, "combat") or string.find(name, "melee") or string.find(name, "dash") then
+                                                        isAttack = true
+                                                    end
                                                 end
                                             end
                                             if isAttack then incomingAttack = true break end
@@ -1842,7 +1862,6 @@ RunService.Heartbeat:Connect(function()
             end
         end
         
-        -- Fire Block Remotes
         if incomingAttack then
             pcall(function()
                 ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("BlockService"):WaitForChild("RE"):WaitForChild("Activated"):FireServer()
@@ -2045,6 +2064,8 @@ CreateToggle(SecAISkills, "Use Skill 4", true, function(state) RyuConfig.FarmSki
 local SubMFarm = CreateSubTab(TabFarm, "Money Farm")
 local SecMFarm = CreateSection(SubMFarm, "Alt Money Farm")
 CreateToggle(SecMFarm, "Enable Alt Farm", false, function(state) RyuConfig.AltFarmEnabled = state end)
+CreateDropdown(SecMFarm, "Travel Method", {"Teleport", "Tween"}, "Teleport", function(state) RyuConfig.AltMethod = state end)
+CreateSlider(SecMFarm, "Tween Speed", 50, 200, 100, function(val) RyuConfig.AltTweenSpeed = val end)
 CreateDropdown(SecMFarm, "Role", {"None", "Main", "Casher"}, "None", function(state) RyuConfig.AltRole = state end)
 CreateInput(SecMFarm, "Main Username", function(text) RyuConfig.AltMainName = text end)
 
