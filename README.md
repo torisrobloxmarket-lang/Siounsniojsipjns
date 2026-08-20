@@ -127,6 +127,7 @@ local mainStroke = Instance.new("UIStroke", MainFrame)
 mainStroke.Color = Theme.Stroke
 mainStroke.Thickness = 1.5
 
+-- Dynamic Drag Text
 local DragText = Instance.new("TextLabel", MainFrame)
 DragText.Size = UDim2.new(1, 0, 1, 0)
 DragText.Position = UDim2.new(0, 0, 0, 0)
@@ -135,7 +136,7 @@ DragText.Text = "DISCORD.GG/RYUHUB"
 DragText.Font = Enum.Font.GothamBlack
 DragText.TextSize = 50
 DragText.TextColor3 = Theme.Text
-DragText.TextTransparency = 0.95
+DragText.TextTransparency = 1 -- Starts invisible, tweens on drag
 DragText.ZIndex = 0
 
 ToggleBtn.MouseButton1Click:Connect(function()
@@ -167,6 +168,19 @@ Title.TextSize = 22
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.TextColor3 = Theme.Text
 
+-- Wave Animation for Title
+local TitleGradient = Instance.new("UIGradient", Title)
+TitleGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(140, 140, 140)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255))
+})
+TitleGradient.Rotation = 45
+RunService.RenderStepped:Connect(function()
+    local t = tick() * 1.5
+    TitleGradient.Offset = Vector2.new(math.sin(t), 0)
+end)
+
 local SubTitle = Instance.new("TextLabel", Topbar)
 SubTitle.Size = UDim2.new(0, 300, 0, 15)
 SubTitle.Position = UDim2.new(0, 20, 0, 38)
@@ -193,13 +207,14 @@ CloseBtn.MouseButton1Click:Connect(function()
     task.delay(0.3, function() MainFrame.Visible = false end)
 end)
 
--- Window Dragging
+-- Window Dragging & Discord Text Fade
 local mDragging, mDragStart, mStartPos = false, nil, nil
 Topbar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
         mDragging = true
         mDragStart = input.Position
         mStartPos = MainFrame.Position 
+        TweenService:Create(DragText, TweenInfo.new(0.2), {TextTransparency = 0.85}):Play()
     end
 end)
 Topbar.InputChanged:Connect(function(input)
@@ -211,6 +226,7 @@ end)
 Topbar.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
         mDragging = false 
+        TweenService:Create(DragText, TweenInfo.new(0.2), {TextTransparency = 1}):Play()
     end
 end)
 
@@ -1556,7 +1572,7 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- Combat Loop
+-- Auto Farm Combat loop
 task.spawn(function()
     while task.wait(0.2) do
         if RyuConfig.AutoFarm then
@@ -1586,12 +1602,14 @@ task.spawn(function()
                                 VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
                             end
                         else
+                            -- Combo mode
                             if not isMobilePlayer then
                                 VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
                                 task.wait(0.05)
                                 VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
                             end
                             m1Count = m1Count + 1
+                            
                             if m1Count >= 4 then
                                 if #skills > 0 and not isMobilePlayer then
                                     local k = skills[math.random(1, #skills)]
@@ -1721,6 +1739,11 @@ RunService.Heartbeat:Connect(function()
         local root = char and char:FindFirstChild("HumanoidRootPart")
         if not root then return end
         
+        -- DON'T BLOCK IF WE ARE ALREADY BLOCKING
+        local infoFolder = char:FindFirstChild("Info")
+        local isAlreadyBlocking = infoFolder and infoFolder:FindFirstChild("Block")
+        if isAlreadyBlocking then return end
+        
         local incomingAttack = false
         for _, p in pairs(Players:GetPlayers()) do
             if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
@@ -1743,9 +1766,7 @@ RunService.Heartbeat:Connect(function()
                                             local animId = track.Animation.AnimationId:match("%d+")
                                             if not (animId and KnownMovementAnims[animId]) then
                                                 local name = string.lower(track.Name)
-                                                if string.find(name, "punch") or string.find(name, "attack") or string.find(name, "strike") or string.find(name, "m1") then
-                                                    isAttack = true
-                                                elseif track.Priority == Enum.AnimationPriority.Action or track.Priority == Enum.AnimationPriority.Action2 or track.Priority == Enum.AnimationPriority.Action3 or track.Priority == Enum.AnimationPriority.Action4 then
+                                                if string.find(name, "punch") or string.find(name, "attack") or string.find(name, "strike") or string.find(name, "m1") or string.find(name, "combat") or string.find(name, "melee") then
                                                     isAttack = true
                                                 end
                                             end
@@ -1895,7 +1916,9 @@ local SecBFChain = CreateSection(SubAuto, "Blackflash Chain")
 CreateToggle(SecBFChain, "Enable Black Flash Chain", false, function(state) 
     RyuConfig.BlackFlashEnabled = state 
     if state then
-        if isMobilePlayer then dashBtn.Visible = true end
+        if isMobilePlayer then
+            dashBtn.Visible = true
+        end
     else
         dashBtn.Visible = false
     end
