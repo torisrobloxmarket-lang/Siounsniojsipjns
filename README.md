@@ -680,7 +680,7 @@ local RyuConfig = {
     BlockRange = 15,
     BlockDuration = 500,
     
-    -- AI Auto Farm (PERFECTED)
+    -- AI Auto Farm
     AutoFarm = false,
     FarmMode = "Combo",
     FarmRange = 500,
@@ -1607,9 +1607,9 @@ task.spawn(function()
 end)
 
 --// ==========================================
---// ALT FARM (OP CASHER METHOD)
+--// ALT FARM (OP CASHER METHOD - TWEEN & TP)
 --// ==========================================
-local AltPlatformPos = Vector3.new(9999, -300, 9999) -- Tief unter der Map platziert
+local AltPlatformPos = Vector3.new(-283.28, -124.29, -5.50)
 
 local function GetAltPlatform()
     local plat = workspace:FindFirstChild("RyuAltPlatform")
@@ -1650,7 +1650,7 @@ RunService.Heartbeat:Connect(function(dt)
             local hpPercent = hum.Health / hum.MaxHealth
             
             if hpPercent <= 0.35 then
-                -- Disable collision to fall and die quickly
+                -- Disable collision to fall into void and die quickly
                 plat.CanCollide = false
             else
                 plat.CanCollide = true
@@ -1670,7 +1670,7 @@ RunService.Heartbeat:Connect(function(dt)
                 shouldMove = false
                 if hum.PlatformStand then hum.PlatformStand = false end
                 
-                -- Smart LookOn to closest Casher
+                -- Smart LookOn to closest Casher when standing still
                 local closestCasher, closestDist = nil, math.huge
                 for _, p in pairs(Players:GetPlayers()) do
                     if p ~= LocalPlayer and p.Character then
@@ -1761,7 +1761,7 @@ task.spawn(function()
 end)
 
 --// ==========================================
---// AUTO BLOCK LOGIC (HYBRID VFX & STRICT ANIMATION)
+--// AUTO BLOCK LOGIC (HYBRID & ANTI-SELF-HIT)
 --// ==========================================
 local VFXNames = {
     "LapseBlue","BallFire","Reserve","Doors",
@@ -1797,7 +1797,23 @@ RunService.Heartbeat:Connect(function()
     if RyuConfig.AutoBlock then
         local char = LocalPlayer.Character
         local root = char and char:FindFirstChild("HumanoidRootPart")
-        if not root then return end
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not root or not hum then return end
+        
+        -- Check if Local Player is Attacking (Ignore own VFX)
+        local localAttacking = false
+        pcall(function()
+            local animator = hum:FindFirstChildOfClass("Animator")
+            if animator then
+                for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+                    local name = string.lower(track.Name)
+                    if string.find(name, "punch") or string.find(name, "attack") or string.find(name, "strike") or string.find(name, "m1") or string.find(name, "combat") or string.find(name, "melee") or string.find(name, "dash") then
+                        localAttacking = true
+                        break
+                    end
+                end
+            end
+        end)
         
         -- DON'T BLOCK IF WE ARE ALREADY BLOCKING
         local infoFolder = char:FindFirstChild("Info")
@@ -1806,18 +1822,23 @@ RunService.Heartbeat:Connect(function()
         
         local incomingAttack = false
         
-        -- 1. VFX Scanner (Strict distance > 5 to absolutely ignore own projectiles/hits)
+        -- 1. VFX Scanner
         for _, prt in ipairs(ActiveVFXParts) do
             if prt.Parent then
                 local d = (root.Position - prt.Position).Magnitude
-                if d >= 5 and d <= RyuConfig.BlockRange then
+                -- If we are attacking and VFX is very close, it's our own
+                if localAttacking and d <= 5 then
+                    continue 
+                end
+                
+                if d <= RyuConfig.BlockRange then
                     incomingAttack = true
                     break
                 end
             end
         end
         
-        -- 2. Animation Scanner (Only M1/Punch/Strike/Attack/Combat/Melee/Dash)
+        -- 2. Animation Scanner
         if not incomingAttack then
             for _, p in pairs(Players:GetPlayers()) do
                 if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
@@ -1945,7 +1966,24 @@ RunService.RenderStepped:Connect(function()
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if not char or not hum or not root then return end
 
-    if MovementState.Speed and not MovementState.Fly then
+    if MovementState.Fly and flyBodyVelocity and flyBodyGyro then
+        hum.PlatformStand = true
+        local moveDir = Vector3.new(0,0,0)
+        
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0,1,0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then moveDir = moveDir - Vector3.new(0,1,0) end
+        
+        if moveDir.Magnitude > 0 then
+            flyBodyVelocity.Velocity = moveDir.Unit * MovementState.FlySpeed
+        else
+            flyBodyVelocity.Velocity = Vector3.new(0,0,0)
+        end
+        flyBodyGyro.CFrame = camera.CFrame
+    elseif MovementState.Speed then
         if hum.MoveDirection.Magnitude > 0 then
             local flatDir = hum.MoveDirection
             root.Velocity = Vector3.new(flatDir.X * MovementState.SpeedValue, root.Velocity.Y, flatDir.Z * MovementState.SpeedValue)
