@@ -1,5 +1,5 @@
 -- ============================================================================
--- IMPEL DOWN TEST LABOR (FULL ORIGINAL LOGIC)
+-- IMPEL DOWN TEST LABOR (FULL ORIGINAL LOGIC & DEPENDENCIES)
 -- ============================================================================
 
 local Players = game:GetService("Players")
@@ -7,6 +7,7 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local PathfindingService = game:GetService("PathfindingService")
 
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
@@ -15,8 +16,8 @@ local var = "HumanoidRootPart"
 local stats_folder
 local inventory_value
 task.spawn(pcall, function()
-    stats_folder = ReplicatedStorage:FindFirstChild("Stats" .. player.Name)
-    inventory_value = stats_folder:FindFirstChild("Inventory"):FindFirstChild("Inventory")
+	stats_folder = ReplicatedStorage:FindFirstChild("Stats" .. player.Name)
+	inventory_value = stats_folder:FindFirstChild("Inventory"):FindFirstChild("Inventory")
 end)
 
 -- ============================================================================
@@ -49,7 +50,6 @@ ToggleBtn.Text = "START IMPEL DOWN"
 ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 ToggleBtn.Font = Enum.Font.GothamBold
 Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 4)
-
 
 -- ============================================================================
 -- 2. ORIGINAL VARIABLES & HELPERS
@@ -137,7 +137,7 @@ local snapToPosition = function(targetPosition)
 end
 
 local fakeGeppo = function()
-	if stats_folder and stats_folder.Skills:FindFirstChild("skyWalk") and stats_folder.Skills:FindFirstChild("skyWalk").Value == true then
+	if stats_folder and stats_folder.Skills:FindFirstChild("skyWalk") and stats_folder.Skills.sky_walk.Value == true then
 		game:GetService("ReplicatedStorage"):WaitForChild("Events"):WaitForChild("Skill"):InvokeServer("Sky Walk2", { char = game.Players.LocalPlayer.Character, cf = CFrame.new(-3065.980712890625, 200.7225799560547, -11824.01171875, 0, 1, -0.0, 0, -0.0, -1, -1, 0, -0.0) })
 	else
 		game:GetService("ReplicatedStorage"):WaitForChild("Events"):WaitForChild("Skill"):InvokeServer("Geppo", { char = game.Players.LocalPlayer.Character, cf = CFrame.new(-3065.980712890625, 200.7225799560547, -11824.01171875, 0, 1, -0.0, 0, -0.0, -1, -1, 0, -0.0) })
