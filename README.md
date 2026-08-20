@@ -386,31 +386,6 @@ local function CreateSection(page, titleText)
     return section
 end
 
-local function CreateLabel(section, text)
-    itemOrderCounter = itemOrderCounter + 1
-    local frame = Instance.new("Frame", section)
-    frame.LayoutOrder = itemOrderCounter
-    frame.Size = UDim2.new(0.92, 0, 0, 30)
-    frame.BackgroundTransparency = 1
-    
-    local lbl = Instance.new("TextLabel", frame)
-    lbl.Size = UDim2.new(1, 0, 1, 0)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = text
-    lbl.TextColor3 = Theme.SubText
-    lbl.Font = Enum.Font.GothamMedium
-    lbl.TextSize = 11
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.TextWrapped = true
-    
-    lbl:GetPropertyChangedSignal("TextBounds"):Connect(function()
-        if lbl.TextBounds.Y > 30 then
-            frame.Size = UDim2.new(0.92, 0, 0, lbl.TextBounds.Y + 10)
-        end
-    end)
-    return lbl
-end
-
 local function CreateToggle(section, text, descText, defaultState, callback)
     if type(descText) == "boolean" then callback = defaultState; defaultState = descText; descText = nil end
     itemOrderCounter = itemOrderCounter + 1
@@ -718,7 +693,7 @@ local RyuConfig = {
     -- Alt Farm (OP METHOD)
     AltFarmEnabled = false,
     AltMethod = "Teleport",
-    AltTweenSpeed = 100,
+    AltTweenSpeed = 500,
     AltRole = "None",
     AltMainName = "",
     GroupRejoin = false,
@@ -1634,7 +1609,7 @@ end)
 --// ==========================================
 --// ALT FARM (OP CASHER METHOD)
 --// ==========================================
-local AltPlatformPos = Vector3.new(9999, 800, 9999)
+local AltPlatformPos = Vector3.new(9999, -300, 9999) -- Tief unter der Map platziert
 
 local function GetAltPlatform()
     local plat = workspace:FindFirstChild("RyuAltPlatform")
@@ -1675,6 +1650,7 @@ RunService.Heartbeat:Connect(function(dt)
             local hpPercent = hum.Health / hum.MaxHealth
             
             if hpPercent <= 0.35 then
+                -- Disable collision to fall and die quickly
                 plat.CanCollide = false
             else
                 plat.CanCollide = true
@@ -1687,8 +1663,33 @@ RunService.Heartbeat:Connect(function(dt)
             end
         elseif RyuConfig.AltRole == "Main" then
             plat.CanCollide = true
-            shouldMove = true
-            targetCFrame = CFrame.new(AltPlatformPos + Vector3.new(0, 5, 0))
+            if (root.Position - AltPlatformPos).Magnitude > 10 then
+                shouldMove = true
+                targetCFrame = CFrame.new(AltPlatformPos + Vector3.new(0, 5, 0))
+            else
+                shouldMove = false
+                if hum.PlatformStand then hum.PlatformStand = false end
+                
+                -- Smart LookOn to closest Casher
+                local closestCasher, closestDist = nil, math.huge
+                for _, p in pairs(Players:GetPlayers()) do
+                    if p ~= LocalPlayer and p.Character then
+                        local eRoot = getHRP(p.Character)
+                        local eHum = p.Character:FindFirstChildOfClass("Humanoid")
+                        if eRoot and eHum and eHum.Health > 0 then
+                            local dist = (eRoot.Position - root.Position).Magnitude
+                            if dist < 50 and dist < closestDist then
+                                closestCasher = eRoot
+                                closestDist = dist
+                            end
+                        end
+                    end
+                end
+                
+                if closestCasher then
+                    root.CFrame = CFrame.lookAt(root.Position, Vector3.new(closestCasher.Position.X, root.Position.Y, closestCasher.Position.Z))
+                end
+            end
         end
 
         if shouldMove and targetCFrame then
@@ -1710,7 +1711,9 @@ RunService.Heartbeat:Connect(function(dt)
                 end
             end
         else
-            if hum.PlatformStand then hum.PlatformStand = false end
+            if RyuConfig.AltRole == "Casher" and hum.PlatformStand then 
+                hum.PlatformStand = false 
+            end
         end
     end
 end)
@@ -1761,9 +1764,9 @@ end)
 --// AUTO BLOCK LOGIC (HYBRID VFX & STRICT ANIMATION)
 --// ==========================================
 local VFXNames = {
-    "CombatTrail","LapseBlue","HandTrail","Shock","BallFire","Reserve","Doors",
+    "LapseBlue","BallFire","Reserve","Doors",
     "TwoFold","Rabbit","Spawn","DivineAttack","Throw","FocusStrike",
-    "DrillImpact","Barrage","Mucus","MucusFire","DismantleFly","HitGlow"
+    "DrillImpact","Barrage","Mucus","MucusFire","DismantleFly"
 }
 local VFXMap = {}
 for _,n in ipairs(VFXNames) do VFXMap[n] = true end
@@ -1796,22 +1799,18 @@ RunService.Heartbeat:Connect(function()
         local root = char and char:FindFirstChild("HumanoidRootPart")
         if not root then return end
         
-        -- DON'T BLOCK IF WE ARE ALREADY BLOCKING OR ATTACKING
+        -- DON'T BLOCK IF WE ARE ALREADY BLOCKING
         local infoFolder = char:FindFirstChild("Info")
         local isAlreadyBlocking = infoFolder and infoFolder:FindFirstChild("Block")
         if isAlreadyBlocking then return end
         
         local incomingAttack = false
         
-        -- 1. VFX Scanner (Ignores self attacks & hitboxes < 3.5 studs away)
+        -- 1. VFX Scanner (Strict distance > 5 to absolutely ignore own projectiles/hits)
         for _, prt in ipairs(ActiveVFXParts) do
             if prt.Parent then
                 local d = (root.Position - prt.Position).Magnitude
-                if prt.Name == "CombatTrail" and d <= 3.5 then
-                    continue
-                end
-                
-                if d >= 3.5 and d <= RyuConfig.BlockRange then
+                if d >= 5 and d <= RyuConfig.BlockRange then
                     incomingAttack = true
                     break
                 end
@@ -2065,7 +2064,7 @@ local SubMFarm = CreateSubTab(TabFarm, "Money Farm")
 local SecMFarm = CreateSection(SubMFarm, "Alt Money Farm")
 CreateToggle(SecMFarm, "Enable Alt Farm", false, function(state) RyuConfig.AltFarmEnabled = state end)
 CreateDropdown(SecMFarm, "Travel Method", {"Teleport", "Tween"}, "Teleport", function(state) RyuConfig.AltMethod = state end)
-CreateSlider(SecMFarm, "Tween Speed", 50, 200, 100, function(val) RyuConfig.AltTweenSpeed = val end)
+CreateSlider(SecMFarm, "Tween Speed", 50, 3000, 500, function(val) RyuConfig.AltTweenSpeed = val end)
 CreateDropdown(SecMFarm, "Role", {"None", "Main", "Casher"}, "None", function(state) RyuConfig.AltRole = state end)
 CreateInput(SecMFarm, "Main Username", function(text) RyuConfig.AltMainName = text end)
 
