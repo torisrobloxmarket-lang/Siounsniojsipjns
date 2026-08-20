@@ -476,6 +476,13 @@ local function CreateSlider(section, text, min, max, default, callback)
         if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             local relative = math.clamp((input.Position.X - sliderBg.AbsolutePosition.X) / sliderBg.AbsoluteSize.X, 0, 1)
             local value = math.floor(min + (max - min) * relative)
+            
+            -- Rounding support for sub-integers if max <= 2
+            if max <= 2 then
+                local rawValue = min + (max - min) * relative
+                value = math.floor(rawValue * 100) / 100
+            end
+            
             valLabel.Text = tostring(value)
             sliderFill.Size = UDim2.new(relative, 0, 1, 0)
             if callback then pcall(function() callback(value) end) end
@@ -592,20 +599,26 @@ local function CreateKeybind(section, text, defaultKey, callback)
     end)
 end
 
+
 --// ==========================================
---// RAZORBILL COMBAT LOGIC STATE[cite: 1]
+--// RAZORBILL LOGIC INTEGRATION[cite: 1]
 --// ==========================================
 local RyuConfig = {
-    -- Auto BF & Chain
-    AutoBFChain = false,
-    BFChainKey = Enum.KeyCode.E,
-    BFActionKey = Enum.KeyCode.R,
     AutoBFYuji = false,
     AutoBFMahito = false,
+    AutoBFChain = false,
+    BFActionKey = Enum.KeyCode.R,
     
-    -- Target Lock[cite: 1]
+    DashDistance = 15,
+    FireDelay = 0.25,
+    DashDuration = 0.35,
+    LockTime = 0.1,
+    DashCameraLock = true,
+    DashEasingStyle = "Cubic",
+    DashEasingDirection = "Out",
+    
     LockEnabled = false,
-    LockMethod = "Camera", -- Camera / Body
+    LockMethod = "Camera",
     LockTargetMode = "Closest",
     LockTargetPart = "HumanoidRootPart",
     LockMaxDistance = 500,
@@ -614,11 +627,9 @@ local RyuConfig = {
     LockSideOffset = 1.75,
     LockWallCheck = false,
     
-    -- Dash Assist Arc Settings[cite: 1]
-    DashDistance = 15,
-    FireDelay = 0.25,
-    DashDuration = 0.35,
-    DashCameraLock = true,
+    AutoBlock = false,
+    BlockRange = 15,
+    BlockDuration = 500,
 }
 
 local Logic = {
@@ -644,17 +655,159 @@ local Logic = {
         Speed = 350,
         CurrentTween = nil,
     },
+    TargetRemote = nil,
 }
 
-local DashAnimLeft = Instance.new("Animation")
-DashAnimLeft.AnimationId = "rbxassetid://75203303352791"
-local DashAnimRight = Instance.new("Animation")
-DashAnimRight.AnimationId = "rbxassetid://117223862448096"
+local KnownMovementAnims = {
+    ["120133391090244"] = true, ["138196552148011"] = true, 
+    ["96489184596023"] = true, ["117941450906936"] = true, ["77705898607209"] = true, 
+    ["140491244934559"] = true, ["134343219970072"] = true, ["126572575938378"] = true, 
+    ["93938476274140"] = true, ["137199497329581"] = true, ["77992084875736"] = true, 
+    ["135750035707554"] = true, ["85570635517461"] = true, ["85012092465916"] = true, 
+    ["72509133503569"] = true, ["119619096808750"] = true, ["98616794135588"] = true, 
+    ["97238189166310"] = true, ["125812953913280"] = true, ["77801551230831"] = true, 
+    ["114113678077830"] = true, 
+}
 
-local isMobilePlayer = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+local isMobilePlayer = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
+
+-- Remote Intercept Hook[cite: 1]
+task.spawn(function()
+    Logic.TargetRemote = ReplicatedStorage:WaitForChild("Knit")
+        :WaitForChild("Knit")
+        :WaitForChild("Services")
+        :WaitForChild("DivergentFistService")
+        :WaitForChild("RE")
+        :WaitForChild("Activated")
+end)
+
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+    local method = getnamecallmethod()
+
+    if not checkcaller() and method == "FireServer" then
+        if (self == Logic.TargetRemote or self.Name == "Activated") and RyuConfig.AutoBFChain then
+            Logic.LastFiredTick = tick()
+        end
+        
+        -- Basic Auto BF Logic
+        if not RyuConfig.AutoBFChain then
+            if RyuConfig.AutoBFYuji and self.Name == "Activated" and self.Parent and self.Parent.Parent and self.Parent.Parent.Name == "DivergentFistService" then
+                if not _G.YujiBFDebounce then
+                    _G.YujiBFDebounce = true
+                    local args = {...}
+                    task.delay(0.6, function()
+                        pcall(function() self:FireServer(unpack(args)) end)
+                        task.wait(0.1)
+                        _G.YujiBFDebounce = false
+                    end)
+                end
+            elseif RyuConfig.AutoBFMahito and self.Name == "Activated" and self.Parent and self.Parent.Parent and self.Parent.Parent.Name == "FocusStrikeService" then
+                if not _G.MahitoBFDebounce then
+                    _G.MahitoBFDebounce = true
+                    local args = {...}
+                    task.delay(0.6, function()
+                        pcall(function() self:FireServer(unpack(args)) end)
+                        task.wait(0.1)
+                        _G.MahitoBFDebounce = false
+                    end)
+                end
+            end
+        end
+    end
+
+    return oldNamecall(self, ...)
+end)
+
 
 --// ==========================================
---// TARGET LOCK LOGIC (RAZORBILL EXTRACTED)[cite: 1]
+--// MOBILE GUI[cite: 1]
+--// ==========================================
+local ChainMobileGui = Instance.new("ScreenGui")
+ChainMobileGui.Name = "RyuChainMobileGui"
+ChainMobileGui.ResetOnSpawn = false
+ChainMobileGui.Parent = guiParent
+
+local BTN_SIZE = 62
+local mobileBtnLocked = false
+local mobileBtnDragging = false
+local mobileBtnDragOff = Vector2.new(0, 0)
+
+local dashBtn = Instance.new("TextButton")
+dashBtn.Name = "DashButton"
+dashBtn.Size = UDim2.new(0, BTN_SIZE, 0, BTN_SIZE)
+dashBtn.Position = UDim2.new(1, -(BTN_SIZE + 20), 1, -(BTN_SIZE * 3 + 20))
+dashBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
+dashBtn.BackgroundTransparency = 0.25
+dashBtn.Text = ""
+dashBtn.BorderSizePixel = 0
+dashBtn.Visible = false
+dashBtn.ZIndex = 10
+dashBtn.ClipsDescendants = false
+dashBtn.Parent = ChainMobileGui
+Instance.new("UICorner", dashBtn).CornerRadius = UDim.new(1, 0)
+
+local dashStroke = Instance.new("UIStroke", dashBtn)
+dashStroke.Color = Color3.fromRGB(90, 90, 90)
+dashStroke.Thickness = 2
+
+local dashIcon = Instance.new("TextLabel")
+dashIcon.Size = UDim2.new(0, 36, 0, 36)
+dashIcon.Position = UDim2.new(0.5, -18, 0.5, -22)
+dashIcon.BackgroundTransparency = 1
+dashIcon.Text = "✦"
+dashIcon.TextColor3 = Color3.fromRGB(220, 220, 220)
+dashIcon.TextSize = 22
+dashIcon.Font = Enum.Font.GothamBold
+dashIcon.TextXAlignment = Enum.TextXAlignment.Center
+dashIcon.TextYAlignment = Enum.TextYAlignment.Center
+dashIcon.ZIndex = 11
+dashIcon.Parent = dashBtn
+
+local dashLabel = Instance.new("TextLabel")
+dashLabel.Size = UDim2.new(1, 0, 0, 13)
+dashLabel.Position = UDim2.new(0, 0, 1, -16)
+dashLabel.BackgroundTransparency = 1
+dashLabel.Text = "DASH"
+dashLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+dashLabel.TextSize = 9
+dashLabel.Font = Enum.Font.Gotham
+dashLabel.TextXAlignment = Enum.TextXAlignment.Center
+dashLabel.ZIndex = 11
+dashLabel.Parent = dashBtn
+
+local lockDot = Instance.new("Frame")
+lockDot.Size = UDim2.new(0, 10, 0, 10)
+lockDot.Position = UDim2.new(1, -3, 0, -3)
+lockDot.BackgroundColor3 = Color3.fromRGB(65, 65, 65)
+lockDot.BorderSizePixel = 0
+lockDot.ZIndex = 12
+lockDot.Parent = dashBtn
+Instance.new("UICorner", lockDot).CornerRadius = UDim.new(1, 0)
+
+dashBtn.MouseButton1Down:Connect(function()
+    if not mobileBtnLocked then
+        mobileBtnDragging = true
+        local abs = dashBtn.AbsolutePosition
+        local mpos = UserInputService:GetMouseLocation()
+        mobileBtnDragOff = Vector2.new(mpos.X - abs.X, mpos.Y - abs.Y)
+    end
+end)
+dashBtn.MouseButton1Up:Connect(function() mobileBtnDragging = false end)
+UserInputService.InputChanged:Connect(function(input)
+    if not mobileBtnDragging or mobileBtnLocked then return end
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        local pos = input.Position
+        local ss = ChainMobileGui.AbsoluteSize
+        local nx = math.clamp(pos.X - mobileBtnDragOff.X, 0, ss.X - BTN_SIZE)
+        local ny = math.clamp(pos.Y - mobileBtnDragOff.Y, 0, ss.Y - BTN_SIZE)
+        dashBtn.Position = UDim2.new(0, nx, 0, ny)
+    end
+end)
+
+
+--// ==========================================
+--// RAZORBILL TARGET LOCK[cite: 1]
 --// ==========================================
 local function getHRP(character)
     return character and (character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso"))
@@ -792,7 +945,6 @@ RunService:BindToRenderStep("RazorbillTargetLockExtracted", Enum.RenderPriority.
             camera.CFrame = camera.CFrame:Lerp(desiredCF, alpha)
         end
     else
-        -- BODY GYRO LOCK[cite: 1]
         if Logic.LockState.CameraLocked then
             camera.CameraType = Enum.CameraType.Custom
             camera.CameraSubject = hum
@@ -815,161 +967,10 @@ end)
 
 
 --// ==========================================
---// BLACK FLASH / OFFENSIVE LOGIC[cite: 1]
+--// BLACK FLASH CHAIN LOGIC (RAZORBILL EXTRACTED)[cite: 1]
 --// ==========================================
-local function fireActivatedRemote()
-    pcall(function()
-        local char = LocalPlayer.Character
-        if not char then return end
-        local moveset = char:FindFirstChild("Moveset")
-        if not moveset then return end
-        
-        local move = moveset:FindFirstChild("Divergent Fist") or moveset:FindFirstChild("Focus Strike")
-        if move then
-            local re = ReplicatedStorage.Knit.Knit.Services.DivergentFistService.RE.Activated
-            if re then re:FireServer(move) end
-        end
-    end)
-end
-
-local function triggerBlackFlash()
-    if isMobilePlayer then
-        fireActivatedRemote()
-    else
-        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game)
-        task.wait()
-        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game)
-    end
-end
-
--- Auto Black Flash Hook
-local function setupCharacterBF(character)
-    local humanoid = character:WaitForChild("Humanoid", 5)
-    if not humanoid then return end
-    local animator = humanoid:WaitForChild("Animator", 5)
-    if not animator then return end
-    
-    animator.AnimationPlayed:Connect(function(track)
-        local animId = track.Animation and track.Animation.AnimationId or ""
-        
-        -- Side Dash Assist Hook[cite: 1]
-        if animId:match("75203303352791") then
-            -- Optional side dash logic hook
-        elseif animId:match("117223862448096") then
-            -- Optional side dash logic hook
-        end
-
-        if not (RyuConfig.AutoBFYuji or RyuConfig.AutoBFMahito or RyuConfig.AutoBFChain) then return end
-        local idMatch = string.match(animId, "%d+")
-        
-        if idMatch and Logic.TargetAnimations[idMatch] then
-            if (tick() - Logic.LastFiredTick) <= Logic.TIME_WINDOW then
-                Logic.LastFiredTick = 0
-                local target = getClosestTarget(RyuConfig.DashDistance)
-                if target and RyuConfig.AutoBFChain then
-                    -- handled below
-                else
-                    task.delay(RyuConfig.FireDelay, triggerBlackFlash)
-                end
-            end
-        end
-    end)
-end
-
-if LocalPlayer.Character then setupCharacterBF(LocalPlayer.Character) end
-LocalPlayer.CharacterAdded:Connect(function(char)
-    task.wait(0.3)
-    setupCharacterBF(char)
-end)
-
-
---// ==========================================
---// BLACK FLASH CHAIN LOGIC (CURVE GLIDE & MOBILE UI)[cite: 1]
---// ==========================================
-local ChainMobileGui = Instance.new("ScreenGui")
-ChainMobileGui.Name = "RyuChainMobileGui"
-ChainMobileGui.ResetOnSpawn = false
-ChainMobileGui.Parent = guiParent
-
-local BTN_SIZE = 62
-local mobileBtnLocked = false
-local mobileBtnDragging = false
-local mobileBtnDragOff = Vector2.new(0, 0)
-
-local dashBtn = Instance.new("TextButton")
-dashBtn.Name = "DashButton"
-dashBtn.Size = UDim2.new(0, BTN_SIZE, 0, BTN_SIZE)
-dashBtn.Position = UDim2.new(1, -(BTN_SIZE + 20), 1, -(BTN_SIZE * 3 + 20))
-dashBtn.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
-dashBtn.BackgroundTransparency = 0.25
-dashBtn.Text = ""
-dashBtn.BorderSizePixel = 0
-dashBtn.Visible = false
-dashBtn.ZIndex = 10
-dashBtn.ClipsDescendants = false
-dashBtn.Parent = ChainMobileGui
-Instance.new("UICorner", dashBtn).CornerRadius = UDim.new(1, 0)
-
-local dashStroke = Instance.new("UIStroke", dashBtn)
-dashStroke.Color = Color3.fromRGB(90, 90, 90)
-dashStroke.Thickness = 2
-
-local dashIcon = Instance.new("TextLabel")
-dashIcon.Size = UDim2.new(0, 36, 0, 36)
-dashIcon.Position = UDim2.new(0.5, -18, 0.5, -22)
-dashIcon.BackgroundTransparency = 1
-dashIcon.Text = "✦"
-dashIcon.TextColor3 = Color3.fromRGB(220, 220, 220)
-dashIcon.TextSize = 22
-dashIcon.Font = Enum.Font.GothamBold
-dashIcon.TextXAlignment = Enum.TextXAlignment.Center
-dashIcon.TextYAlignment = Enum.TextYAlignment.Center
-dashIcon.ZIndex = 11
-dashIcon.Parent = dashBtn
-
-local dashLabel = Instance.new("TextLabel")
-dashLabel.Size = UDim2.new(1, 0, 0, 13)
-dashLabel.Position = UDim2.new(0, 0, 1, -16)
-dashLabel.BackgroundTransparency = 1
-dashLabel.Text = "DASH"
-dashLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
-dashLabel.TextSize = 9
-dashLabel.Font = Enum.Font.Gotham
-dashLabel.TextXAlignment = Enum.TextXAlignment.Center
-dashLabel.ZIndex = 11
-dashLabel.Parent = dashBtn
-
-local lockDot = Instance.new("Frame")
-lockDot.Size = UDim2.new(0, 10, 0, 10)
-lockDot.Position = UDim2.new(1, -3, 0, -3)
-lockDot.BackgroundColor3 = Color3.fromRGB(65, 65, 65)
-lockDot.BorderSizePixel = 0
-lockDot.ZIndex = 12
-lockDot.Parent = dashBtn
-Instance.new("UICorner", lockDot).CornerRadius = UDim.new(1, 0)
-
-dashBtn.MouseButton1Down:Connect(function()
-    if not mobileBtnLocked then
-        mobileBtnDragging = true
-        local abs = dashBtn.AbsolutePosition
-        local mpos = UserInputService:GetMouseLocation()
-        mobileBtnDragOff = Vector2.new(mpos.X - abs.X, mpos.Y - abs.Y)
-    end
-end)
-dashBtn.MouseButton1Up:Connect(function() mobileBtnDragging = false end)
-UserInputService.InputChanged:Connect(function(input)
-    if not mobileBtnDragging or mobileBtnLocked then return end
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        local pos = input.Position
-        local ss = ChainMobileGui.AbsoluteSize
-        local nx = math.clamp(pos.X - mobileBtnDragOff.X, 0, ss.X - BTN_SIZE)
-        local ny = math.clamp(pos.Y - mobileBtnDragOff.Y, 0, ss.Y - BTN_SIZE)
-        dashBtn.Position = UDim2.new(0, nx, 0, ny)
-    end
-end)
-
-local function getClosestTarget(maxDist)
-    local char = Player.Character
+local function getClosestTargetDash(maxDist)
+    local char = LocalPlayer.Character
     local root = getHRP(char)
     if not root then return nil end
 
@@ -993,18 +994,43 @@ local function getClosestTarget(maxDist)
             end
         end
     end
+
     return closest
 end
 
--- Bezier Curve Glide Dash[cite: 1]
+local function autoFireDivergentFist()
+    local character = LocalPlayer.Character
+    if character and character:FindFirstChild("Moveset") then
+        local divergentFistMove = character.Moveset:FindFirstChild("Divergent Fist")
+        if divergentFistMove and Logic.TargetRemote then
+            Logic.TargetRemote:FireServer(divergentFistMove, nil)
+        else
+            local focusStrikeMove = character.Moveset:FindFirstChild("Focus Strike")
+            if focusStrikeMove then
+                pcall(function()
+                    ReplicatedStorage.Knit.Knit.Services.FocusStrikeService.RE.Activated:FireServer(focusStrikeMove, nil)
+                end)
+            end
+        end
+    end
+end
+
 local function performDashLogic(target)
+    local MAX_DASH_DISTANCE = RyuConfig.DashDistance
+    local FIRE_DELAY = RyuConfig.FireDelay
+    local DASH_DURATION = RyuConfig.DashDuration
+    local POST_DASH_LOCK_TIME = RyuConfig.LockTime
+
+    local easingStyleEnum = Enum.EasingStyle[RyuConfig.DashEasingStyle] or Enum.EasingStyle.Cubic
+    local easingDirectionEnum = Enum.EasingDirection[RyuConfig.DashEasingDirection] or Enum.EasingDirection.Out
+
     local char = LocalPlayer.Character
-    local root = getHRP(char)
-    local humanoid = char and char:FindFirstChildOfClass("Humanoid")
-    local enemyRoot = getHRP(target)
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char and char:FindFirstChild("Humanoid")
+    local enemyRoot = target:FindFirstChild("HumanoidRootPart")
 
     if not root or not enemyRoot then
-        task.delay(RyuConfig.FireDelay, triggerBlackFlash)
+        task.delay(FIRE_DELAY, autoFireDivergentFist)
         return
     end
 
@@ -1035,7 +1061,11 @@ local function performDashLogic(target)
 
         local direction = endPos - startPos
         local perp = Vector3.new(-direction.Z, 0, direction.X)
-        if perp.Magnitude > 0.001 then perp = perp.Unit else perp = Vector3.new(1, 0, 0) end
+        if perp.Magnitude > 0.001 then
+            perp = perp.Unit
+        else
+            perp = Vector3.new(1, 0, 0)
+        end
 
         local midPos = (startPos + endPos) / 2
         local cp1 = midPos + (perp * archWidth)
@@ -1061,23 +1091,24 @@ local function performDashLogic(target)
 
         if not hasFired then
             hasFired = true
-            triggerBlackFlash()
+            autoFireDivergentFist()
         end
     end
 
     dashConn = RunService.Heartbeat:Connect(function()
         if not root or not root.Parent then return finalizeMovement(nil) end
+
         local elapsed = tick() - startTime
 
-        if elapsed >= RyuConfig.FireDelay and not hasFired then
+        if elapsed >= FIRE_DELAY and not hasFired then
             hasFired = true
-            triggerBlackFlash()
+            autoFireDivergentFist()
         end
 
         local currentPos = startPos
         if isDash then
-            local alpha = math.clamp(elapsed / RyuConfig.DashDuration, 0, 1)
-            local easedAlpha = TweenService:GetValue(alpha, Enum.EasingStyle.Cubic, Enum.EasingDirection.Out)
+            local alpha = math.clamp(elapsed / DASH_DURATION, 0, 1)
+            local easedAlpha = TweenService:GetValue(alpha, easingStyleEnum, easingDirectionEnum)
 
             if dashType == "Straight" then
                 currentPos = startPos:Lerp(endPos, easedAlpha)
@@ -1090,38 +1121,77 @@ local function performDashLogic(target)
 
         if RyuConfig.DashCameraLock then
             local cam = workspace.CurrentCamera
-            if cam then cam.CFrame = CFrame.lookAt(cam.CFrame.Position, initialEnemyPos) end
+            if cam then
+                cam.CFrame = CFrame.lookAt(cam.CFrame.Position, initialEnemyPos)
+            end
         end
 
-        local totalWaitTime = isDash and (RyuConfig.DashDuration + 0.1) or (RyuConfig.FireDelay + 0.1)
+        local totalWaitTime = isDash and (DASH_DURATION + POST_DASH_LOCK_TIME) or (FIRE_DELAY + POST_DASH_LOCK_TIME)
+
         if elapsed >= totalWaitTime then
             finalizeMovement(CFrame.lookAt(currentPos, initialEnemyPos))
         end
     end)
 end
 
-dashBtn.MouseButton1Click:Connect(function()
-    if not RyuConfig.AutoBFChain then return end
-    local target = getClosestTarget(RyuConfig.DashDistance)
-    if target then
-        performDashLogic(target)
-    else
-        task.delay(RyuConfig.FireDelay, triggerBlackFlash)
+local function onAnimationPlayed(animTrack)
+    local animId = animTrack.Animation and animTrack.Animation.AnimationId or ""
+
+    if RyuConfig.AutoBFChain then
+        local idMatch = string.match(animId, "%d+")
+        if idMatch and Logic.TargetAnimations[idMatch] then
+            if (tick() - Logic.LastFiredTick) <= Logic.TIME_WINDOW then
+                Logic.LastFiredTick = 0
+
+                local closestTarget = getClosestTargetDash(RyuConfig.DashDistance)
+                if closestTarget then
+                    performDashLogic(closestTarget)
+                else
+                    task.delay(RyuConfig.FireDelay, autoFireDivergentFist)
+                end
+            end
+        end
     end
-end)
+end
+
+local function setupCharacter(character)
+    local humanoid = character:WaitForChild("Humanoid", 10)
+    if humanoid then
+        local animator = humanoid:WaitForChild("Animator", 10)
+        if animator then
+            animator.AnimationPlayed:Connect(onAnimationPlayed)
+        end
+    end
+end
+
+if LocalPlayer.Character then task.spawn(setupCharacter, LocalPlayer.Character) end
+LocalPlayer.CharacterAdded:Connect(setupCharacter)
+
+local function TriggerBFAttackCombo()
+    if not RyuConfig.AutoBFChain then return end
+    
+    -- Auto firing forces the animation, which gets caught by the hook to trigger performDashLogic
+    if isMobilePlayer then
+        autoFireDivergentFist()
+    else
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Three, false, game)
+        task.wait()
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Three, false, game)
+    end
+end
+
+dashBtn.MouseButton1Click:Connect(TriggerBFAttackCombo)
 
 UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
     if input.KeyCode == RyuConfig.BFActionKey then
-        if RyuConfig.AutoBFChain then
-            local target = getClosestTarget(RyuConfig.DashDistance)
-            if target then performDashLogic(target) else task.delay(RyuConfig.FireDelay, triggerBlackFlash) end
-        end
+        if RyuConfig.AutoBFChain then TriggerBFAttackCombo() end
     end
 end)
 
+
 --// ==========================================
---// TWEEN & PATHFINDING TELEPORTS[cite: 1]
+--// PATHFINDING TELEPORTS (RAZORBILL EXTRACTED)[cite: 1]
 --// ==========================================
 local TeleportLocations = {
     ["Under the Map"]      = Vector3.new(-20.23, -61.53, -146.34),
@@ -1283,6 +1353,58 @@ end
 
 
 --// ==========================================
+--// AUTO BLOCK LOGIC
+--// ==========================================
+RunService.Heartbeat:Connect(function()
+    if RyuConfig.AutoBlock then
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        
+        local incomingAttack = false
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                local eRoot = p.Character.HumanoidRootPart
+                local dist = (eRoot.Position - root.Position).Magnitude
+                if dist <= RyuConfig.BlockRange then
+                    local eHum = p.Character:FindFirstChildOfClass("Humanoid")
+                    if eHum then
+                        local animator = eHum:FindFirstChildOfClass("Animator")
+                        if animator then
+                            pcall(function()
+                                for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+                                    local isAttack = false
+                                    if track.Animation and track.Animation.AnimationId then
+                                        local animId = track.Animation.AnimationId:match("%d+")
+                                        if not (animId and KnownMovementAnims[animId]) then
+                                            local name = string.lower(track.Name)
+                                            if string.find(name, "punch") or string.find(name, "attack") or string.find(name, "strike") or string.find(name, "m1") then
+                                                isAttack = true
+                                            elseif track.Priority == Enum.AnimationPriority.Action or track.Priority == Enum.AnimationPriority.Action2 or track.Priority == Enum.AnimationPriority.Action3 or track.Priority == Enum.AnimationPriority.Action4 then
+                                                isAttack = true
+                                            end
+                                        end
+                                    end
+                                    if isAttack then incomingAttack = true break end
+                                end
+                            end)
+                        end
+                    end
+                end
+            end
+            if incomingAttack then break end
+        end
+        
+        if incomingAttack then
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
+            task.wait(RyuConfig.BlockDuration / 1000)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
+        end
+    end
+end)
+
+
+--// ==========================================
 --// MOVEMENT LOGIC (NO MOMENTUM, INSTANT)
 --// ==========================================
 local MovementState = {
@@ -1392,6 +1514,8 @@ CreateToggle(SecPlayer, "Noclip", false, function(state) MovementState.Noclip = 
 local SubAuto = CreateSubTab(TabCombat, "Auto")
 local SecAutoDef = CreateSection(SubAuto, "Defensive")
 CreateToggle(SecAutoDef, "Auto Block", false, function(state) RyuConfig.AutoBlock = state end)
+CreateSlider(SecAutoDef, "Block React Range", 5, 50, 15, function(val) RyuConfig.BlockRange = val end)
+CreateSlider(SecAutoDef, "Block Hold Duration (ms)", 100, 1500, 500, function(val) RyuConfig.BlockDuration = val end)
 
 local SecAutoOff = CreateSection(SubAuto, "Offensive")
 CreateToggle(SecAutoOff, "Auto Black Flash (Yuji)", false, function(state) RyuConfig.AutoBFYuji = state end)
@@ -1423,6 +1547,9 @@ CreateSlider(SecBFChain, "Max Dash Distance", 5, 50, 15, function(val) RyuConfig
 CreateSlider(SecBFChain, "Dash Duration (s)", 10, 100, 35, function(val) RyuConfig.DashDuration = val/100 end)
 CreateSlider(SecBFChain, "Combo Fire Delay (s)", 10, 100, 25, function(val) RyuConfig.FireDelay = val/100 end)
 CreateToggle(SecBFChain, "Camera Lock During Dash", true, function(state) RyuConfig.DashCameraLock = state end)
+CreateDropdown(SecBFChain, "Dash Easing Style", {"Linear", "Sine", "Quad", "Cubic", "Quart", "Quint", "Expo", "Circ", "Elastic", "Back", "Bounce"}, "Cubic", function(val) RyuConfig.DashEasingStyle = val end)
+CreateDropdown(SecBFChain, "Dash Easing Direction", {"In", "Out", "InOut"}, "Out", function(val) RyuConfig.DashEasingDirection = val end)
+
 
 local SubLock = CreateSubTab(TabCombat, "Target Lock")
 local SecLock = CreateSection(SubLock, "Lock Settings")
@@ -1437,7 +1564,7 @@ CreateSlider(SecLock, "Prediction", 0, 100, 0, function(val) RyuConfig.LockPredi
 CreateToggle(SecLock, "Wall Check", false, function(state) RyuConfig.LockWallCheck = state end)
 
 
--- TAB 2: TELEPORTS
+-- TAB 2: TELEPORTS (RAZORBILL PATHFINDING)
 local TabTeleports = CreateMainTab("Teleports")
 local SubTeleport = CreateSubTab(TabTeleports, "Travel")
 local SecTeleport = CreateSection(SubTeleport, "Destination Travel")
