@@ -1,6 +1,6 @@
 --// ==========================================
 --// RYU HUB - UI OVERLAY (TJS EDITION)
---// RAZORBILL COMBAT ENGINE INTEGRATION
+--// RAZORBILL COMBAT ENGINE + HYBRID AUTO BLOCK
 --// ==========================================
 
 local CoreGui = game:GetService("CoreGui")
@@ -136,7 +136,7 @@ DragText.Text = "DISCORD.GG/RYUHUB"
 DragText.Font = Enum.Font.GothamBlack
 DragText.TextSize = 50
 DragText.TextColor3 = Theme.Text
-DragText.TextTransparency = 1 -- Starts invisible, tweens on drag
+DragText.TextTransparency = 1 
 DragText.ZIndex = 0
 
 ToggleBtn.MouseButton1Click:Connect(function()
@@ -700,7 +700,7 @@ local RyuConfig = {
     LockSideOffset = 1.75,
     LockWallCheck = false,
     
-    -- Auto Block (SMART FACING)
+    -- Auto Block (HYBRID)
     AutoBlock = false,
     BlockRange = 15,
     BlockDuration = 500,
@@ -754,22 +754,40 @@ DashAnimLeft.AnimationId = "rbxassetid://75203303352791"
 local DashAnimRight = Instance.new("Animation")
 DashAnimRight.AnimationId = "rbxassetid://117223862448096"
 
-local KnownMovementAnims = {
-    ["120133391090244"] = true, ["138196552148011"] = true, 
-    ["96489184596023"] = true, ["117941450906936"] = true, ["77705898607209"] = true, 
-    ["140491244934559"] = true, ["134343219970072"] = true, ["126572575938378"] = true, 
-    ["93938476274140"] = true, ["137199497329581"] = true, ["77992084875736"] = true, 
-    ["135750035707554"] = true, ["85570635517461"] = true, ["85012092465916"] = true, 
-    ["72509133503569"] = true, ["119619096808750"] = true, ["98616794135588"] = true, 
-    ["97238189166310"] = true, ["125812953913280"] = true, ["77801551230831"] = true, 
-    ["114113678077830"] = true, 
-}
-
-local StraightAnimations = {
-    ["123171106092050"] = true,
-}
-
 local isMobilePlayer = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
+
+--// ==========================================
+--// VFX SCANNER FOR HYBRID AUTO BLOCK
+--// ==========================================
+local VFXNames = {
+    "CombatTrail","LapseBlue","HandTrail","Shock","BallFire","Reserve","Doors",
+    "TwoFold","Rabbit","Spawn","DivineAttack","Throw","FocusStrike",
+    "DrillImpact","Barrage","Mucus","MucusFire","DismantleFly","HitGlow"
+}
+local VFXMap = {}
+for _,n in ipairs(VFXNames) do VFXMap[n] = true end
+local ActiveVFXParts = {}
+
+Workspace.DescendantAdded:Connect(function(obj)
+    if obj:IsA("BasePart") and VFXMap[obj.Name] then
+        table.insert(ActiveVFXParts, obj)
+    end
+end)
+Workspace.DescendantRemoving:Connect(function(obj)
+    if obj:IsA("BasePart") and VFXMap[obj.Name] then
+        for i = #ActiveVFXParts, 1, -1 do
+            if ActiveVFXParts[i] == obj then
+                table.remove(ActiveVFXParts, i)
+                return
+            end
+        end
+    end
+end)
+for _,o in ipairs(Workspace:GetDescendants()) do
+    if o:IsA("BasePart") and VFXMap[o.Name] then
+        table.insert(ActiveVFXParts, o)
+    end
+end
 
 -- Fetch Remote for Hooking
 task.spawn(function()
@@ -1731,8 +1749,38 @@ task.spawn(function()
 end)
 
 --// ==========================================
---// AUTO BLOCK LOGIC (STRICT FACING)
+--// AUTO BLOCK LOGIC (HYBRID VFX & STRICT ANIMATION)
 --// ==========================================
+local VFXNames = {
+    "CombatTrail","LapseBlue","HandTrail","Shock","BallFire","Reserve","Doors",
+    "TwoFold","Rabbit","Spawn","DivineAttack","Throw","FocusStrike",
+    "DrillImpact","Barrage","Mucus","MucusFire","DismantleFly","HitGlow"
+}
+local VFXMap = {}
+for _,n in ipairs(VFXNames) do VFXMap[n] = true end
+local ActiveVFXParts = {}
+
+Workspace.DescendantAdded:Connect(function(obj)
+    if obj:IsA("BasePart") and VFXMap[obj.Name] then
+        table.insert(ActiveVFXParts, obj)
+    end
+end)
+Workspace.DescendantRemoving:Connect(function(obj)
+    if obj:IsA("BasePart") and VFXMap[obj.Name] then
+        for i = #ActiveVFXParts, 1, -1 do
+            if ActiveVFXParts[i] == obj then
+                table.remove(ActiveVFXParts, i)
+                return
+            end
+        end
+    end
+end)
+for _,o in ipairs(Workspace:GetDescendants()) do
+    if o:IsA("BasePart") and VFXMap[o.Name] then
+        table.insert(ActiveVFXParts, o)
+    end
+end
+
 RunService.Heartbeat:Connect(function()
     if RyuConfig.AutoBlock then
         local char = LocalPlayer.Character
@@ -1745,43 +1793,56 @@ RunService.Heartbeat:Connect(function()
         if isAlreadyBlocking then return end
         
         local incomingAttack = false
-        for _, p in pairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                local eRoot = p.Character.HumanoidRootPart
-                local dist = (eRoot.Position - root.Position).Magnitude
-                if dist <= RyuConfig.BlockRange then
-                    
-                    local toPlayer = (root.Position - eRoot.Position).Unit
-                    local lookDir = eRoot.CFrame.LookVector
-                    
-                    if lookDir:Dot(toPlayer) > 0.65 then
-                        local eHum = p.Character:FindFirstChildOfClass("Humanoid")
-                        if eHum then
-                            local animator = eHum:FindFirstChildOfClass("Animator")
-                            if animator then
-                                pcall(function()
-                                    for _, track in pairs(animator:GetPlayingAnimationTracks()) do
-                                        local isAttack = false
-                                        if track.Animation and track.Animation.AnimationId then
-                                            local animId = track.Animation.AnimationId:match("%d+")
-                                            if not (animId and KnownMovementAnims[animId]) then
+        
+        -- 1. VFX Scanner
+        for _, prt in ipairs(ActiveVFXParts) do
+            if prt.Parent then
+                local d = (root.Position - prt.Position).Magnitude
+                if d > 2.5 and d <= RyuConfig.BlockRange then
+                    incomingAttack = true
+                    break
+                end
+            end
+        end
+        
+        -- 2. Animation Scanner (Only M1/Punch/Strike/Attack/Combat/Melee)
+        if not incomingAttack then
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                    local eRoot = p.Character.HumanoidRootPart
+                    local dist = (eRoot.Position - root.Position).Magnitude
+                    if dist <= RyuConfig.BlockRange then
+                        
+                        local toPlayer = (root.Position - eRoot.Position).Unit
+                        local lookDir = eRoot.CFrame.LookVector
+                        
+                        if lookDir:Dot(toPlayer) > 0.65 then
+                            local eHum = p.Character:FindFirstChildOfClass("Humanoid")
+                            if eHum then
+                                local animator = eHum:FindFirstChildOfClass("Animator")
+                                if animator then
+                                    pcall(function()
+                                        for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+                                            local isAttack = false
+                                            if track.Animation and track.Animation.AnimationId then
                                                 local name = string.lower(track.Name)
                                                 if string.find(name, "punch") or string.find(name, "attack") or string.find(name, "strike") or string.find(name, "m1") or string.find(name, "combat") or string.find(name, "melee") then
                                                     isAttack = true
                                                 end
                                             end
+                                            if isAttack then incomingAttack = true break end
                                         end
-                                        if isAttack then incomingAttack = true break end
-                                    end
-                                end)
+                                    end)
+                                end
                             end
                         end
                     end
                 end
+                if incomingAttack then break end
             end
-            if incomingAttack then break end
         end
         
+        -- Fire Block Remotes
         if incomingAttack then
             pcall(function()
                 ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("BlockService"):WaitForChild("RE"):WaitForChild("Activated"):FireServer()
@@ -1916,9 +1977,7 @@ local SecBFChain = CreateSection(SubAuto, "Blackflash Chain")
 CreateToggle(SecBFChain, "Enable Black Flash Chain", false, function(state) 
     RyuConfig.BlackFlashEnabled = state 
     if state then
-        if isMobilePlayer then
-            dashBtn.Visible = true
-        end
+        if isMobilePlayer then dashBtn.Visible = true end
     else
         dashBtn.Visible = false
     end
