@@ -369,6 +369,31 @@ local function CreateSection(page, titleText)
     return section
 end
 
+local function CreateLabel(section, text)
+    itemOrderCounter = itemOrderCounter + 1
+    local frame = Instance.new("Frame", section)
+    frame.LayoutOrder = itemOrderCounter
+    frame.Size = UDim2.new(0.92, 0, 0, 30)
+    frame.BackgroundTransparency = 1
+    
+    local lbl = Instance.new("TextLabel", frame)
+    lbl.Size = UDim2.new(1, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = text
+    lbl.TextColor3 = Theme.SubText
+    lbl.Font = Enum.Font.GothamMedium
+    lbl.TextSize = 11
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.TextWrapped = true
+    
+    lbl:GetPropertyChangedSignal("TextBounds"):Connect(function()
+        if lbl.TextBounds.Y > 30 then
+            frame.Size = UDim2.new(0.92, 0, 0, lbl.TextBounds.Y + 10)
+        end
+    end)
+    return lbl
+end
+
 local function CreateToggle(section, text, descText, defaultState, callback)
     if type(descText) == "boolean" then callback = defaultState; defaultState = descText; descText = nil end
     itemOrderCounter = itemOrderCounter + 1
@@ -1073,6 +1098,7 @@ local function onAnimationPlayed(animTrack)
         if RyuConfig.BlackFlashEnabled then
             if (tick() - Logic.LastFiredTick) <= Logic.TIME_WINDOW then
                 Logic.LastFiredTick = 0
+
                 local closestTarget = getClosestTarget(RyuConfig.DashDistance)
                 if closestTarget then
                     performDashLogic(closestTarget)
@@ -1452,9 +1478,13 @@ RunService.Heartbeat:Connect(function()
         end
         
         if incomingAttack then
-            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.F, false, game)
+            pcall(function()
+                ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("BlockService"):WaitForChild("RE"):WaitForChild("Activated"):FireServer()
+            end)
             task.wait(RyuConfig.BlockDuration / 1000)
-            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.F, false, game)
+            pcall(function()
+                ReplicatedStorage:WaitForChild("Knit"):WaitForChild("Knit"):WaitForChild("Services"):WaitForChild("BlockService"):WaitForChild("RE"):WaitForChild("Deactivated"):FireServer()
+            end)
         end
     end
 end)
@@ -1578,14 +1608,31 @@ CreateToggle(SecAutoOff, "Auto Black Flash (Yuji)", false, function(state) RyuCo
 CreateToggle(SecAutoOff, "Auto Black Flash (Mahito)", false, function(state) RyuConfig.AutoBFMahito = state end)
 
 local SecBFChain = CreateSection(SubAuto, "Blackflash Chain")
-CreateToggle(SecBFChain, "Enable Black Flash Chain", false, function(state) RyuConfig.BlackFlashEnabled = state end)
-CreateToggle(SecBFChain, "Camera Lock During Dash", true, function(state) RyuConfig.DashCameraLock = state end)
+CreateToggle(SecBFChain, "Enable Black Flash Chain", false, function(state) 
+    RyuConfig.BlackFlashEnabled = state 
+    if state then
+        if isMobilePlayer then
+            dashBtn.Visible = true
+        end
+    else
+        dashBtn.Visible = false
+    end
+end)
+CreateToggle(SecBFChain, "Lock Mobile Dash Button", false, function(state) 
+    mobileBtnLocked = state 
+    if state then
+        lockDot.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
+        dashStroke.Color = Color3.fromRGB(255, 200, 50)
+    else
+        lockDot.BackgroundColor3 = Color3.fromRGB(65, 65, 65)
+        dashStroke.Color = Color3.fromRGB(90, 90, 90)
+    end
+end)
+CreateKeybind(SecBFChain, "Action Keybind (Dash+BF)", Enum.KeyCode.R, function(key) RyuConfig.BFActionKey = key end)
 CreateSlider(SecBFChain, "Max Dash Distance", 5, 50, 15, function(val) RyuConfig.DashDistance = val end)
-CreateSlider(SecBFChain, "Combo Fire Delay (s)", 10, 100, 25, function(val) RyuConfig.FireDelay = val/100 end)
 CreateSlider(SecBFChain, "Dash Duration (s)", 10, 100, 35, function(val) RyuConfig.DashDuration = val/100 end)
-CreateSlider(SecBFChain, "post Dash Lock Time", 0, 50, 10, function(val) RyuConfig.LockTime = val/100 end)
-CreateDropdown(SecBFChain, "Dash Easing Style", {"Linear", "Sine", "Quad", "Cubic", "Quart", "Quint", "Expo", "Circ", "Elastic", "Back", "Bounce"}, "Cubic", function(val) RyuConfig.DashEasingStyle = val end)
-CreateDropdown(SecBFChain, "Dash Easing Direction", {"In", "Out", "InOut"}, "Out", function(val) RyuConfig.DashEasingDirection = val end)
+CreateSlider(SecBFChain, "Combo Fire Delay (s)", 10, 100, 25, function(val) RyuConfig.FireDelay = val/100 end)
+CreateToggle(SecBFChain, "Camera Lock During Dash", true, function(state) RyuConfig.DashCameraLock = state end)
 
 local SubDash = CreateSubTab(TabCombat, "Side Dash Assist")
 local SecDash = CreateSection(SubDash, "Side Dash Settings")
