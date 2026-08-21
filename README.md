@@ -1,4 +1,173 @@
 -- ============================================================================
+--  GpoDiamond - NUR Insel-Tweens + Fortbewegung
+--
+--  Abgespeckte Version des Hauptscripts. Alles wurde entfernt bis auf:
+--    * die Insel-Ziele (Islands-Tabelle, 25 Inseln)
+--    * die Insel-Tweens (Antippen einer Insel -> Hinfliegen)
+--    * das komplette Fortbewegungs-/Tween-System (TweenSystem-Modul)
+--    * Spawn-TP (Spawnpunkt auf eine Insel setzen)
+--    * die zwei kleinen Anticheat-Schutz-Stuecke (Adonis-Entfernung +
+--      ScriptContext.Error-Hook), damit das Tweenen nicht auffaellt
+--
+--  Bedienung:
+--    * Mini-GUI: Insel antippen = hinfliegen, STOP bricht ab
+--    * Chat: .tp <name>  .spawn <name>  .stop  .speed <zahl>  .inseln
+--    * Konsole: getgenv().tpInsel("Coco Island"), getgenv().stopTp()
+-- ============================================================================
+
+-- [1] BOOTSTRAP ---------------------------------------------------------------
+
+if getgenv().insel_tp_loaded then
+	warn("script already loaded")
+	return
+end
+getgenv().insel_tp_loaded = true
+repeat
+	task.wait()
+until game:IsLoaded()
+
+-- Luraph-Makros als Fallback definieren (Executor ohne Luraph)
+if not LPH_JIT then LPH_JIT = function(f) return f end end
+if not LPH_JIT_MAX then LPH_JIT_MAX = function(f) return f end end
+if not LPH_JIT_ULTRA then LPH_JIT_ULTRA = function(f) return f end end
+if not LPH_NO_VIRTUALIZE then LPH_NO_VIRTUALIZE = function(f) return f end end
+if not LPH_NO_UPVALUES then LPH_NO_UPVALUES = function(f) return f end end
+
+-- [2] ANTICHEAT - ADONIS REMOVAL ----------------------------------------------
+
+removeAdonisAnticheat = function()
+	pcall(function()
+		for _, descendant in ipairs(game:GetDescendants()) do
+			if descendant.Name:lower():match("adonis") or descendant.Name == "__FUNCTION" or descendant.Name:match("ClientMover") then
+				descendant:Destroy()
+			end
+		end
+	end)
+	pcall(function()
+		for _, nilInstance in ipairs(getnilinstances()) do
+			if nilInstance:IsA("RemoteEvent") or nilInstance:IsA("RemoteFunction") or nilInstance.Name:match("ClientMover") or nilInstance.Name == "__FUNCTION" then
+				nilInstance:Destroy()
+			end
+		end
+	end)
+	pcall(function()
+		local originalFireServer = nil
+		originalFireServer = hookfunction(Instance.new("RemoteEvent").FireServer, LPH_NO_VIRTUALIZE(function(remote, ...)
+			local args = { ... }
+			if typeof(args[1]) == "table" and args[1].Mode == "Get" then
+				return
+			end
+			return originalFireServer(remote, ...)
+		end))
+	end)
+	return true
+end
+removeAdonisAnticheat()
+
+-- [3] ANTICHEAT BYPASS (ScriptContext.Error-Hook, nicht-blockierend) ----------
+
+task.spawn(pcall, function()
+	if game.PlaceId ~= 1730877806 then
+		local replicatedFirst = game:GetService("ReplicatedFirst")
+		repeat
+			task.wait()
+		until replicatedFirst:FindFirstChild("paul greyrat")
+		repeat
+			task.wait()
+		until #replicatedFirst["paul greyrat"]:GetChildren() < 1
+		task.wait()
+		pcall(function()
+			if run_on_actor then
+				run_on_actor(replicatedFirst["paul greyrat"], [[
+					pcall(function()
+						local Context = game:GetService('ScriptContext')
+						for i,v in next, getconnections(Context.Error) do
+							if v.Function and debug.getinfo(v.Function).nups > 1 then
+								hookfunction(v.Function,function() end)
+							end
+						end
+					end)
+				]])
+			end
+		end)
+	end
+end)
+
+-- [4] SERVICES + CHARACTER + EVENTS -------------------------------------------
+
+Players = game:GetService("Players")
+ReplicatedStorage = game:GetService("ReplicatedStorage")
+workspaceService = game:GetService("Workspace")
+RunService = game:GetService("RunService")userInputService = game:GetService("UserInputService")
+player = Players.LocalPlayer
+character = player.Character
+playerCharacter = player.Character
+player.CharacterAdded:Connect(function()
+	repeat
+		task.wait()
+	until player.Character:FindFirstChild("Humanoid")
+	local newCharacter
+	playerCharacter, newCharacter = player.Character, player.Character
+	character = newCharacter
+end)
+task.spawn(pcall, function()
+	stats_folder = ReplicatedStorage:FindFirstChild("Stats" .. player.Name)
+	events = ReplicatedStorage:WaitForChild("Events")
+	questEvent = events:FindFirstChild("Quest")
+	setSpawnEvent = events:FindFirstChild("SetSpawn")
+	knockedOutEvent = events:FindFirstChild("KnockedOut")
+end)
+
+-- [5] INSEL-ZIELE (die Tween-Ziele) -------------------------------------------
+
+Islands = { ["Town of Beginnings"] = CFrame.new(-528, 5, -3423), ["Shell's Town"] = CFrame.new(-1299, 4, -5052), Sandora = CFrame.new(-1545, 4, -3353), ["Orange Town"] = CFrame.new(-4448, 5, -6638), ["Restaurant Baratie"] = CFrame.new(-2964, 6, -6672), ["Logue Town"] = CFrame.new(-6589, 7, -7643), ["Roca Island"] = CFrame.new(1564, 154, -6598), ["Shark Park"] = CFrame.new(-1572, 11, -10082), ["Reverse Mountain"] = CFrame.new(-8030, 17, -8785), ["Sphinx Island"] = CFrame.new(-4006, 41, -9138), ["World Scroll"] = CFrame.new(-7350.17431640625, 4.758918762207031, -14949.48828125), ["Mysterious Cliff"] = CFrame.new(83, 413, -8286), ["Kori Island"] = CFrame.new(-4267, 169, -2974), ["A rock"] = CFrame.new(2539, 5, -8363), ["Coco Island"] = CFrame.new(-3096, 96, -11762), ["Fishman Cave"] = CFrame.new(1838, 4, -12173), ["Fishman Island"] = CFrame.new(7996, -2154, -17075), ["Marine Fort F-1"] = CFrame.new(393, 18, -4467), ["Marine Base G-1"] = CFrame.new(-5979, 57, -11496), Spooksville = CFrame.new(-7427, 26, -793), Colosseum = CFrame.new(-2020, 7, -7675), ["Land of the Sky"] = CFrame.new(3449, 1438, -9094), ["Island Of Zou"] = CFrame.new(-3070, 9, -5258), Transylvania = CFrame.new(-9619, 29, -1875), Hell = CFrame.new(18944, 8122, -12501) }
+islandNames = {}
+for islandName, _ in next, Islands, nil do
+	table.insert(islandNames, islandName)
+end
+table.sort(islandNames)
+
+-- Findet eine Insel nach exaktem, Anfangs- oder Teil-Namen (Gross/Klein egal)
+findeInsel = function(text)
+	if not text or text == "" then
+		return nil
+	end
+	local gesucht = text:lower()
+	for _, name in ipairs(islandNames) do
+		if name:lower() == gesucht then
+			return name
+		end
+	end
+	for _, name in ipairs(islandNames) do
+		if name:lower():sub(1, #gesucht) == gesucht then
+			return name
+		end
+	end
+	for _, name in ipairs(islandNames) do
+		if name:lower():find(gesucht, 1, true) then
+			return name
+		end
+	end
+	return nil
+end
+
+getCurrentIsland = function()
+	local closestIsland = nil
+	local closestDistance = math.huge
+	for _, islandModel in next, workspace.Islands:GetChildren() do
+		local distance = (islandModel:GetPivot().Position - player.Character:GetPivot().Position).Magnitude
+		if distance < closestDistance then
+			closestIsland = islandModel
+			closestDistance = distance
+		end
+	end
+	return closestIsland
+end
+
+-- [6] TWEEN SYSTEM (komplettes Fortbewegungs-Modul) ---------------------------
+
+local TweenSystem = (function()
+-- ============================================================================
 --  TweenSystem.lua
 --  Reworked movement / tween system for the ryuhub Grand Piece Online script.
 --
@@ -625,7 +794,7 @@ function TweenSystem.FlyTo(targetPosition, speed, ascendFirst, useGeppo)
 	if distance > 0 then
 		local duration = distance / flySpeed
 		local elapsed = 0
-		while elapsed < duration do
+		while elapsed < duration and flyToRunning do
 			elapsed = elapsed + RunService.RenderStepped:Wait()
 			local alpha = math.clamp(elapsed / duration, 0, 1)
 			local nextX = startPosition.X + (cruiseTarget.X - startPosition.X) * alpha
@@ -634,9 +803,20 @@ function TweenSystem.FlyTo(targetPosition, speed, ascendFirst, useGeppo)
 			rootPart.CFrame = CFrame.new(nextX, startPosition.Y, nextZ)
 		end
 	end
+	if not flyToRunning then
+		zeroVelocity(rootPart)
+		return
+	end
 	rootPart.CFrame = CFrame.new(targetPosition)
 	zeroVelocity(rootPart)
 	flyToRunning = false
+end
+
+-- Cancels a running FlyTo (stops the cruise loop and the geppo upkeep).
+function TweenSystem.StopFly()
+	if flyToRunning then
+		flyToRunning = false
+	end
 end
 
 -- [TS8] GLIDE ENGINE -----------------------------------------------------------
@@ -1666,3 +1846,375 @@ end
 factoryTween = TweenSystem.ArcTo
 
 return TweenSystem
+
+end)()
+
+-- [7] SPAWN-TP (Spawnpunkt auf eine Insel setzen) -----------------------------
+
+resetTeleportAura = function(targetPosition)
+	if player.Character:FindFirstChildWhichIsA("ForceField", true) then
+		return
+	end
+	player.Character.HumanoidRootPart.CFrame = CFrame.new(targetPosition)
+	local knockoutIteration = math.random(4, 8)
+	for i = 1, 10 do
+		if i == knockoutIteration then
+			knockedOutEvent:FireServer("self")
+		end
+		player.Character.HumanoidRootPart.CFrame = CFrame.new(targetPosition)
+		task.wait(0.05)
+	end
+end
+
+setzeSpawnInsel = function(inselName, inselPosition)
+	if not stats_folder then
+		warn("[Insel-TP] stats_folder nicht gefunden")
+		return false
+	end
+	if stats_folder.Stats.SpawnPoint.Value == inselName then
+		return true
+	end
+	getgenv().spawn_tp_aktiv = true
+	while getgenv().spawn_tp_aktiv and stats_folder.Stats.SpawnPoint.Value ~= inselName do
+		task.wait()
+		resetTeleportAura(inselPosition)
+		repeat
+			task.wait()
+		until player.Character.Humanoid.Health / player.Character.Humanoid.MaxHealth > 0.3 or not getgenv().spawn_tp_aktiv
+		questEvent:InvokeServer({ "npcChat", true })
+		if workspaceService.NPCs:FindFirstChild("Robo") then
+			setSpawnEvent:FireServer(nil, workspaceService.NPCs.Robo)
+		end
+	end
+	getgenv().spawn_tp_aktiv = false
+	return stats_folder.Stats.SpawnPoint.Value == inselName
+end
+
+-- [8] GLOBALE TP-FUNKTIONEN ----------------------------------------------------
+
+inselTpSpeed = 50
+
+tpInsel = function(name)
+	local inselName = findeInsel(name)
+	if not inselName then
+		warn("[Insel-TP] Insel nicht gefunden:", name)
+		return false
+	end
+	task.spawn(function()
+		flyToPosition(Islands[inselName], inselTpSpeed, true)
+	end)
+	return true
+end
+
+stopTp = function()
+	TweenSystem.StopFly()
+	getgenv().spawn_tp_aktiv = false
+end
+
+-- fuer die Executor-Konsole
+getgenv().tpInsel = tpInsel
+getgenv().stopTp = stopTp
+getgenv().setzeSpawnInsel = setzeSpawnInsel
+getgenv().TweenSystem = TweenSystem
+
+-- [9] CHAT-BEFEHLE --------------------------------------------------------------
+--  .tp <name>     -> zur Insel fliegen       .stop  -> Flug/Spawn-TP abbrechen
+--  .spawn <name>  -> Spawnpunkt setzen       .speed <zahl> -> Flug-Speed (1-500)
+--  .inseln        -> alle Insel-Namen in der Konsole auflisten
+
+player.Chatted:Connect(function(nachricht)
+	local befehl, rest = nachricht:match("^(%S+)%s*(.-)$")
+	if not befehl then
+		return
+	end
+	befehl = befehl:lower()
+	if befehl == ".tp" then
+		if tpInsel(rest) then
+			print("[Insel-TP] fliege zu:", findeInsel(rest))
+		end
+	elseif befehl == ".stop" then
+		stopTp()
+	elseif befehl == ".spawn" then
+		local inselName = findeInsel(rest)
+		if inselName then
+			print("[Insel-TP] setze Spawnpunkt:", inselName)
+			task.spawn(setzeSpawnInsel, inselName, Islands[inselName].Position)
+		end
+	elseif befehl == ".speed" then
+		local zahl = tonumber(rest)
+		if zahl then
+			inselTpSpeed = math.clamp(zahl, 1, 500)
+			print("[Insel-TP] Speed:", inselTpSpeed)
+		end
+	elseif befehl == ".inseln" then
+		print("[Insel-TP] Inseln:", table.concat(islandNames, ", "))
+	end
+end)
+
+-- [10] MINI-GUI (mobile-tauglich: Touch, Drag, UIScale) ------------------------
+
+local function sicheresParenting(gui)
+	local quellen = {}
+	if gethui then
+		table.insert(quellen, gethui)
+	end
+	table.insert(quellen, function()
+		return game:GetService("CoreGui")
+	end)
+	table.insert(quellen, function()
+		return player:WaitForChild("PlayerGui")
+	end)
+	for _, quelle in ipairs(quellen) do
+		local ok, ziel = pcall(quelle)
+		if ok and ziel then
+			local okParent = pcall(function()
+				gui.Parent = ziel
+			end)
+			if okParent and gui.Parent then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+local function machDragbar(handle, frame, beiTap)
+	local ziehen = false
+	local gezogen = 0
+	local startPos, frameStart
+	handle.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			ziehen = true
+			gezogen = 0
+			startPos = input.Position
+			frameStart = frame.Position
+		end
+	end)
+	handle.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			ziehen = false
+			if beiTap and gezogen < 10 then
+				beiTap()
+			end
+		end
+	end)
+	userInputService.InputChanged:Connect(function(input)
+		if ziehen and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+			local delta = input.Position - startPos
+			gezogen = math.max(gezogen, delta.Magnitude)
+			frame.Position = UDim2.new(frameStart.X.Scale, frameStart.X.Offset + delta.X, frameStart.Y.Scale, frameStart.Y.Offset + delta.Y)
+		end
+	end)
+end
+
+local guiFarben = {
+	hintergrund = Color3.fromRGB(22, 22, 28),
+	element = Color3.fromRGB(35, 35, 44),
+	akzent = Color3.fromRGB(255, 182, 193),
+	text = Color3.fromRGB(235, 235, 245),
+	textDunkel = Color3.fromRGB(150, 150, 165),
+}
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = tostring(math.random(100000, 999999))
+screenGui.ResetOnSpawn = false
+screenGui.DisplayOrder = 999
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local hauptFrame = Instance.new("Frame")
+hauptFrame.Name = "InselTp"
+hauptFrame.Size = UDim2.new(0, 260, 0, 380)
+hauptFrame.Position = UDim2.new(0.5, -130, 0.3, 0)
+hauptFrame.BackgroundColor3 = guiFarben.hintergrund
+hauptFrame.BorderSizePixel = 0
+hauptFrame.Parent = screenGui
+
+local hauptEcke = Instance.new("UICorner")
+hauptEcke.CornerRadius = UDim.new(0, 10)
+hauptEcke.Parent = hauptFrame
+
+local hauptRahmen = Instance.new("UIStroke")
+hauptRahmen.Color = guiFarben.akzent
+hauptRahmen.Thickness = 1
+hauptRahmen.Transparency = 0.4
+hauptRahmen.Parent = hauptFrame
+
+-- bei kleinen Screens (Handy) automatisch verkleinern
+local kamera = workspaceService.CurrentCamera
+local sicht = kamera and kamera.ViewportSize or Vector2.new(800, 600)
+local uiSkalierung = Instance.new("UIScale")
+uiSkalierung.Scale = math.clamp(math.min(sicht.X / 300, sicht.Y / 430), 0.55, 1)
+uiSkalierung.Parent = hauptFrame
+
+local titel = Instance.new("TextLabel")
+titel.Name = "Titel"
+titel.Size = UDim2.new(1, -16, 0, 30)
+titel.Position = UDim2.new(0, 8, 0, 4)
+titel.BackgroundTransparency = 1
+titel.Text = "Insel TP"
+titel.TextColor3 = guiFarben.akzent
+titel.TextSize = 16
+titel.Font = Enum.Font.GothamBold
+titel.TextXAlignment = Enum.TextXAlignment.Left
+titel.Active = true
+titel.Parent = hauptFrame
+
+local schliessenButton = Instance.new("TextButton")
+schliessenButton.Size = UDim2.new(0, 26, 0, 26)
+schliessenButton.Position = UDim2.new(1, -30, 0, 4)
+schliessenButton.BackgroundColor3 = guiFarben.element
+schliessenButton.Text = "X"
+schliessenButton.TextColor3 = guiFarben.text
+schliessenButton.TextSize = 14
+schliessenButton.Font = Enum.Font.GothamBold
+schliessenButton.Parent = hauptFrame
+local schliessenEcke = Instance.new("UICorner")
+schliessenEcke.CornerRadius = UDim.new(0, 6)
+schliessenEcke.Parent = schliessenButton
+
+-- Zeile: Modus-Umschalter + Speed-Box + Stop
+inselTpModus = "TP"
+
+local modusButton = Instance.new("TextButton")
+modusButton.Size = UDim2.new(0, 92, 0, 26)
+modusButton.Position = UDim2.new(0, 8, 0, 38)
+modusButton.BackgroundColor3 = guiFarben.element
+modusButton.Text = "Modus: TP"
+modusButton.TextColor3 = guiFarben.text
+modusButton.TextSize = 12
+modusButton.Font = Enum.Font.Gotham
+modusButton.Parent = hauptFrame
+local modusEcke = Instance.new("UICorner")
+modusEcke.CornerRadius = UDim.new(0, 6)
+modusEcke.Parent = modusButton
+
+modusButton.Activated:Connect(function()
+	inselTpModus = (inselTpModus == "TP") and "Spawn" or "TP"
+	modusButton.Text = "Modus: " .. inselTpModus
+end)
+
+local speedBox = Instance.new("TextBox")
+speedBox.Size = UDim2.new(0, 64, 0, 26)
+speedBox.Position = UDim2.new(0, 106, 0, 38)
+speedBox.BackgroundColor3 = guiFarben.element
+speedBox.Text = tostring(inselTpSpeed)
+speedBox.PlaceholderText = "Speed"
+speedBox.TextColor3 = guiFarben.text
+speedBox.TextSize = 12
+speedBox.Font = Enum.Font.Gotham
+speedBox.ClearTextOnFocus = false
+speedBox.Parent = hauptFrame
+local speedEcke = Instance.new("UICorner")
+speedEcke.CornerRadius = UDim.new(0, 6)
+speedEcke.Parent = speedBox
+
+speedBox.FocusLost:Connect(function()
+	local zahl = tonumber(speedBox.Text)
+	if zahl then
+		inselTpSpeed = math.clamp(zahl, 1, 500)
+	end
+	speedBox.Text = tostring(inselTpSpeed)
+end)
+
+local stopButton = Instance.new("TextButton")
+stopButton.Size = UDim2.new(0, 66, 0, 26)
+stopButton.Position = UDim2.new(1, -74, 0, 38)
+stopButton.BackgroundColor3 = Color3.fromRGB(120, 40, 50)
+stopButton.Text = "STOP"
+stopButton.TextColor3 = guiFarben.text
+stopButton.TextSize = 12
+stopButton.Font = Enum.Font.GothamBold
+stopButton.Parent = hauptFrame
+local stopEcke = Instance.new("UICorner")
+stopEcke.CornerRadius = UDim.new(0, 6)
+stopEcke.Parent = stopButton
+
+stopButton.Activated:Connect(function()
+	stopTp()
+end)
+
+-- Insel-Liste
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1, -16, 1, -78)
+scroll.Position = UDim2.new(0, 8, 0, 72)
+scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 4
+scroll.ScrollBarImageColor3 = guiFarben.akzent
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.Parent = hauptFrame
+
+local listenLayout = Instance.new("UIListLayout")
+listenLayout.Padding = UDim.new(0, 4)
+listenLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listenLayout.Parent = scroll
+
+local listenPolster = Instance.new("UIPadding")
+listenPolster.PaddingTop = UDim.new(0, 2)
+listenPolster.PaddingBottom = UDim.new(0, 6)
+listenPolster.Parent = scroll
+
+local letzteInselButton = nil
+for reihenfolge, inselName in ipairs(islandNames) do
+	local inselButton = Instance.new("TextButton")
+	inselButton.Size = UDim2.new(1, -8, 0, 32)
+	inselButton.BackgroundColor3 = guiFarben.element
+	inselButton.Text = inselName
+	inselButton.TextColor3 = guiFarben.text
+	inselButton.TextSize = 13
+	inselButton.Font = Enum.Font.Gotham
+	inselButton.LayoutOrder = reihenfolge
+	inselButton.Parent = scroll
+	local inselEcke = Instance.new("UICorner")
+	inselEcke.CornerRadius = UDim.new(0, 6)
+	inselEcke.Parent = inselButton
+
+	inselButton.Activated:Connect(function()
+		if letzteInselButton then
+			letzteInselButton.BackgroundColor3 = guiFarben.element
+		end
+		letzteInselButton = inselButton
+		inselButton.BackgroundColor3 = Color3.fromRGB(70, 50, 60)
+		if inselTpModus == "Spawn" then
+			task.spawn(setzeSpawnInsel, inselName, Islands[inselName].Position)
+		else
+			tpInsel(inselName)
+		end
+	end)
+end
+
+machDragbar(titel, hauptFrame)
+
+-- schwebender Button: oeffnet/schließt das Fenster (auch per Touch ziehbar)
+local schwebButton = Instance.new("TextButton")
+schwebButton.Size = UDim2.new(0, 44, 0, 44)
+schwebButton.Position = UDim2.new(0, 16, 0.5, 0)
+schwebButton.BackgroundColor3 = guiFarben.hintergrund
+schwebButton.Text = "Y"
+schwebButton.TextColor3 = guiFarben.akzent
+schwebButton.TextSize = 20
+schwebButton.Font = Enum.Font.GothamBold
+schwebButton.Visible = false
+schwebButton.Parent = screenGui
+local schwebEcke = Instance.new("UICorner")
+schwebEcke.CornerRadius = UDim.new(1, 0)
+schwebEcke.Parent = schwebButton
+local schwebRahmen = Instance.new("UIStroke")
+schwebRahmen.Color = guiFarben.akzent
+schwebRahmen.Thickness = 1
+schwebRahmen.Parent = schwebButton
+
+schliessenButton.Activated:Connect(function()
+	hauptFrame.Visible = false
+	schwebButton.Visible = true
+end)
+
+machDragbar(schwebButton, schwebButton, function()
+	hauptFrame.Visible = true
+	schwebButton.Visible = false
+end)
+
+sicheresParenting(screenGui)
+
+print("[Insel-TP] geladen - Insel im Fenster antippen oder .tp <name> in den Chat")
