@@ -10,8 +10,10 @@
 --      ScriptContext.Error-Hook), damit das Tweenen nicht auffaellt
 --
 --  Bedienung:
---    * Mini-GUI: Insel antippen = hinfliegen, STOP bricht ab
---    * Chat: .tp <name>  .spawn <name>  .stop  .speed <zahl>  .inseln
+--    * Mini-GUI: Tab "Methoden" = Transport-Art waehlen (30 Stueck),
+--      Tab "Ziele" = Insel antippen -> die gewaehlte Methode fliegt los
+--    * STOP bricht alles ab (Flug, Loops, Schiffs-Verfolger, Pro-Gleiter)
+--    * Chat: .tp <insel>  .m <methode>  .stop  .speed <zahl>  .spawn <insel>
 --    * Konsole: getgenv().tpInsel("Coco Island"), getgenv().stopTp()
 -- ============================================================================
 
@@ -1398,6 +1400,13 @@ tweenTeleportPro = function(target)
 	return status
 end
 
+-- Cancels a running tweenTeleportPro glide (used by the universal stop).
+function TweenSystem.StopPro()
+	if proActiveControl then
+		proActiveControl.cancel = true
+	end
+end
+
 -- -- tweenTeleport (fish kaitun main tween) ------------------------------------
 tweenTeleport = function(targetPosition, unused)
 	if isTeleporting then
@@ -1908,7 +1917,21 @@ end
 
 stopTp = function()
 	TweenSystem.StopFly()
+	TweenSystem.StopShipTween()
+	TweenSystem.StopPro()
 	getgenv().spawn_tp_aktiv = false
+	getgenv().cancel_horo_tp = true
+	hoverAktiv = false
+	orbitAktiv = false
+	pikaAktiv = false
+	hinterSpielerAktiv = false
+	-- Gate-Trick: bricht Kaitun-/Spring-/Juzo-Gleiter ab, Flags danach wieder an
+	getgenv().die = true
+	getgenv().auto_juzo = false
+	task.delay(1, function()
+		getgenv().die = false
+		getgenv().auto_juzo = true
+	end)
 end
 
 -- fuer die Executor-Konsole
@@ -1917,10 +1940,433 @@ getgenv().stopTp = stopTp
 getgenv().setzeSpawnInsel = setzeSpawnInsel
 getgenv().TweenSystem = TweenSystem
 
+-- [8.5] WEITERE TRANSPORT-ARTEN (aus dem Main-Script, standalone testbar) -------
+
+-- Test-Gates: im Main-Script setzen die Farms diese Flags; hier dauerhaft offen,
+-- damit jede Methode einzeln getestet werden kann
+getgenv().tuff2 = true
+getgenv().auto_juzo = true
+getgenv().auto_santa = true
+getgenv().die = false
+
+-- Humanoid/Root-Tracking (fuer Speed-Boost und Infinite Jump)
+aktuellerHumanoid = nil
+aktuellesRoot = nil
+letzterSprung = 0
+local function charakterTeileAktualisieren()
+	local charakter = player.Character
+	aktuellerHumanoid = charakter and charakter:FindFirstChildOfClass("Humanoid")
+	aktuellesRoot = charakter and charakter:FindFirstChild("HumanoidRootPart")
+end
+charakterTeileAktualisieren()
+player.CharacterAdded:Connect(function()
+	task.wait(0.5)
+	charakterTeileAktualisieren()
+end)
+
+inselModell = function(inselName)
+	local ordner = workspaceService:FindFirstChild("Islands")
+	return ordner and ordner:FindFirstChild(inselName)
+end
+
+naechstesNpc = function()
+	local ordner = workspaceService:FindFirstChild("NPCs")
+	if not ordner or not player.Character then
+		return nil
+	end
+	local naechstes, kuerzeste = nil, 500
+	for _, npc in ipairs(ordner:GetChildren()) do
+		local ok, npcPosition = pcall(function()
+			return npc:GetPivot().Position
+		end)
+		if ok and npcPosition then
+			local distanz = (npcPosition - player.Character:GetPivot().Position).Magnitude
+			if distanz < kuerzeste then
+				naechstes, kuerzeste = npc, distanz
+			end
+		end
+	end
+	return naechstes
+end
+
+-- (17) Rifle-Snap-TP: StreamAround + 10x Snap + Selbst-Knockout
+rifleSnapTp = function(targetPosition)
+	if not player.Character then
+		return
+	end
+	pcall(function()
+		player:RequestStreamAroundAsync(targetPosition)
+	end)
+	player.Character.HumanoidRootPart.CFrame = CFrame.new(targetPosition)
+	for i = 1, 10 do
+		player.Character.HumanoidRootPart.CFrame = CFrame.new(targetPosition)
+		task.wait(0.05)
+	end
+	if knockedOutEvent then
+		knockedOutEvent:FireServer("self")
+	end
+end
+
+-- (18) Area-Teleporter-TP: direkter Snap zum Fishman-AreaTeleporter
+areaTeleporterTp = function()
+	local teleporters = workspaceService:FindFirstChild("AreaTeleporters")
+	local teil = teleporters and teleporters:FindFirstChild("FirstSea")
+		and teleporters.FirstSea:FindFirstChild("Fishman")
+		and teleporters.FirstSea.Fishman:FindFirstChild("Part")
+	if teil and player.Character then
+		player.Character.HumanoidRootPart.CFrame = CFrame.new(teil.Position)
+	else
+		warn("[Insel-TP] AreaTeleporter nicht gefunden")
+	end
+end
+
+-- (19) Hinter-Spieler-TP: Loop, snappt hinter den naechsten Spieler (50 Studs)
+hinterSpielerAktiv = false
+naechsterSpieler = function()
+	local naechster, kuerzeste = nil, 50
+	for _, anderer in pairs(Players:GetPlayers()) do
+		if anderer ~= player and anderer.Character and anderer.Character:FindFirstChild("HumanoidRootPart")
+			and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+			local distanz = (player.Character.HumanoidRootPart.Position - anderer.Character.HumanoidRootPart.Position).Magnitude
+			if distanz < kuerzeste then
+				naechster, kuerzeste = anderer, distanz
+			end
+		end
+	end
+	return naechster
+end
+
+-- (20) Hover-TP: schwebt 70 Studs ueber dem Ziel (Baal/Boss-Farm)
+hoverAktiv = false
+starteHover = function(zielPosition)
+	hoverAktiv = true
+	task.spawn(function()
+		while hoverAktiv do
+			local charakter = player.Character
+			local wurzel = charakter and charakter:FindFirstChild("HumanoidRootPart")
+			if wurzel then
+				local offsetX = math.random(-25, 25)
+				local offsetZ = math.random(-25, 25)
+				local schwebePosition = Vector3.new(zielPosition.X + offsetX, zielPosition.Y + 70, zielPosition.Z + offsetZ)
+				wurzel.CFrame = CFrame.new(schwebePosition, zielPosition)
+				wurzel.AssemblyLinearVelocity = Vector3.zero
+			end
+			task.wait(0.5)
+		end
+	end)
+end
+
+-- (21) Orbit-TP: Kreisflug um die Hitbox des naechsten NPCs (Donmingo-Farm)
+orbitAktiv = false
+starteOrbit = function()
+	local modell = naechstesNpc()
+	if not modell then
+		warn("[Insel-TP] kein NPC in der Naehe (500 Studs)")
+		return
+	end
+	print("[Insel-TP] Orbit um:", modell.Name)
+	orbitAktiv = true
+	task.spawn(function()
+		while orbitAktiv and modell.Parent do
+			local charakter = player.Character
+			local wurzel = charakter and charakter:FindFirstChild("HumanoidRootPart")
+			if wurzel then
+				local boundingCFrame, boundingSize = modell:GetBoundingBox()
+				local winkel = os.clock() * 10
+				local radius = math.max(boundingSize.X, boundingSize.Z) / 2 + 5
+				local orbitPosition = boundingCFrame.Position + Vector3.new(math.cos(winkel) * radius, 0, math.sin(winkel) * radius)
+				wurzel.CFrame = CFrame.new(orbitPosition, boundingCFrame.Position)
+				wurzel.AssemblyLinearVelocity = Vector3.zero
+			end
+			task.wait()
+		end
+		orbitAktiv = false
+	end)
+end
+
+-- (22) Pika-Hover: PivotTo-Schweben ueber dem Ziel (Jewels of Light Flug)
+pikaAktiv = false
+startePikaHover = function(zielPosition)
+	pikaAktiv = true
+	task.spawn(function()
+		while pikaAktiv do
+			local charakter = player.Character
+			local wurzel = charakter and charakter:FindFirstChild("HumanoidRootPart")
+			if wurzel then
+				local wurzelPosition = wurzel.Position
+				local horizontalNah = (Vector3.new(wurzelPosition.X, 0, wurzelPosition.Z) - Vector3.new(zielPosition.X, 0, zielPosition.Z)).Magnitude < getMaxSpeed() / 2
+				local schwebePosition
+				if horizontalNah then
+					schwebePosition = zielPosition + Vector3.new(0, 100, 0)
+				else
+					schwebePosition = Vector3.new(wurzelPosition.X, zielPosition.Y + 200, wurzelPosition.Z)
+				end
+				charakter:PivotTo(CFrame.lookAt(schwebePosition, zielPosition))
+			end
+			task.wait(0.05)
+		end
+	end)
+end
+
+-- (23) Speed-Boost: extra Geschwindigkeit beim Laufen (Default 50 wie im Main)
+speedBoostAktiv = false
+speedBoostWert = 50
+RunService.Heartbeat:Connect(function()
+	if not speedBoostAktiv then
+		return
+	end
+	if not aktuellerHumanoid or not aktuellesRoot then
+		return
+	end
+	local bewegung = aktuellerHumanoid.MoveDirection
+	if bewegung.Magnitude > 0 then
+		local aktuelleGeschwindigkeit = aktuellesRoot.AssemblyLinearVelocity
+		local zielGeschwindigkeit = bewegung * (aktuellerHumanoid.WalkSpeed + speedBoostWert)
+		aktuellesRoot.AssemblyLinearVelocity = Vector3.new(zielGeschwindigkeit.X, aktuelleGeschwindigkeit.Y, zielGeschwindigkeit.Z)
+	end
+end)
+
+-- (24) Infinite Jump: endlos springen
+infiniteJumpAktiv = false
+userInputService.JumpRequest:Connect(function()
+	if not infiniteJumpAktiv then
+		return
+	end
+	if tick() - letzterSprung < 0.1 then
+		return
+	end
+	letzterSprung = tick()
+	if aktuellerHumanoid and aktuellesRoot then
+		if aktuellerHumanoid.JumpPower == 0 then
+			aktuellesRoot.CFrame = aktuellesRoot.CFrame + Vector3.new(0, 7, 0)
+			aktuellesRoot.Velocity = Vector3.zero
+		else
+			aktuellesRoot.AssemblyLinearVelocity = Vector3.new(aktuellesRoot.AssemblyLinearVelocity.X, 50, aktuellesRoot.AssemblyLinearVelocity.Z)
+		end
+	end
+end)
+
+-- (25) Anti-Stun: zerstoert Stun-Ordner und fremde Mover (geppo/rolling erlaubt)
+antiStunAktiv = false
+local erlaubteMovers = { "geppo", "rolling" }
+local function antiStunVerbinden(charakter)
+	charakter.DescendantAdded:Connect(function(nachkomme)
+		if not antiStunAktiv then
+			return
+		end
+		task.wait()
+		if nachkomme.Name == "Stun" or nachkomme.Name == "StunFolder" then
+			nachkomme:Destroy()
+		end
+		if nachkomme:IsA("BodyPosition") or nachkomme:IsA("BodyVelocity") and not table.find(erlaubteMovers, nachkomme.Name) then
+			nachkomme:Destroy()
+		end
+	end)
+end
+if player.Character then
+	antiStunVerbinden(player.Character)
+end
+player.CharacterAdded:Connect(antiStunVerbinden)
+
+-- (26) Raid-Snap-TPs: feste Positionen aus den Raid-Farms
+raidSnapBaal = function()
+	if player.Character then
+		player.Character.HumanoidRootPart.CFrame = CFrame.new(18923, 8122, -11909, -0.989, 0, -0.15, 0, 1, 0, 0.15, 0, -0.989)
+	end
+end
+raidSnapDonmingo = function()
+	if player.Character then
+		player.Character.HumanoidRootPart.CFrame = CFrame.new(6673, 21, 11183, 0.175908044, -3.92465793E-08, 0.98440659, -1.45979033E-08, 1, 4.24768274E-08, -0.98440659, -2.1842288E-08, 0.175908044)
+	end
+end
+
+-- (27) Zipline-Exit-TP: 1000 Studs runter + Zipline verlassen (Santa-Farm)
+ziplineExitTp = function()
+	if not player.Character then
+		return
+	end
+	player.Character.HumanoidRootPart.CFrame = CFrame.new(player.Character.HumanoidRootPart.Position - Vector3.new(0, 1000, 0))
+	pcall(function()
+		ReplicatedStorage:WaitForChild("Events"):WaitForChild("ZiplineRemote"):InvokeServer("Exit")
+	end)
+end
+
+-- [8.6] TRANSPORT-METHODEN (Registry fuer GUI + Chat) ----------------------------
+--  art "ziel"     -> braucht eine Insel, laeuft bis zum Ziel (STOP bricht ab)
+--  art "zielloop" -> braucht eine Insel, Dauer-Loop (STOP bricht ab)
+--  art "toggle"   -> kein Ziel, An/Aus per Antippen
+--  art "direkt"   -> kein Ziel, feuert sofort
+
+transportMethoden = {
+	{ name = "Pro-Gleiter", art = "ziel", run = function(pos)
+		tweenTeleportPro({ Target = pos })
+	end },
+	{ name = "Fisch-Gleiter", art = "ziel", run = function(pos)
+		tweenTeleport(pos)
+	end },
+	{ name = "Tuff-Gleiter", art = "ziel", run = function(pos)
+		tweenTeleport2(pos)
+	end },
+	{ name = "Juzo-Gleiter", art = "ziel", run = function(pos)
+		tweenTeleport3(pos)
+	end },
+	{ name = "Lerp-TP", art = "ziel", run = function(pos)
+		tweenTeleportTo(pos)
+	end },
+	{ name = "Lerp-TP 2 (Pika)", art = "ziel", run = function(pos)
+		lerpTweenTo(pos)
+	end },
+	{ name = "Kaitun-Gleiter", art = "ziel", run = function(pos)
+		tweenToPos(pos)
+	end },
+	{ name = "Spring-Gleiter", art = "ziel", run = function(pos)
+		tweenToPos2(pos)
+	end },
+	{ name = "Hochflug-TP", art = "ziel", run = function(pos)
+		flyToPosition(pos, inselTpSpeed, true)
+	end },
+	{ name = "Lauf-TP", art = "ziel", run = function(pos)
+		walkTo(pos)
+	end },
+	{ name = "Bogen-TP", art = "ziel", run = function(pos)
+		CustomTween(pos)
+	end },
+	{ name = "Fabrik-Bogen", art = "ziel", run = function(pos)
+		factoryTween(pos)
+	end },
+	{ name = "Snap-TP", art = "ziel", run = function(pos)
+		snapToPosition(pos)
+	end },
+	{ name = "Abwurf-Flug", art = "ziel", run = function(pos)
+		TweenSystem.FlyDrop(pos, { CruiseY = 25 })
+	end },
+	{ name = "Schiffs-Verfolger", art = "ziel", run = function(pos, inselName)
+		local modell = inselModell(inselName)
+		if modell then
+			getgenv().cframe_track_tween(modell, inselTpSpeed)
+		else
+			warn("[Insel-TP] kein Insel-Modell fuer:", inselName)
+		end
+	end },
+	{ name = "Schiffs-Voraus", art = "ziel", run = function(pos)
+		getgenv().cframe_track_tween_predicted(pos, inselTpSpeed)
+	end },
+	{ name = "Schiffs-Boden", art = "ziel", run = function(pos)
+		getgenv().raycast_track_tween(pos, inselTpSpeed)
+	end },
+	{ name = "Reset-Aura-TP", art = "ziel", run = function(pos)
+		resetTeleportAura(pos)
+	end },
+	{ name = "Rifle-Snap-TP", art = "ziel", run = function(pos)
+		rifleSnapTp(pos)
+	end },
+	{ name = "Hover-TP", art = "zielloop", run = function(pos)
+		starteHover(pos)
+	end },
+	{ name = "Orbit-TP (NPC)", art = "direkt", run = function()
+		starteOrbit()
+	end },
+	{ name = "Pika-Hover", art = "zielloop", run = function(pos)
+		startePikaHover(pos)
+	end },
+	{ name = "Area-Teleporter-TP", art = "direkt", run = function()
+		areaTeleporterTp()
+	end },
+	{ name = "Raid-Snap: Baal", art = "direkt", run = function()
+		raidSnapBaal()
+	end },
+	{ name = "Raid-Snap: Donmingo", art = "direkt", run = function()
+		raidSnapDonmingo()
+	end },
+	{ name = "Zipline-Exit-TP", art = "direkt", run = function()
+		ziplineExitTp()
+	end },
+	{ name = "Hinter-Spieler-TP", art = "toggle", istAn = function()
+		return hinterSpielerAktiv
+	end, umschalten = function()
+		hinterSpielerAktiv = not hinterSpielerAktiv
+		if hinterSpielerAktiv then
+			task.spawn(function()
+				while hinterSpielerAktiv do
+					local ziel = naechsterSpieler()
+					if ziel and ziel.Character and ziel.Character:FindFirstChild("HumanoidRootPart") and player.Character then
+						local zielWurzel = ziel.Character.HumanoidRootPart
+						local hinterPosition = zielWurzel.Position + zielWurzel.CFrame.LookVector * -5
+						player.Character.HumanoidRootPart.CFrame = CFrame.new(hinterPosition, zielWurzel.Position + Vector3.new(0, 3, 0))
+					end
+					task.wait()
+				end
+			end)
+		end
+		return hinterSpielerAktiv
+	end },
+	{ name = "Speed-Boost", art = "toggle", istAn = function()
+		return speedBoostAktiv
+	end, umschalten = function()
+		speedBoostAktiv = not speedBoostAktiv
+		return speedBoostAktiv
+	end },
+	{ name = "Infinite Jump", art = "toggle", istAn = function()
+		return infiniteJumpAktiv
+	end, umschalten = function()
+		infiniteJumpAktiv = not infiniteJumpAktiv
+		return infiniteJumpAktiv
+	end },
+	{ name = "Anti-Stun", art = "toggle", istAn = function()
+		return antiStunAktiv
+	end, umschalten = function()
+		antiStunAktiv = not antiStunAktiv
+		return antiStunAktiv
+	end },
+}
+
+aktiveMethode = "Hochflug-TP"
+
+findeMethode = function(text)
+	if not text or text == "" then
+		return nil
+	end
+	local gesucht = text:lower()
+	for _, methode in ipairs(transportMethoden) do
+		if methode.name:lower() == gesucht then
+			return methode
+		end
+	end
+	for _, methode in ipairs(transportMethoden) do
+		if methode.name:lower():find(gesucht, 1, true) then
+			return methode
+		end
+	end
+	return nil
+end
+
+starteMethodeAufZiel = function(methodenName, inselName)
+	local methode = findeMethode(methodenName)
+	if not methode then
+		warn("[Insel-TP] Methode nicht gefunden:", methodenName)
+		return false
+	end
+	if methode.art == "toggle" then
+		local an = methode.umschalten()
+		print("[Insel-TP]", methode.name, an and "AN" or "AUS")
+		return true
+	end
+	if methode.art == "direkt" then
+		task.spawn(methode.run)
+		return true
+	end
+	local zielPosition = Islands[inselName].Position
+	task.spawn(function()
+		methode.run(zielPosition, inselName)
+	end)
+	return true
+end
+
 -- [9] CHAT-BEFEHLE --------------------------------------------------------------
---  .tp <name>     -> zur Insel fliegen       .stop  -> Flug/Spawn-TP abbrechen
---  .spawn <name>  -> Spawnpunkt setzen       .speed <zahl> -> Flug-Speed (1-500)
---  .inseln        -> alle Insel-Namen in der Konsole auflisten
+--  .tp <insel>    -> mit aktiver Methode zur Insel   .m <methode> -> Methode waehlen
+--  .spawn <insel> -> Spawnpunkt setzen               .stop        -> alles abbrechen
+--  .speed <zahl>  -> Flug-Speed (1-500)              .inseln      -> Inseln auflisten
+--  .methoden      -> alle Transport-Arten auflisten
 
 player.Chatted:Connect(function(nachricht)
 	local befehl, rest = nachricht:match("^(%S+)%s*(.-)$")
@@ -1929,8 +2375,28 @@ player.Chatted:Connect(function(nachricht)
 	end
 	befehl = befehl:lower()
 	if befehl == ".tp" then
-		if tpInsel(rest) then
-			print("[Insel-TP] fliege zu:", findeInsel(rest))
+		local inselName = findeInsel(rest)
+		if inselName then
+			print("[Insel-TP]", aktiveMethode, "->", inselName)
+			starteMethodeAufZiel(aktiveMethode, inselName)
+		else
+			warn("[Insel-TP] Insel nicht gefunden:", rest)
+		end
+	elseif befehl == ".m" or befehl == ".methode" then
+		local methode = findeMethode(rest)
+		if methode then
+			if methode.art == "toggle" then
+				local an = methode.umschalten()
+				print("[Insel-TP]", methode.name, an and "AN" or "AUS")
+			elseif methode.art == "direkt" then
+				print("[Insel-TP] feuere:", methode.name)
+				task.spawn(methode.run)
+			else
+				aktiveMethode = methode.name
+				print("[Insel-TP] aktive Methode:", aktiveMethode)
+			end
+		else
+			warn("[Insel-TP] Methode nicht gefunden:", rest)
 		end
 	elseif befehl == ".stop" then
 		stopTp()
@@ -1948,10 +2414,16 @@ player.Chatted:Connect(function(nachricht)
 		end
 	elseif befehl == ".inseln" then
 		print("[Insel-TP] Inseln:", table.concat(islandNames, ", "))
+	elseif befehl == ".methoden" then
+		local namen = {}
+		for _, methode in ipairs(transportMethoden) do
+			table.insert(namen, methode.name)
+		end
+		print("[Insel-TP] Methoden:", table.concat(namen, ", "))
 	end
 end)
 
--- [10] MINI-GUI (mobile-tauglich: Touch, Drag, UIScale) ------------------------
+-- [10] MINI-GUI (Tabs: Ziele + Methoden, mobile-tauglich) -----------------------
 
 local function sicheresParenting(gui)
 	local quellen = {}
@@ -2010,10 +2482,29 @@ end
 local guiFarben = {
 	hintergrund = Color3.fromRGB(22, 22, 28),
 	element = Color3.fromRGB(35, 35, 44),
+	ausgewaehlt = Color3.fromRGB(70, 50, 60),
 	akzent = Color3.fromRGB(255, 182, 193),
 	text = Color3.fromRGB(235, 235, 245),
 	textDunkel = Color3.fromRGB(150, 150, 165),
 }
+
+local function neuerButton(eltern, groesse, position, text, textGroesse)
+	local button = Instance.new("TextButton")
+	button.Size = groesse
+	button.Position = position
+	button.BackgroundColor3 = guiFarben.element
+	button.Text = text
+	button.TextColor3 = guiFarben.text
+	button.TextSize = textGroesse or 12
+	button.Font = Enum.Font.Gotham
+	button.BorderSizePixel = 0
+	button.AutoButtonColor = true
+	button.Parent = eltern
+	local ecke = Instance.new("UICorner")
+	ecke.CornerRadius = UDim.new(0, 6)
+	ecke.Parent = button
+	return button
+end
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = tostring(math.random(100000, 999999))
@@ -2023,8 +2514,8 @@ screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 local hauptFrame = Instance.new("Frame")
 hauptFrame.Name = "InselTp"
-hauptFrame.Size = UDim2.new(0, 260, 0, 380)
-hauptFrame.Position = UDim2.new(0.5, -130, 0.3, 0)
+hauptFrame.Size = UDim2.new(0, 280, 0, 430)
+hauptFrame.Position = UDim2.new(0.5, -140, 0.25, 0)
 hauptFrame.BackgroundColor3 = guiFarben.hintergrund
 hauptFrame.BorderSizePixel = 0
 hauptFrame.Parent = screenGui
@@ -2043,51 +2534,52 @@ hauptRahmen.Parent = hauptFrame
 local kamera = workspaceService.CurrentCamera
 local sicht = kamera and kamera.ViewportSize or Vector2.new(800, 600)
 local uiSkalierung = Instance.new("UIScale")
-uiSkalierung.Scale = math.clamp(math.min(sicht.X / 300, sicht.Y / 430), 0.55, 1)
+uiSkalierung.Scale = math.clamp(math.min(sicht.X / 320, sicht.Y / 480), 0.5, 1)
 uiSkalierung.Parent = hauptFrame
 
 local titel = Instance.new("TextLabel")
 titel.Name = "Titel"
-titel.Size = UDim2.new(1, -16, 0, 30)
-titel.Position = UDim2.new(0, 8, 0, 4)
+titel.Size = UDim2.new(1, -44, 0, 28)
+titel.Position = UDim2.new(0, 10, 0, 4)
 titel.BackgroundTransparency = 1
-titel.Text = "Insel TP"
+titel.Text = "Insel TP - Transport-Test"
 titel.TextColor3 = guiFarben.akzent
-titel.TextSize = 16
+titel.TextSize = 15
 titel.Font = Enum.Font.GothamBold
 titel.TextXAlignment = Enum.TextXAlignment.Left
 titel.Active = true
 titel.Parent = hauptFrame
 
-local schliessenButton = Instance.new("TextButton")
-schliessenButton.Size = UDim2.new(0, 26, 0, 26)
-schliessenButton.Position = UDim2.new(1, -30, 0, 4)
-schliessenButton.BackgroundColor3 = guiFarben.element
-schliessenButton.Text = "X"
-schliessenButton.TextColor3 = guiFarben.text
-schliessenButton.TextSize = 14
+local schliessenButton = neuerButton(hauptFrame, UDim2.new(0, 26, 0, 26), UDim2.new(1, -32, 0, 5), "X", 14)
 schliessenButton.Font = Enum.Font.GothamBold
-schliessenButton.Parent = hauptFrame
-local schliessenEcke = Instance.new("UICorner")
-schliessenEcke.CornerRadius = UDim.new(0, 6)
-schliessenEcke.Parent = schliessenButton
 
--- Zeile: Modus-Umschalter + Speed-Box + Stop
+-- Tab-Zeile
+local tabZiele = neuerButton(hauptFrame, UDim2.new(0, 126, 0, 26), UDim2.new(0, 8, 0, 36), "Ziele", 13)
+local tabMethoden = neuerButton(hauptFrame, UDim2.new(0, 126, 0, 26), UDim2.new(0, 140, 0, 36), "Methoden", 13)
+
+-- Status-Zeile: aktive Methode + STOP
+local methodeLabel = Instance.new("TextLabel")
+methodeLabel.Size = UDim2.new(1, -90, 0, 22)
+methodeLabel.Position = UDim2.new(0, 10, 0, 68)
+methodeLabel.BackgroundTransparency = 1
+methodeLabel.Text = "Methode: " .. aktiveMethode
+methodeLabel.TextColor3 = guiFarben.textDunkel
+methodeLabel.TextSize = 11
+methodeLabel.Font = Enum.Font.Gotham
+methodeLabel.TextXAlignment = Enum.TextXAlignment.Left
+methodeLabel.TextTruncate = Enum.TextTruncate.AtEnd
+methodeLabel.Parent = hauptFrame
+
+local stopButton = neuerButton(hauptFrame, UDim2.new(0, 66, 0, 24), UDim2.new(1, -74, 0, 66), "STOP", 12)
+stopButton.BackgroundColor3 = Color3.fromRGB(120, 40, 50)
+stopButton.Font = Enum.Font.GothamBold
+stopButton.Activated:Connect(function()
+	stopTp()
+end)
+
+-- Zeile: Modus + Speed
 inselTpModus = "TP"
-
-local modusButton = Instance.new("TextButton")
-modusButton.Size = UDim2.new(0, 92, 0, 26)
-modusButton.Position = UDim2.new(0, 8, 0, 38)
-modusButton.BackgroundColor3 = guiFarben.element
-modusButton.Text = "Modus: TP"
-modusButton.TextColor3 = guiFarben.text
-modusButton.TextSize = 12
-modusButton.Font = Enum.Font.Gotham
-modusButton.Parent = hauptFrame
-local modusEcke = Instance.new("UICorner")
-modusEcke.CornerRadius = UDim.new(0, 6)
-modusEcke.Parent = modusButton
-
+local modusButton = neuerButton(hauptFrame, UDim2.new(0, 100, 0, 26), UDim2.new(0, 8, 0, 96), "Modus: TP", 12)
 modusButton.Activated:Connect(function()
 	inselTpModus = (inselTpModus == "TP") and "Spawn" or "TP"
 	modusButton.Text = "Modus: " .. inselTpModus
@@ -2095,7 +2587,7 @@ end)
 
 local speedBox = Instance.new("TextBox")
 speedBox.Size = UDim2.new(0, 64, 0, 26)
-speedBox.Position = UDim2.new(0, 106, 0, 38)
+speedBox.Position = UDim2.new(0, 116, 0, 96)
 speedBox.BackgroundColor3 = guiFarben.element
 speedBox.Text = tostring(inselTpSpeed)
 speedBox.PlaceholderText = "Speed"
@@ -2103,11 +2595,11 @@ speedBox.TextColor3 = guiFarben.text
 speedBox.TextSize = 12
 speedBox.Font = Enum.Font.Gotham
 speedBox.ClearTextOnFocus = false
+speedBox.BorderSizePixel = 0
 speedBox.Parent = hauptFrame
 local speedEcke = Instance.new("UICorner")
 speedEcke.CornerRadius = UDim.new(0, 6)
 speedEcke.Parent = speedBox
-
 speedBox.FocusLost:Connect(function()
 	local zahl = tonumber(speedBox.Text)
 	if zahl then
@@ -2116,70 +2608,96 @@ speedBox.FocusLost:Connect(function()
 	speedBox.Text = tostring(inselTpSpeed)
 end)
 
-local stopButton = Instance.new("TextButton")
-stopButton.Size = UDim2.new(0, 66, 0, 26)
-stopButton.Position = UDim2.new(1, -74, 0, 38)
-stopButton.BackgroundColor3 = Color3.fromRGB(120, 40, 50)
-stopButton.Text = "STOP"
-stopButton.TextColor3 = guiFarben.text
-stopButton.TextSize = 12
-stopButton.Font = Enum.Font.GothamBold
-stopButton.Parent = hauptFrame
-local stopEcke = Instance.new("UICorner")
-stopEcke.CornerRadius = UDim.new(0, 6)
-stopEcke.Parent = stopButton
+-- Scroll-Listen (Ziele + Methoden)
+local function neueListe(sichtbar)
+	local scroll = Instance.new("ScrollingFrame")
+	scroll.Size = UDim2.new(1, -16, 1, -136)
+	scroll.Position = UDim2.new(0, 8, 0, 128)
+	scroll.BackgroundTransparency = 1
+	scroll.BorderSizePixel = 0
+	scroll.ScrollBarThickness = 4
+	scroll.ScrollBarImageColor3 = guiFarben.akzent
+	scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	scroll.Visible = sichtbar
+	scroll.Parent = hauptFrame
+	local layout = Instance.new("UIListLayout")
+	layout.Padding = UDim.new(0, 4)
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Parent = scroll
+	local polster = Instance.new("UIPadding")
+	polster.PaddingTop = UDim.new(0, 2)
+	polster.PaddingBottom = UDim.new(0, 6)
+	polster.Parent = scroll
+	return scroll
+end
 
-stopButton.Activated:Connect(function()
-	stopTp()
+local zieleScroll = neueListe(true)
+local methodenScroll = neueListe(false)
+
+local function tabZeigen(welches)
+	zieleScroll.Visible = (welches == "ziele")
+	methodenScroll.Visible = (welches == "methoden")
+	tabZiele.BackgroundColor3 = (welches == "ziele") and guiFarben.ausgewaehlt or guiFarben.element
+	tabMethoden.BackgroundColor3 = (welches == "methoden") and guiFarben.ausgewaehlt or guiFarben.element
+end
+tabZiele.Activated:Connect(function()
+	tabZeigen("ziele")
 end)
+tabMethoden.Activated:Connect(function()
+	tabZeigen("methoden")
+end)
+tabZeigen("ziele")
 
--- Insel-Liste
-local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1, -16, 1, -78)
-scroll.Position = UDim2.new(0, 8, 0, 72)
-scroll.BackgroundTransparency = 1
-scroll.BorderSizePixel = 0
-scroll.ScrollBarThickness = 4
-scroll.ScrollBarImageColor3 = guiFarben.akzent
-scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-scroll.Parent = hauptFrame
-
-local listenLayout = Instance.new("UIListLayout")
-listenLayout.Padding = UDim.new(0, 4)
-listenLayout.SortOrder = Enum.SortOrder.LayoutOrder
-listenLayout.Parent = scroll
-
-local listenPolster = Instance.new("UIPadding")
-listenPolster.PaddingTop = UDim.new(0, 2)
-listenPolster.PaddingBottom = UDim.new(0, 6)
-listenPolster.Parent = scroll
-
+-- Ziele-Liste: Insel antippen = aktive Methode darauf ausfuehren
 local letzteInselButton = nil
 for reihenfolge, inselName in ipairs(islandNames) do
-	local inselButton = Instance.new("TextButton")
-	inselButton.Size = UDim2.new(1, -8, 0, 32)
-	inselButton.BackgroundColor3 = guiFarben.element
-	inselButton.Text = inselName
-	inselButton.TextColor3 = guiFarben.text
-	inselButton.TextSize = 13
-	inselButton.Font = Enum.Font.Gotham
+	local inselButton = neuerButton(zieleScroll, UDim2.new(1, -8, 0, 32), UDim2.new(0, 0, 0, 0), inselName, 13)
 	inselButton.LayoutOrder = reihenfolge
-	inselButton.Parent = scroll
-	local inselEcke = Instance.new("UICorner")
-	inselEcke.CornerRadius = UDim.new(0, 6)
-	inselEcke.Parent = inselButton
-
 	inselButton.Activated:Connect(function()
+		if inselTpModus == "Spawn" then
+			task.spawn(setzeSpawnInsel, inselName, Islands[inselName].Position)
+			return
+		end
+		local methode = findeMethode(aktiveMethode)
+		if not methode or (methode.art ~= "ziel" and methode.art ~= "zielloop") then
+			warn("[Insel-TP] aktive Methode braucht kein Ziel:", aktiveMethode)
+			return
+		end
 		if letzteInselButton then
 			letzteInselButton.BackgroundColor3 = guiFarben.element
 		end
 		letzteInselButton = inselButton
-		inselButton.BackgroundColor3 = Color3.fromRGB(70, 50, 60)
-		if inselTpModus == "Spawn" then
-			task.spawn(setzeSpawnInsel, inselName, Islands[inselName].Position)
+		inselButton.BackgroundColor3 = guiFarben.ausgewaehlt
+		starteMethodeAufZiel(aktiveMethode, inselName)
+	end)
+end
+
+-- Methoden-Liste: jede Transport-Art mit eigenem Namen
+local letzterMethodenButton = nil
+for reihenfolge, methode in ipairs(transportMethoden) do
+	local mButton = neuerButton(methodenScroll, UDim2.new(1, -8, 0, 32), UDim2.new(0, 0, 0, 0), methode.name, 13)
+	mButton.LayoutOrder = reihenfolge
+	if methode.name == aktiveMethode then
+		mButton.BackgroundColor3 = guiFarben.ausgewaehlt
+		letzterMethodenButton = mButton
+	end
+	mButton.Activated:Connect(function()
+		if methode.art == "toggle" then
+			local an = methode.umschalten()
+			mButton.Text = methode.name .. (an and "  [AN]" or "  [AUS]")
+			mButton.BackgroundColor3 = an and Color3.fromRGB(45, 70, 50) or guiFarben.element
+		elseif methode.art == "direkt" then
+			task.spawn(methode.run)
 		else
-			tpInsel(inselName)
+			aktiveMethode = methode.name
+			methodeLabel.Text = "Methode: " .. aktiveMethode
+			if letzterMethodenButton then
+				letzterMethodenButton.BackgroundColor3 = guiFarben.element
+			end
+			letzterMethodenButton = mButton
+			mButton.BackgroundColor3 = guiFarben.ausgewaehlt
+			tabZeigen("ziele")
 		end
 	end)
 end
@@ -2196,6 +2714,7 @@ schwebButton.TextColor3 = guiFarben.akzent
 schwebButton.TextSize = 20
 schwebButton.Font = Enum.Font.GothamBold
 schwebButton.Visible = false
+schwebButton.BorderSizePixel = 0
 schwebButton.Parent = screenGui
 local schwebEcke = Instance.new("UICorner")
 schwebEcke.CornerRadius = UDim.new(1, 0)
@@ -2217,4 +2736,4 @@ end)
 
 sicheresParenting(screenGui)
 
-print("[Insel-TP] geladen - Insel im Fenster antippen oder .tp <name> in den Chat")
+print("[Insel-TP] geladen - 30 Transport-Arten im Tab 'Methoden', Ziele im Tab 'Ziele'")
