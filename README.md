@@ -20,8 +20,34 @@
 -- [1] BOOTSTRAP ---------------------------------------------------------------
 
 if getgenv().insel_tp_loaded then
-	warn("script already loaded")
-	return
+	warn("[Insel-TP] alte Instanz aktiv - wird ersetzt und neu gestartet")
+	pcall(function()
+		if getgenv().insel_gui then
+			getgenv().insel_gui:Destroy()
+		end
+	end)
+	-- GUI alter Versionen ueber den Frame-Namen finden und entfernen
+	local suchOrte = {}
+	pcall(function()
+		table.insert(suchOrte, game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"))
+	end)
+	pcall(function()
+		if gethui then
+			table.insert(suchOrte, gethui())
+		end
+	end)
+	pcall(function()
+		table.insert(suchOrte, game:GetService("CoreGui"))
+	end)
+	for _, ort in ipairs(suchOrte) do
+		pcall(function()
+			for _, gui in ipairs(ort:GetChildren()) do
+				if gui:IsA("ScreenGui") and gui:FindFirstChild("InselTp") then
+					gui:Destroy()
+				end
+			end
+		end)
+	end
 end
 getgenv().insel_tp_loaded = true
 repeat
@@ -2529,7 +2555,7 @@ baueGui = function()
 	end
 
 	local screenGui = Instance.new("ScreenGui")
-	screenGui.Name = tostring(math.random(100000, 999999))
+	screenGui.Name = "InselTpGui" 
 	screenGui.ResetOnSpawn = false
 	screenGui.DisplayOrder = 999
 	screenGui.Enabled = true
@@ -2784,6 +2810,7 @@ baueGui = function()
 
 	inselGui = screenGui
 	inselGuiFrame = hauptFrame
+	getgenv().insel_gui = screenGui
 	print("[Insel-TP] GUI gebaut:", #islandNames, "Insel-Buttons,", #transportMethoden, "Methoden-Buttons")
 	return screenGui
 end
