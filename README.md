@@ -10,7 +10,7 @@
 --      ScriptContext.Error-Hook), damit das Tweenen nicht auffaellt
 --
 --  Bedienung:
---    * Mini-GUI: Tab "Methoden" = Transport-Art waehlen (30 Stueck),
+--    * Mini-GUI: Tab "Methoden" = Transport-Art waehlen (31 Stueck),
 --      Tab "Ziele" = Insel antippen -> die gewaehlte Methode fliegt los
 --    * STOP bricht alles ab (Flug, Loops, Schiffs-Verfolger, Pro-Gleiter)
 --    * Chat: .tp <insel>  .m <methode>  .stop  .speed <zahl>  .spawn <insel>
@@ -260,6 +260,8 @@ local Config = {
 	StrikeWait = 5,           -- seconds to wait on TP/Strike notification
 	DashCooldown = 2,         -- seconds between auto ice-dashes
 	MaxRaycastRetries = 50,   -- cap for leaves/non-solid skip loops
+	GroundSpeed = 30,         -- ground tween studs/sec (believable walk speed)
+	ClimbSpeed = 25,          -- ground tween climb studs/sec
 }
 TweenSystem.Config = Config
 
@@ -845,6 +847,147 @@ function TweenSystem.StopFly()
 	if flyToRunning then
 		flyToRunning = false
 	end
+end
+
+-- [TS7.5] GROUND CLIMB ENGINE ----------------------------------------------------
+-- Ground movement for new players: believable walk speed, stays on the ground,
+-- and climbs walls/trees directly when they block the path. No flight, no
+-- remotes - to the server this looks like ordinary walking, so the anticheat
+-- stays quiet. All vertical changes are capped per frame (no teleport look).
+--
+-- options:
+--   Speed             ground studs/sec (default Config.GroundSpeed = 30)
+--   ClimbSpeed        climb studs/sec (default Config.ClimbSpeed = 25)
+--   ArriveDistance    horizontal arrive threshold (default 5)
+--   GroundOffset      HumanoidRootPart height above ground (default 3)
+--   StepUpHeight      ledges up to this height are walked up directly (3.5)
+--   WallCheckDistance forward wall probe length (default 4)
+--   FallSpeed         max studs/sec downward when walking off edges (60)
+--   FaceDirection     rotate into the move direction (default true)
+--   StrikePause       pause on TP/Strike notifications (default true)
+--   Gate / Cancel     same contract as GlideTo
+--   ExcludeExtra      extra instances excluded from raycasts
+-- returns "OK" | "ABORT" | "CANCELLED"
+
+function TweenSystem.GroundTo(targetPosition, options)
+	options = options or {}
+	if typeof(targetPosition) == "CFrame" then
+		targetPosition = targetPosition.Position
+	end
+	if typeof(targetPosition) ~= "Vector3" then
+		return "ABORT"
+	end
+	local characterModel = getCharacter()
+	local rootPart = rootPartOf(characterModel)
+	if not rootPart then
+		return "ABORT"
+	end
+
+	local speed = options.Speed ~= nil and resolveSpeed(options.Speed) or Config.GroundSpeed
+	local climbSpeed = options.ClimbSpeed ~= nil and resolveSpeed(options.ClimbSpeed) or Config.ClimbSpeed
+	local arriveDistance = options.ArriveDistance or 5
+	local groundOffset = options.GroundOffset or 3
+	local stepUpHeight = options.StepUpHeight or 3.5
+	local wallCheckDistance = options.WallCheckDistance or 4
+	local fallSpeed = options.FallSpeed or 60
+	local faceDirection = options.FaceDirection ~= false
+	local gate = options.Gate
+	local cancel = options.Cancel
+	local rayParams = buildRaycastParams(characterModel, options.ExcludeExtra)
+
+	local status = "OK"
+	while true do
+		local deltaTime = RunService.Heartbeat:Wait()
+		if cancel and cancel() then
+			status = "CANCELLED"
+			break
+		end
+		if gate and not gate() then
+			status = "ABORT"
+			break
+		end
+		if options.StrikePause ~= false and hasStrikeNotification() then
+			task.wait(options.StrikeWait or Config.StrikeWait)
+			task.wait()
+			continue
+		end
+		characterModel = getCharacter()
+		rootPart = rootPartOf(characterModel)
+		if not rootPart then
+			status = "ABORT"
+			break
+		end
+
+		local position = rootPart.Position
+		local horizontalRemaining = horizontalDistance(position, targetPosition)
+		if horizontalRemaining <= arriveDistance then
+			break
+		end
+		local direction = Vector3.new(targetPosition.X - position.X, 0, targetPosition.Z - position.Z).Unit
+
+		-- 1) wall or tree trunk directly ahead?
+		local wallHit = Workspace:Raycast(position, direction * wallCheckDistance, rayParams)
+		if wallHit and wallHit.Instance and wallHit.Instance.CanCollide then
+			-- find the top of the obstacle (probe down from high above, just past it)
+			local topProbe = Workspace:Raycast(wallHit.Position + direction * 1.5 + Vector3.new(0, 500, 0), Vector3.new(0, -1000, 0), rayParams)
+			local topY = topProbe and topProbe.Position.Y or nil
+			if topY and topY + groundOffset - position.Y <= stepUpHeight then
+				-- low ledge: the normal ground step below walks up onto it
+			else
+				-- climb straight up along the wall until we can stand on top
+				local newY = position.Y + climbSpeed * deltaTime
+				if topY and newY >= topY + groundOffset then
+					local ontoPosition = Vector3.new(wallHit.Position.X + direction.X * 1.5, topY + groundOffset, wallHit.Position.Z + direction.Z * 1.5)
+					rootPart.CFrame = CFrame.new(ontoPosition)
+				else
+					rootPart.CFrame = CFrame.new(position.X, newY, position.Z)
+				end
+				if faceDirection then
+					rootPart.CFrame = CFrame.lookAt(rootPart.Position, rootPart.Position + direction)
+				end
+				zeroVelocity(rootPart)
+				continue
+			end
+		end
+
+		-- 2) normal ground step with down-raycast ground snap
+		local step = math.min(speed * deltaTime, horizontalRemaining)
+		local nextFlat = position + direction * step
+		local groundHit = Workspace:Raycast(nextFlat + Vector3.new(0, 50, 0), Vector3.new(0, -500, 0), rayParams)
+		local nextY = position.Y
+		if groundHit then
+			nextY = groundHit.Position.Y + groundOffset
+		end
+		-- cap vertical change per frame so it never looks like a teleport
+		local maxRise = math.max(stepUpHeight, speed * deltaTime * 2)
+		if nextY - position.Y > maxRise then
+			nextY = position.Y + maxRise
+		end
+		if position.Y - nextY > fallSpeed * deltaTime then
+			nextY = position.Y - fallSpeed * deltaTime
+		end
+		local newPosition = Vector3.new(nextFlat.X, nextY, nextFlat.Z)
+		if faceDirection then
+			rootPart.CFrame = CFrame.lookAt(newPosition, newPosition + direction)
+		else
+			rootPart.CFrame = CFrame.new(newPosition)
+		end
+		zeroVelocity(rootPart)
+	end
+
+	-- final landing: exactly onto the ground at the target
+	if status == "OK" then
+		characterModel = getCharacter()
+		rootPart = rootPartOf(characterModel)
+		if rootPart then
+			local position = rootPart.Position
+			local landProbe = Workspace:Raycast(Vector3.new(targetPosition.X, position.Y + 50, targetPosition.Z), Vector3.new(0, -500, 0), rayParams)
+			local landY = landProbe and (landProbe.Position.Y + groundOffset) or targetPosition.Y
+			rootPart.CFrame = CFrame.new(targetPosition.X, landY, targetPosition.Z)
+			zeroVelocity(rootPart)
+		end
+	end
+	return status
 end
 
 -- [TS8] GLIDE ENGINE -----------------------------------------------------------
@@ -1643,6 +1786,11 @@ walkTo = function(targetPosition)
 	TweenSystem.TweenCFrame(rootPart, CFrame.new(targetPosition), Config.WalkSpeed)
 end
 
+-- -- groundTween (ground climb engine; safe for new players) --------------------
+groundTween = function(targetPosition, speed)
+	return TweenSystem.GroundTo(targetPosition, { Speed = speed })
+end
+
 -- -- flyToPosition (ascend + glide + geppo upkeep) -----------------------------
 flyToPosition = TweenSystem.FlyTo
 
@@ -2248,6 +2396,9 @@ transportMethoden = {
 	{ name = "Spring-Gleiter", art = "ziel", run = function(pos)
 		tweenToPos2(pos)
 	end },
+	{ name = "Boden-Kletter-TP", art = "ziel", run = function(pos)
+		TweenSystem.GroundTo(pos, { Speed = inselTpSpeed })
+	end },
 	{ name = "Hochflug-TP", art = "ziel", run = function(pos)
 		flyToPosition(pos, inselTpSpeed, true)
 	end },
@@ -2820,4 +2971,4 @@ if not guiOk then
 	warn("[Insel-TP] GUI-Fehler:", guiFehler)
 end
 
-print("[Insel-TP] geladen - Tab 'Methoden (30)' antippen, dann Tab 'Ziele (25)'. Falls nichts sichtbar: .gui in den Chat")
+print("[Insel-TP] geladen - Tab 'Methoden (31)' antippen, dann Tab 'Ziele (25)'. Falls nichts sichtbar: .gui in den Chat")
